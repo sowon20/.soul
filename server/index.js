@@ -9,6 +9,7 @@ import {
   findStoreById,
   findStoreByName,
 } from "./storage.js";
+import { autoClassify } from "./classify.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SOUL_ROOT = process.env.SOUL_ROOT || "/soul";
@@ -113,12 +114,17 @@ app.post("/api/ingest", (req, res) => {
   const store = findStoreByName(config, storeName);
   if (!store) return res.status(404).json({ error: "store not found" });
 
+  const classification = autoClassify(text);
   const row = {
     store_id: store.id,
     store_name: store.name,
+    store_folder: store.folder,
     type,
     text,
     conversation_id: conversationId,
+    category: classification.category,
+    tags: classification.tags,
+    confidence: classification.confidence,
     ts_ms: Date.now(),
   };
   insertUtterance(db, row);
@@ -265,14 +271,19 @@ async function handleRpc(body) {
           error: { code: -32601, message: "store not found" },
         };
       }
+      const classification = autoClassify(String(input.text || ""));
       const row = {
         store_id: store.id,
         store_name: store.name,
+        store_folder: store.folder,
         type: String(input.type || "note"),
         text: String(input.text || ""),
         conversation_id: input.conversation_id
           ? String(input.conversation_id)
           : null,
+        category: classification.category,
+        tags: classification.tags,
+        confidence: classification.confidence,
         ts_ms: Date.now(),
       };
       insertUtterance(db, row);
@@ -297,14 +308,19 @@ async function handleRpc(body) {
       let saved = 0;
       for (const item of items) {
         if (!item?.text) continue;
+        const classification = autoClassify(String(item.text || ""));
         insertUtterance(db, {
           store_id: store.id,
           store_name: store.name,
+          store_folder: store.folder,
           type: String(item.type || "note"),
           text: String(item.text || ""),
           conversation_id: item.conversation_id
             ? String(item.conversation_id)
             : null,
+          category: classification.category,
+          tags: classification.tags,
+          confidence: classification.confidence,
           ts_ms: Date.now(),
         });
         saved += 1;
