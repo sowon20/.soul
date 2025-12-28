@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import {
@@ -18,15 +19,20 @@ import {
   findStoreByName,
 } from "./storage.js";
 import { autoClassify, extractAmounts } from "./classify.js";
+import { initVectorStore, embedText, appendVector, searchVectors } from "./vector.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SOUL_ROOT = process.env.SOUL_ROOT || "/soul";
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+const VECTOR_PROVIDER = process.env.VECTOR_PROVIDER || "fallback";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const VECTOR_DIM = Number(process.env.VECTOR_DIM || 256);
 
 initStorage(SOUL_ROOT);
 let config = loadConfig(SOUL_ROOT);
 const db = initDb(SOUL_ROOT);
+const vectorStore = initVectorStore(SOUL_ROOT);
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -51,6 +57,7 @@ app.get("/api/settings", requireAdmin, (req, res) => {
   res.json({
     soul_root: SOUL_ROOT,
     admin_token_enabled: Boolean(ADMIN_TOKEN),
+    vector_provider: VECTOR_PROVIDER,
   });
 });
 
@@ -136,6 +143,17 @@ app.post("/api/ingest", (req, res) => {
     ts_ms: Date.now(),
   };
   insertUtterance(db, row);
+  const embedKey = VECTOR_PROVIDER === "openai" ? OPENAI_API_KEY : "";
+  embedText({ text, apiKey: embedKey, dim: VECTOR_DIM })
+    .then((vector) => {
+      appendVector(vectorStore, {
+        entry_id: `${row.ts_ms}-${Math.random().toString(36).slice(2)}`,
+        text,
+        vector,
+        ts_ms: row.ts_ms,
+      });
+    })
+    .catch(() => {});
   res.status(201).json({ ok: true });
 });
 
@@ -194,6 +212,18 @@ app.get("/api/recent", requireAdmin, (req, res) => {
 app.get("/api/memory", requireAdmin, (req, res) => {
   const limit = Number(req.query.limit || 5);
   res.json({ items: listRecentSummaries(db, limit) });
+});
+
+app.get("/api/entries", requireAdmin, (req, res) => {
+  const limit = Number(req.query.limit || 50);
+  res.json({ items: listEntries(db, limit) });
+});
+
+app.get("/api/files", requireAdmin, (req, res) => {
+  const limit = Number(req.query.limit || 50);
+  const entries = listEntries(db, 5000);
+  const files = entries.filter((e) => e.type === "file").slice(-limit);
+  res.json({ items: files });
 });
 
 // MCP endpoints
@@ -520,6 +550,17 @@ async function handleRpc(body) {
           size: buffer.length,
         },
       });
+      const embedKey = VECTOR_PROVIDER === "openai" ? OPENAI_API_KEY : "";
+      embedText({ text: filename, apiKey: embedKey, dim: VECTOR_DIM })
+        .then((vector) => {
+          appendVector(vectorStore, {
+            entry_id: `${tsMs}-${Math.random().toString(36).slice(2)}`,
+            text: filename,
+            vector,
+            ts_ms: tsMs,
+          });
+        })
+        .catch(() => {});
       return {
         jsonrpc: "2.0",
         id,
@@ -586,10 +627,33 @@ async function handleRpc(body) {
     }
 
     if (name === "vector_search") {
+      const query = String(input.query || "").trim();
+      if (!query) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32602, message: "query required" },
+        };
+      }
+      const limit = Number(input.limit || 5);
+      const embedKey = VECTOR_PROVIDER === "openai" ? OPENAI_API_KEY : "";
+      const queryVec = await embedText({
+        text: query,
+        apiKey: embedKey,
+        dim: VECTOR_DIM,
+      });
+      const hits = searchVectors(vectorStore, queryVec, limit);
       return {
         jsonrpc: "2.0",
         id,
-        error: { code: -32000, message: "vector search not configured" },
+        result: {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(hits),
+            },
+          ],
+        },
       };
     }
 
@@ -645,6 +709,17 @@ async function handleRpc(body) {
         ts_ms: Date.now(),
       };
       insertUtterance(db, row);
+      const embedKey = VECTOR_PROVIDER === "openai" ? OPENAI_API_KEY : "";
+      embedText({ text: row.text, apiKey: embedKey, dim: VECTOR_DIM })
+        .then((vector) => {
+          appendVector(vectorStore, {
+            entry_id: `${row.ts_ms}-${Math.random().toString(36).slice(2)}`,
+            text: row.text,
+            vector,
+            ts_ms: row.ts_ms,
+          });
+        })
+        .catch(() => {});
       return {
         jsonrpc: "2.0",
         id,
@@ -667,7 +742,7 @@ async function handleRpc(body) {
       for (const item of items) {
         if (!item?.text) continue;
         const classification = autoClassify(String(item.text || ""));
-        insertUtterance(db, {
+        const row = {
           store_id: store.id,
           store_name: store.name,
           store_folder: store.folder,
@@ -680,7 +755,19 @@ async function handleRpc(body) {
           tags: classification.tags,
           confidence: classification.confidence,
           ts_ms: Date.now(),
-        });
+        };
+        insertUtterance(db, row);
+        const embedKey = VECTOR_PROVIDER === "openai" ? OPENAI_API_KEY : "";
+        embedText({ text: row.text, apiKey: embedKey, dim: VECTOR_DIM })
+          .then((vector) => {
+            appendVector(vectorStore, {
+              entry_id: `${row.ts_ms}-${Math.random().toString(36).slice(2)}`,
+              text: row.text,
+              vector,
+              ts_ms: row.ts_ms,
+            });
+          })
+          .catch(() => {});
         saved += 1;
       }
       return {

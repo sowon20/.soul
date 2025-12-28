@@ -9,6 +9,9 @@ services:
       - PORT=8080
       - SOUL_ROOT=/soul
       - PUBLIC_BASE_URL=https://sowon.mooo.com
+      - VECTOR_PROVIDER=fallback
+      # - OPENAI_API_KEY=your-key
+      # - VECTOR_DIM=256
       # - ADMIN_TOKEN=change-me
     command: sh -lc "npm install --omit=dev && npm run start"
     ports:

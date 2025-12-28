@@ -63,6 +63,43 @@ input {
   gap: 10px;
 }
 
+.tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.tab {
+  background: #ece7de;
+  color: #2f2f2f;
+}
+
+.tab.active {
+  background: #0c756f;
+  color: white;
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: grid;
+  gap: 10px;
+}
+
+.log-item {
+  padding: 12px;
+  border-radius: 12px;
+  background: #f7f4ee;
+  display: grid;
+  gap: 6px;
+}
+
+small {
+  color: #6d7480;
+}
+
 button {
   border: none;
   border-radius: 10px;

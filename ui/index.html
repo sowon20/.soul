@@ -35,6 +35,18 @@
         </form>
         <div id="store-list" class="list"></div>
       </section>
+
+      <section class="card">
+        <h2>데이터 보기</h2>
+        <div class="tabs">
+          <button type="button" class="tab active" data-tab="entries">최근 기록</button>
+          <button type="button" class="tab" data-tab="memory">요약</button>
+          <button type="button" class="tab" data-tab="files">파일</button>
+        </div>
+        <div id="tab-entries" class="tab-panel active"></div>
+        <div id="tab-memory" class="tab-panel"></div>
+        <div id="tab-files" class="tab-panel"></div>
+      </section>
     </main>
 
     <script src="/ui/app.js" type="module"></script>

@@ -5,6 +5,10 @@ const storeFormEl = document.querySelector("#store-form");
 const storeNameEl = document.querySelector("#store-name");
 const storeFolderEl = document.querySelector("#store-folder");
 const storeDescEl = document.querySelector("#store-desc");
+const tabButtons = document.querySelectorAll(".tab");
+const tabEntriesEl = document.querySelector("#tab-entries");
+const tabMemoryEl = document.querySelector("#tab-memory");
+const tabFilesEl = document.querySelector("#tab-files");
 
 let adminToken = localStorage.getItem("admin_token") || "";
 if (!adminToken) {
@@ -89,6 +93,62 @@ async function loadStores() {
   renderStores(data.stores || []);
 }
 
+function renderEntries(items) {
+  tabEntriesEl.innerHTML = items
+    .map(
+      (item) =>
+        `<div class="log-item"><strong>${item.store_name}</strong> ${
+          item.category || ""
+        }<div>${item.text}</div><small>${new Date(
+          item.ts_ms
+        ).toLocaleString()}</small></div>`
+    )
+    .join("");
+}
+
+function renderMemory(items) {
+  tabMemoryEl.innerHTML = items
+    .map(
+      (item) =>
+        `<div class="log-item"><strong>요약</strong><div>${item.summary}</div><small>${new Date(
+          item.ts_ms
+        ).toLocaleString()}</small></div>`
+    )
+    .join("");
+}
+
+function renderFiles(items) {
+  tabFilesEl.innerHTML = items
+    .map(
+      (item) =>
+        `<div class="log-item"><strong>${item.text}</strong><div>${
+          item.file_meta?.mime_type || ""
+        }</div><small>${new Date(item.ts_ms).toLocaleString()}</small></div>`
+    )
+    .join("");
+}
+
+async function loadDataViews() {
+  const entries = await fetchJson("/api/entries?limit=30");
+  renderEntries(entries.items || []);
+  const memory = await fetchJson("/api/memory?limit=10");
+  renderMemory(memory.items || []);
+  const files = await fetchJson("/api/files?limit=20");
+  renderFiles(files.items || []);
+}
+
+tabButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    tabButtons.forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelectorAll(".tab-panel").forEach((panel) => {
+      panel.classList.remove("active");
+    });
+    const target = document.querySelector(`#tab-${btn.dataset.tab}`);
+    if (target) target.classList.add("active");
+  });
+});
+
 storeFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
   const name = storeNameEl.value.trim();
@@ -108,6 +168,7 @@ storeFormEl.addEventListener("submit", async (event) => {
 
 loadSettings()
   .then(loadStores)
+  .then(loadDataViews)
   .catch((error) => {
     alert(error.message);
   });
