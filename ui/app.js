@@ -13,6 +13,7 @@ const integrationListEl = document.querySelector("#integration-list");
 const credFormEl = document.querySelector("#cred-form");
 const credFilenameEl = document.querySelector("#cred-filename");
 const credTypeEl = document.querySelector("#cred-type");
+const credLabelEl = document.querySelector("#cred-label");
 const credNoteEl = document.querySelector("#cred-note");
 const credFileEl = document.querySelector("#cred-file");
 const credTextEl = document.querySelector("#cred-text");
@@ -220,6 +221,7 @@ function updateCredInputVisibility() {
   const isApiKey = type === "api-key";
   credFileEl.style.display = isApiKey ? "none" : "block";
   credTextEl.style.display = isApiKey ? "block" : "none";
+  credLabelEl.style.display = isApiKey ? "block" : "none";
 }
 
 credTypeEl.addEventListener("change", updateCredInputVisibility);
@@ -232,8 +234,8 @@ credFileEl.addEventListener("change", () => {
 credFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
   const file = credFileEl.files?.[0];
-  const filename = credFilenameEl.value.trim() || file?.name || "";
   const type = credTypeEl.value;
+  const label = credLabelEl.value.trim();
   const note = credNoteEl.value.trim();
   if (!type) {
     credStatusEl.textContent = "인증 종류를 선택해줘.";
@@ -246,6 +248,10 @@ credFormEl.addEventListener("submit", async (event) => {
   }
   if (isApiKey && !credTextEl.value.trim()) {
     credStatusEl.textContent = "API Key를 입력해줘.";
+    return;
+  }
+  if (isApiKey && !label) {
+    credStatusEl.textContent = "API Key 이름을 입력해줘.";
     return;
   }
   credStatusEl.textContent = "업로드 중...";
@@ -263,6 +269,7 @@ credFormEl.addEventListener("submit", async (event) => {
       });
       credFilenameEl.value = "";
       credTypeEl.value = "";
+      credLabelEl.value = "";
       credNoteEl.value = "";
       credFileEl.value = "";
       credTextEl.value = "";
@@ -276,11 +283,12 @@ credFormEl.addEventListener("submit", async (event) => {
   if (isApiKey) {
     const text = credTextEl.value.trim();
     const base64 = btoa(text);
-    const finalName = filename || "api-key.txt";
+    const finalName = `api-key-${label}.txt`;
     upload(base64, finalName);
     return;
   }
 
+  const filename = credFilenameEl.value.trim() || file?.name || "";
   reader.onload = async () => {
     const base64 = String(reader.result || "").split(",")[1] || "";
     upload(base64, filename);
