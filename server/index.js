@@ -308,6 +308,26 @@ app.delete("/api/credentials/:filename", requireAdmin, (req, res) => {
   res.status(204).end();
 });
 
+function loadCredentialByType(type) {
+  const dir = path.join(SOUL_ROOT, "credentials");
+  if (!fs.existsSync(dir)) return null;
+  const entries = fs.readdirSync(dir).filter((name) => !name.endsWith(".meta.json"));
+  for (const name of entries) {
+    const fullPath = path.join(dir, name);
+    const metaPath = `${fullPath}.meta.json`;
+    if (!fs.existsSync(metaPath)) continue;
+    try {
+      const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+      if (meta.type !== type) continue;
+      const raw = fs.readFileSync(fullPath, "utf8");
+      return { filename: name, meta, raw };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 // MCP endpoints
 const sseClients = new Set();
 function handleSse(req, res) {
@@ -770,21 +790,26 @@ async function handleRpc(body) {
           error: { code: -32000, message: "google-home integration disabled" },
         };
       }
-      const tokenPath = path.join(SOUL_ROOT, "credentials", "google-home.json");
-      if (!fs.existsSync(tokenPath)) {
+      const cred = loadCredentialByType("google-oauth");
+      if (!cred) {
         return {
           jsonrpc: "2.0",
           id,
-          error: { code: -32000, message: "google-home credential missing" },
+          error: { code: -32000, message: "google-oauth credential missing" },
         };
       }
-      const token = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
-      const accessToken = token.access_token;
+      let token;
+      try {
+        token = JSON.parse(cred.raw);
+      } catch {
+        token = {};
+      }
+      const accessToken = token.access_token || token.accessToken;
       if (!accessToken) {
         return {
           jsonrpc: "2.0",
           id,
-          error: { code: -32000, message: "access_token missing" },
+          error: { code: -32000, message: "access_token missing in google-oauth" },
         };
       }
       const res = await fetch("https://home.googleapis.com/v1/devices", {
@@ -818,21 +843,26 @@ async function handleRpc(body) {
           error: { code: -32000, message: "google-home integration disabled" },
         };
       }
-      const tokenPath = path.join(SOUL_ROOT, "credentials", "google-home.json");
-      if (!fs.existsSync(tokenPath)) {
+      const cred = loadCredentialByType("google-oauth");
+      if (!cred) {
         return {
           jsonrpc: "2.0",
           id,
-          error: { code: -32000, message: "google-home credential missing" },
+          error: { code: -32000, message: "google-oauth credential missing" },
         };
       }
-      const token = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
-      const accessToken = token.access_token;
+      let token;
+      try {
+        token = JSON.parse(cred.raw);
+      } catch {
+        token = {};
+      }
+      const accessToken = token.access_token || token.accessToken;
       if (!accessToken) {
         return {
           jsonrpc: "2.0",
           id,
-          error: { code: -32000, message: "access_token missing" },
+          error: { code: -32000, message: "access_token missing in google-oauth" },
         };
       }
       const res = await fetch("https://home.googleapis.com/v1/devices:execute", {
