@@ -1,0 +1,101 @@
+const rootPathEl = document.querySelector("#root-path");
+const tokenEnabledEl = document.querySelector("#token-enabled");
+const storeListEl = document.querySelector("#store-list");
+const storeFormEl = document.querySelector("#store-form");
+const storeNameEl = document.querySelector("#store-name");
+const storeDescEl = document.querySelector("#store-desc");
+
+let adminToken = localStorage.getItem("admin_token") || "";
+if (!adminToken) {
+  adminToken = prompt("관리 토큰이 있으면 입력하세요 (없으면 엔터):") || "";
+  if (adminToken) localStorage.setItem("admin_token", adminToken);
+}
+
+const apiHeaders = () =>
+  adminToken ? { "X-Admin-Token": adminToken } : {};
+
+async function fetchJson(url, options = {}) {
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      ...apiHeaders(),
+      "Content-Type": "application/json",
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `request failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+async function loadSettings() {
+  const data = await fetchJson("/api/settings");
+  rootPathEl.value = data.soul_root;
+  tokenEnabledEl.value = data.admin_token_enabled ? "ON" : "OFF";
+}
+
+function renderStores(stores) {
+  storeListEl.innerHTML = "";
+  stores.forEach((store) => {
+    const item = document.createElement("div");
+    item.className = "list-item";
+
+    const name = document.createElement("input");
+    name.value = store.name;
+
+    const desc = document.createElement("input");
+    desc.value = store.description || "";
+
+    const save = document.createElement("button");
+    save.textContent = "저장";
+    save.addEventListener("click", async () => {
+      await fetchJson(`/api/stores/${store.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ name: name.value, description: desc.value }),
+      });
+      await loadStores();
+    });
+
+    const del = document.createElement("button");
+    del.textContent = "삭제";
+    del.className = "danger";
+    del.addEventListener("click", async () => {
+      if (!confirm("삭제할까요?")) return;
+      await fetchJson(`/api/stores/${store.id}`, { method: "DELETE" });
+      await loadStores();
+    });
+
+    item.appendChild(name);
+    item.appendChild(desc);
+    item.appendChild(save);
+    item.appendChild(del);
+    storeListEl.appendChild(item);
+  });
+}
+
+async function loadStores() {
+  const data = await fetchJson("/api/stores");
+  renderStores(data.stores || []);
+}
+
+storeFormEl.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const name = storeNameEl.value.trim();
+  if (!name) return;
+  const description = storeDescEl.value.trim();
+  await fetchJson("/api/stores", {
+    method: "POST",
+    body: JSON.stringify({ name, description }),
+  });
+  storeNameEl.value = "";
+  storeDescEl.value = "";
+  await loadStores();
+});
+
+loadSettings()
+  .then(loadStores)
+  .catch((error) => {
+    alert(error.message);
+  });

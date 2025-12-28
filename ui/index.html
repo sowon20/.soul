@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Soul Admin</title>
+    <link rel="stylesheet" href="/ui/style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Soul Admin</h1>
+        <p>저장소와 기본 설정을 관리합니다.</p>
+      </header>
+
+      <section class="card">
+        <h2>기본 설정</h2>
+        <div class="field">
+          <label>SOUL_ROOT (읽기 전용)</label>
+          <input id="root-path" type="text" readonly />
+        </div>
+        <div class="field">
+          <label>관리 토큰 사용 여부</label>
+          <input id="token-enabled" type="text" readonly />
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>저장소</h2>
+        <form id="store-form" class="row">
+          <input id="store-name" placeholder="저장소 이름" />
+          <input id="store-desc" placeholder="설명(선택)" />
+          <button type="submit">추가</button>
+        </form>
+        <div id="store-list" class="list"></div>
+      </section>
+    </main>
+
+    <script src="/ui/app.js" type="module"></script>
+  </body>
+</html>

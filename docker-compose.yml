@@ -1,0 +1,16 @@
+services:
+  soul:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - /soul:/soul
+    environment:
+      - PORT=8080
+      - SOUL_ROOT=/soul
+      - PUBLIC_BASE_URL=https://sowon.mooo.com
+      # - ADMIN_TOKEN=change-me
+    command: sh -lc "npm install --omit=dev && npm run start"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
