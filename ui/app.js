@@ -14,6 +14,7 @@ const credFilenameEl = document.querySelector("#cred-filename");
 const credTypeEl = document.querySelector("#cred-type");
 const credFileEl = document.querySelector("#cred-file");
 const credListEl = document.querySelector("#cred-list");
+const credStatusEl = document.querySelector("#cred-status");
 
 let adminToken = localStorage.getItem("admin_token") || "";
 if (!adminToken) {
@@ -171,18 +172,35 @@ credFormEl.addEventListener("submit", async (event) => {
   const filename = credFilenameEl.value.trim();
   const type = credTypeEl.value;
   const file = credFileEl.files?.[0];
-  if (!filename || !file || !type) return;
+  if (!filename) {
+    credStatusEl.textContent = "파일명을 입력해줘.";
+    return;
+  }
+  if (!type) {
+    credStatusEl.textContent = "인증 종류를 선택해줘.";
+    return;
+  }
+  if (!file) {
+    credStatusEl.textContent = "파일을 선택해줘.";
+    return;
+  }
+  credStatusEl.textContent = "업로드 중...";
   const reader = new FileReader();
   reader.onload = async () => {
     const base64 = String(reader.result || "").split(",")[1] || "";
-    await fetchJson("/api/credentials", {
-      method: "POST",
-      body: JSON.stringify({ filename, type, data_base64: base64 }),
-    });
-    credFilenameEl.value = "";
-    credTypeEl.value = "";
-    credFileEl.value = "";
-    await loadCreds();
+    try {
+      await fetchJson("/api/credentials", {
+        method: "POST",
+        body: JSON.stringify({ filename, type, data_base64: base64 }),
+      });
+      credFilenameEl.value = "";
+      credTypeEl.value = "";
+      credFileEl.value = "";
+      credStatusEl.textContent = "업로드 완료.";
+      await loadCreds();
+    } catch (error) {
+      credStatusEl.textContent = `업로드 실패: ${error.message}`;
+    }
   };
   reader.readAsDataURL(file);
 });

@@ -105,6 +105,12 @@ small {
   color: #6d7480;
 }
 
+.hint {
+  margin-top: 8px;
+  color: #6d7480;
+  font-size: 0.9rem;
+}
+
 button {
   border: none;
   border-radius: 10px;
