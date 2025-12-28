@@ -331,7 +331,7 @@ app.delete("/api/credentials/:filename", requireAdmin, (req, res) => {
   res.status(204).end();
 });
 
-app.get("/oauth/google/start", (req, res) => {
+function startGoogleOAuth(req, res) {
   const secrets = loadGoogleClientSecrets();
   if (!secrets?.client_id || !secrets?.client_secret) {
     res.status(400).send("google-oauth client_id/secret missing");
@@ -346,9 +346,12 @@ app.get("/oauth/google/start", (req, res) => {
   params.set("access_type", "offline");
   params.set("prompt", "consent");
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
-});
+}
 
-app.get("/oauth/google/callback", async (req, res) => {
+app.get("/oauth/google/start", startGoogleOAuth);
+app.get("/api/auth/google/start", startGoogleOAuth);
+
+async function handleGoogleCallback(req, res) {
   const code = String(req.query.code || "");
   if (!code) {
     res.status(400).send("missing code");
@@ -380,7 +383,10 @@ app.get("/oauth/google/callback", async (req, res) => {
   }
   fs.writeFileSync(getGoogleTokenFilePath(), JSON.stringify(tokenData, null, 2));
   res.redirect("/ui/");
-});
+}
+
+app.get("/oauth/google/callback", handleGoogleCallback);
+app.get("/api/auth/google/callback", handleGoogleCallback);
 
 function loadCredentialByType(type) {
   const dir = path.join(SOUL_ROOT, "credentials");
