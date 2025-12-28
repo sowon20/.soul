@@ -185,10 +185,10 @@ credFileEl.addEventListener("change", () => {
 
 credFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const file = credFileEl.files?.[0];
   const filename = credFilenameEl.value.trim() || file?.name || "";
   const type = credTypeEl.value;
   const note = credNoteEl.value.trim();
-  const file = credFileEl.files?.[0];
   if (!type) {
     credStatusEl.textContent = "인증 종류를 선택해줘.";
     return;
