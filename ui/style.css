@@ -70,6 +70,12 @@ input {
   font-size: 0.9rem;
 }
 
+.link {
+  color: #0c756f;
+  text-decoration: none;
+  font-weight: 600;
+}
+
 #cred-form input[type="file"] {
   padding: 8px;
   background: #f7f4ee;

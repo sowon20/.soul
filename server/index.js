@@ -29,6 +29,8 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
 const VECTOR_PROVIDER = process.env.VECTOR_PROVIDER || "fallback";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const VECTOR_DIM = Number(process.env.VECTOR_DIM || 256);
+const GOOGLE_HOME_SCOPES =
+  process.env.GOOGLE_HOME_SCOPES || "https://www.googleapis.com/auth/homegraph";
 
 initStorage(SOUL_ROOT);
 let config = loadConfig(SOUL_ROOT);
@@ -78,6 +80,27 @@ app.put("/api/integrations/:id", requireAdmin, (req, res) => {
   integration.enabled = Boolean(req.body?.enabled);
   saveConfig(SOUL_ROOT, config);
   res.json({ integration });
+});
+
+app.get("/api/integrations/google-home/status", requireAdmin, (req, res) => {
+  const tokenPath = getGoogleTokenFilePath();
+  let connected = false;
+  let hasRefresh = false;
+  if (fs.existsSync(tokenPath)) {
+    try {
+      const payload = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
+      connected = Boolean(payload.access_token);
+      hasRefresh = Boolean(payload.refresh_token);
+    } catch {
+      connected = false;
+      hasRefresh = false;
+    }
+  }
+  if (!hasRefresh) {
+    const secrets = loadGoogleClientSecrets();
+    hasRefresh = Boolean(secrets?.refresh_token);
+  }
+  res.json({ connected, has_refresh: hasRefresh });
 });
 
 app.post("/api/stores", requireAdmin, (req, res) => {
@@ -308,6 +331,59 @@ app.delete("/api/credentials/:filename", requireAdmin, (req, res) => {
   res.status(204).end();
 });
 
+app.get("/oauth/google/start", (req, res) => {
+  const secrets = loadGoogleClientSecrets();
+  if (!secrets?.client_id || !secrets?.client_secret) {
+    res.status(400).send("google-oauth client_id/secret missing");
+    return;
+  }
+  const redirectUri =
+    secrets.redirect_uris?.[0] || `${PUBLIC_BASE_URL}/oauth/google/callback`;
+  const params = new URLSearchParams();
+  params.set("client_id", secrets.client_id);
+  params.set("redirect_uri", redirectUri);
+  params.set("response_type", "code");
+  params.set("scope", GOOGLE_HOME_SCOPES);
+  params.set("access_type", "offline");
+  params.set("prompt", "consent");
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
+app.get("/oauth/google/callback", async (req, res) => {
+  const code = String(req.query.code || "");
+  if (!code) {
+    res.status(400).send("missing code");
+    return;
+  }
+  const secrets = loadGoogleClientSecrets();
+  if (!secrets?.client_id || !secrets?.client_secret) {
+    res.status(400).send("google-oauth client_id/secret missing");
+    return;
+  }
+  const redirectUri =
+    secrets.redirect_uris?.[0] || `${PUBLIC_BASE_URL}/oauth/google/callback`;
+  const tokenUri = secrets.token_uri || "https://oauth2.googleapis.com/token";
+  const params = new URLSearchParams();
+  params.set("code", code);
+  params.set("client_id", secrets.client_id);
+  params.set("client_secret", secrets.client_secret);
+  params.set("redirect_uri", redirectUri);
+  params.set("grant_type", "authorization_code");
+
+  const tokenRes = await fetch(tokenUri, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  const tokenData = await tokenRes.json();
+  if (!tokenRes.ok) {
+    res.status(400).send(JSON.stringify(tokenData));
+    return;
+  }
+  fs.writeFileSync(getGoogleTokenFilePath(), JSON.stringify(tokenData, null, 2));
+  res.redirect("/ui/");
+});
+
 function loadCredentialByType(type) {
   const dir = path.join(SOUL_ROOT, "credentials");
   if (!fs.existsSync(dir)) return null;
@@ -328,23 +404,43 @@ function loadCredentialByType(type) {
   return null;
 }
 
-async function getGoogleAccessToken() {
+function loadGoogleClientSecrets() {
   const cred = loadCredentialByType("google-oauth");
-  if (!cred) {
-    throw new Error("google-oauth credential missing");
-  }
-  let payload = {};
+  if (!cred) return null;
   try {
-    payload = JSON.parse(cred.raw);
+    const data = JSON.parse(cred.raw);
+    if (data.web) return data.web;
+    if (data.installed) return data.installed;
+    return data;
   } catch {
-    payload = {};
+    return null;
+  }
+}
+
+function getGoogleTokenFilePath() {
+  return path.join(SOUL_ROOT, "credentials", "google-oauth.token.json");
+}
+
+async function getGoogleAccessToken() {
+  const tokenPath = getGoogleTokenFilePath();
+  let payload = {};
+  if (fs.existsSync(tokenPath)) {
+    try {
+      payload = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
+    } catch {
+      payload = {};
+    }
   }
   const accessToken = payload.access_token || payload.accessToken;
   if (accessToken) return accessToken;
 
-  const refreshToken = payload.refresh_token || payload.refreshToken;
-  const clientId = payload.client_id || payload.clientId;
-  const clientSecret = payload.client_secret || payload.clientSecret;
+  const secrets = loadGoogleClientSecrets();
+  if (!secrets?.client_id || !secrets?.client_secret) {
+    throw new Error("google-oauth client_id/secret missing");
+  }
+  const refreshToken = payload.refresh_token || payload.refreshToken || secrets.refresh_token;
+  const clientId = secrets.client_id;
+  const clientSecret = secrets.client_secret;
   if (!refreshToken || !clientId || !clientSecret) {
     throw new Error("refresh_token or client_id/secret missing in google-oauth");
   }
@@ -369,7 +465,7 @@ async function getGoogleAccessToken() {
 
   try {
     const updated = { ...payload, access_token: newToken };
-    fs.writeFileSync(path.join(SOUL_ROOT, "credentials", cred.filename), JSON.stringify(updated, null, 2));
+    fs.writeFileSync(getGoogleTokenFilePath(), JSON.stringify(updated, null, 2));
   } catch {
     // ignore file write errors
   }

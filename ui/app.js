@@ -104,12 +104,22 @@ async function loadStores() {
 
 function renderIntegrations(items) {
   integrationListEl.innerHTML = items
-    .map(
-      (item) =>
-        `<div class="list-item"><input readonly value="${item.name}" /><label class="toggle"><input type="checkbox" data-id="${item.id}" ${
-          item.enabled ? "checked" : ""
-        } /> 활성화</label></div>`
-    )
+    .map((item) => {
+      const statusText = item.status
+        ? item.status.connected
+          ? "연결됨"
+          : item.status.has_refresh
+            ? "토큰 갱신 필요"
+            : "미연결"
+        : "";
+      const connectLink =
+        item.id === "google-home"
+          ? `<a class="link" href="/oauth/google/start" target="_blank">Google 연결</a>`
+          : "";
+      return `<div class="list-item"><input readonly value="${item.name}" /><input readonly value="${statusText}" /><label class="toggle"><input type="checkbox" data-id="${item.id}" ${
+        item.enabled ? "checked" : ""
+      } /> 활성화</label>${connectLink}</div>`;
+    })
     .join("");
   integrationListEl.querySelectorAll("input[type=checkbox]").forEach((el) => {
     el.addEventListener("change", async () => {
@@ -118,13 +128,23 @@ function renderIntegrations(items) {
         method: "PUT",
         body: JSON.stringify({ enabled: el.checked }),
       });
+      await loadIntegrations();
     });
   });
 }
 
 async function loadIntegrations() {
   const data = await fetchJson("/api/integrations");
-  renderIntegrations(data.integrations || []);
+  let status = { connected: false, has_refresh: false };
+  try {
+    status = await fetchJson("/api/integrations/google-home/status");
+  } catch {
+    status = { connected: false, has_refresh: false };
+  }
+  const items = (data.integrations || []).map((item) =>
+    item.id === "google-home" ? { ...item, status } : item
+  );
+  renderIntegrations(items);
 }
 
 function renderEntries(items) {
