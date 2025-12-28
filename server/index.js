@@ -230,14 +230,24 @@ app.get("/api/credentials", requireAdmin, (req, res) => {
   const dir = path.join(SOUL_ROOT, "credentials");
   const items = fs
     .readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isFile())
+    .filter((entry) => entry.isFile() && !entry.name.endsWith(".meta.json"))
     .map((entry) => {
       const fullPath = path.join(dir, entry.name);
       const stat = fs.statSync(fullPath);
+      const metaPath = `${fullPath}.meta.json`;
+      let meta = {};
+      if (fs.existsSync(metaPath)) {
+        try {
+          meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+        } catch {
+          meta = {};
+        }
+      }
       return {
         filename: entry.name,
         size: stat.size,
         updated_at: stat.mtimeMs,
+        type: meta.type || "unknown",
       };
     });
   res.json({ items });
@@ -246,14 +256,20 @@ app.get("/api/credentials", requireAdmin, (req, res) => {
 app.post("/api/credentials", requireAdmin, (req, res) => {
   const filename = String(req.body?.filename || "").trim();
   const dataBase64 = String(req.body?.data_base64 || "");
+  const type = String(req.body?.type || "").trim();
   if (!filename || !dataBase64) {
     return res.status(400).json({ error: "filename and data_base64 required" });
   }
+  if (!type) return res.status(400).json({ error: "type required" });
   const safeName = filename.replace(/[^\w.\-]/g, "_");
   const dir = path.join(SOUL_ROOT, "credentials");
   const filePath = path.join(dir, safeName);
   const buffer = Buffer.from(dataBase64, "base64");
   fs.writeFileSync(filePath, buffer);
+  fs.writeFileSync(
+    `${filePath}.meta.json`,
+    JSON.stringify({ type, uploaded_at: Date.now() }, null, 2)
+  );
   res.status(201).json({ ok: true, filename: safeName });
 });
 
@@ -266,6 +282,8 @@ app.delete("/api/credentials/:filename", requireAdmin, (req, res) => {
     return res.status(404).json({ error: "not found" });
   }
   fs.unlinkSync(filePath);
+  const metaPath = `${filePath}.meta.json`;
+  if (fs.existsSync(metaPath)) fs.unlinkSync(metaPath);
   res.status(204).end();
 });
 

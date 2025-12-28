@@ -52,6 +52,13 @@
         <h2>인증 관리</h2>
         <form id="cred-form" class="row">
           <input id="cred-filename" placeholder="파일명 (예: oauth.json)" />
+          <select id="cred-type">
+            <option value="">인증 종류 선택</option>
+            <option value="google-oauth">Google OAuth</option>
+            <option value="google-service-account">Google Service Account</option>
+            <option value="api-key">API Key</option>
+            <option value="other">Other</option>
+          </select>
           <input id="cred-file" type="file" />
           <button type="submit">업로드</button>
         </form>

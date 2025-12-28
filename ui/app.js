@@ -11,6 +11,7 @@ const tabMemoryEl = document.querySelector("#tab-memory");
 const tabFilesEl = document.querySelector("#tab-files");
 const credFormEl = document.querySelector("#cred-form");
 const credFilenameEl = document.querySelector("#cred-filename");
+const credTypeEl = document.querySelector("#cred-type");
 const credFileEl = document.querySelector("#cred-file");
 const credListEl = document.querySelector("#cred-list");
 
@@ -145,7 +146,7 @@ function renderCreds(items) {
   credListEl.innerHTML = items
     .map(
       (item) =>
-        `<div class="list-item"><input readonly value="${item.filename}" /><input readonly value="${Math.round(
+        `<div class="list-item"><input readonly value="${item.filename}" /><input readonly value="${item.type}" /><input readonly value="${Math.round(
           item.size / 1024
         )} KB" /><button class="danger" data-del="${item.filename}">삭제</button></div>`
     )
@@ -168,16 +169,18 @@ async function loadCreds() {
 credFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
   const filename = credFilenameEl.value.trim();
+  const type = credTypeEl.value;
   const file = credFileEl.files?.[0];
-  if (!filename || !file) return;
+  if (!filename || !file || !type) return;
   const reader = new FileReader();
   reader.onload = async () => {
     const base64 = String(reader.result || "").split(",")[1] || "";
     await fetchJson("/api/credentials", {
       method: "POST",
-      body: JSON.stringify({ filename, data_base64: base64 }),
+      body: JSON.stringify({ filename, type, data_base64: base64 }),
     });
     credFilenameEl.value = "";
+    credTypeEl.value = "";
     credFileEl.value = "";
     await loadCreds();
   };
