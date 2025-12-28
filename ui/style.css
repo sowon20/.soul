@@ -68,6 +68,13 @@ input {
   background: #f7f4ee;
 }
 
+#cred-form textarea {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #d0d7de;
+  font-size: 0.95rem;
+}
+
 .tabs {
   display: flex;
   gap: 10px;

@@ -13,6 +13,7 @@ const credFormEl = document.querySelector("#cred-form");
 const credFilenameEl = document.querySelector("#cred-filename");
 const credTypeEl = document.querySelector("#cred-type");
 const credFileEl = document.querySelector("#cred-file");
+const credTextEl = document.querySelector("#cred-text");
 const credListEl = document.querySelector("#cred-list");
 const credStatusEl = document.querySelector("#cred-status");
 
@@ -167,6 +168,15 @@ async function loadCreds() {
   renderCreds(data.items || []);
 }
 
+function updateCredInputVisibility() {
+  const type = credTypeEl.value;
+  const isApiKey = type === "api-key";
+  credFileEl.style.display = isApiKey ? "none" : "block";
+  credTextEl.style.display = isApiKey ? "block" : "none";
+}
+
+credTypeEl.addEventListener("change", updateCredInputVisibility);
+
 credFileEl.addEventListener("change", () => {
   const file = credFileEl.files?.[0];
   credFilenameEl.value = file?.name || "";
@@ -181,27 +191,45 @@ credFormEl.addEventListener("submit", async (event) => {
     credStatusEl.textContent = "인증 종류를 선택해줘.";
     return;
   }
-  if (!file) {
+  const isApiKey = type === "api-key";
+  if (!isApiKey && !file) {
     credStatusEl.textContent = "파일을 선택해줘.";
+    return;
+  }
+  if (isApiKey && !credTextEl.value.trim()) {
+    credStatusEl.textContent = "API Key를 입력해줘.";
     return;
   }
   credStatusEl.textContent = "업로드 중...";
   const reader = new FileReader();
-  reader.onload = async () => {
-    const base64 = String(reader.result || "").split(",")[1] || "";
+  const upload = async (base64, finalName) => {
     try {
       await fetchJson("/api/credentials", {
         method: "POST",
-        body: JSON.stringify({ filename, type, data_base64: base64 }),
+        body: JSON.stringify({ filename: finalName, type, data_base64: base64 }),
       });
       credFilenameEl.value = "";
       credTypeEl.value = "";
       credFileEl.value = "";
+      credTextEl.value = "";
       credStatusEl.textContent = "업로드 완료.";
       await loadCreds();
     } catch (error) {
       credStatusEl.textContent = `업로드 실패: ${error.message}`;
     }
+  };
+
+  if (isApiKey) {
+    const text = credTextEl.value.trim();
+    const base64 = btoa(text);
+    const finalName = filename || "api-key.txt";
+    upload(base64, finalName);
+    return;
+  }
+
+  reader.onload = async () => {
+    const base64 = String(reader.result || "").split(",")[1] || "";
+    upload(base64, filename);
   };
   reader.readAsDataURL(file);
 });
@@ -242,3 +270,5 @@ loadSettings()
   .catch((error) => {
     alert(error.message);
   });
+
+updateCredInputVisibility();
