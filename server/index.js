@@ -302,7 +302,19 @@ app.post("/api/credentials", requireAdmin, (req, res) => {
   if (!type) return res.status(400).json({ error: "type required" });
   const safeName = filename.replace(/[^\w.\-]/g, "_");
   const dir = path.join(SOUL_ROOT, "credentials");
-  const filePath = path.join(dir, safeName);
+  let finalName = safeName;
+  let filePath = path.join(dir, finalName);
+  if (fs.existsSync(filePath)) {
+    const stamp = Date.now();
+    const extIndex = safeName.lastIndexOf(".");
+    if (extIndex > 0) {
+      finalName =
+        safeName.slice(0, extIndex) + `-${stamp}` + safeName.slice(extIndex);
+    } else {
+      finalName = `${safeName}-${stamp}`;
+    }
+    filePath = path.join(dir, finalName);
+  }
   const buffer = Buffer.from(dataBase64, "base64");
   fs.writeFileSync(filePath, buffer);
   const fingerprint = crypto
@@ -314,7 +326,7 @@ app.post("/api/credentials", requireAdmin, (req, res) => {
     `${filePath}.meta.json`,
     JSON.stringify({ type, note, fingerprint, uploaded_at: Date.now() }, null, 2)
   );
-  res.status(201).json({ ok: true, filename: safeName });
+  res.status(201).json({ ok: true, filename: finalName });
 });
 
 app.delete("/api/credentials/:filename", requireAdmin, (req, res) => {
