@@ -31,3 +31,10 @@ export function autoClassify(text = "") {
   const confidence = hit ? 0.7 : tags.length ? 0.4 : 0.2;
   return { category, tags: Array.from(new Set(tags)), confidence };
 }
+
+export function extractAmounts(text = "") {
+  const matches = String(text).match(/([0-9][0-9,]*)\s*원/g) || [];
+  return matches
+    .map((m) => Number(m.replace(/[^\d]/g, "")))
+    .filter((n) => Number.isFinite(n));
+}

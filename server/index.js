@@ -7,6 +7,8 @@ import {
   listRecent,
   insertSummary,
   listRecentSummaries,
+  appendReclass,
+  listEntries,
 } from "./db.js";
 import {
   initStorage,
@@ -15,7 +17,7 @@ import {
   findStoreById,
   findStoreByName,
 } from "./storage.js";
-import { autoClassify } from "./classify.js";
+import { autoClassify, extractAmounts } from "./classify.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SOUL_ROOT = process.env.SOUL_ROOT || "/soul";
@@ -134,6 +136,53 @@ app.post("/api/ingest", (req, res) => {
     ts_ms: Date.now(),
   };
   insertUtterance(db, row);
+  res.status(201).json({ ok: true });
+});
+
+app.post("/api/files", (req, res) => {
+  const storeName = String(req.body?.store_name || "default").trim();
+  const filename = String(req.body?.filename || "").trim();
+  const mimeType = String(req.body?.mime_type || "application/octet-stream");
+  const dataBase64 = String(req.body?.data_base64 || "");
+  if (!filename || !dataBase64) {
+    return res.status(400).json({ error: "filename and data_base64 required" });
+  }
+  const store = findStoreByName(config, storeName);
+  if (!store) return res.status(404).json({ error: "store not found" });
+
+  const tsMs = Date.now();
+  const d = new Date(tsMs);
+  const yyyy = String(d.getFullYear());
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const dayDir = path.join(SOUL_ROOT, yyyy, mm, dd, "files");
+  fs.mkdirSync(dayDir, { recursive: true });
+  const filePath = path.join(dayDir, filename);
+  const buffer = Buffer.from(dataBase64, "base64");
+  fs.writeFileSync(filePath, buffer);
+
+  const entry = {
+    store_id: store.id,
+    store_name: store.name,
+    store_folder: store.folder,
+    type: "file",
+    text: filename,
+    conversation_id: req.body?.conversation_id
+      ? String(req.body.conversation_id)
+      : null,
+    category: String(req.body?.category || "파일"),
+    tags: Array.isArray(req.body?.tags)
+      ? req.body.tags.map((t) => String(t))
+      : [],
+    confidence: 0.6,
+    ts_ms: tsMs,
+    file_meta: {
+      path: filePath,
+      mime_type: mimeType,
+      size: buffer.length,
+    },
+  };
+  insertUtterance(db, entry);
   res.status(201).json({ ok: true });
 });
 
@@ -288,6 +337,65 @@ async function handleRpc(body) {
             description: "저장소 목록을 가져온다.",
             inputSchema: { type: "object", properties: {} },
           },
+          {
+            name: "save_file",
+            description:
+              "파일/이미지를 저장한다. base64 데이터를 받아 날짜 폴더에 저장하고 메타를 기록한다.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                store_name: { type: "string" },
+                filename: { type: "string" },
+                mime_type: { type: "string" },
+                data_base64: { type: "string" },
+                conversation_id: { type: "string" },
+                category: { type: "string" },
+                tags: { type: "array", items: { type: "string" } },
+              },
+              required: ["filename", "data_base64"],
+            },
+          },
+          {
+            name: "reclassify",
+            description:
+              "자동 분류를 수정하거나 재분류한다 (부감독 판단 포함).",
+            inputSchema: {
+              type: "object",
+              properties: {
+                entry_id: { type: "string" },
+                new_category: { type: "string" },
+                reason: { type: "string" },
+              },
+              required: ["entry_id", "new_category"],
+            },
+          },
+          {
+            name: "monthly_totals",
+            description:
+              "월별 금액 합계를 계산한다. (관리비/보험/세금 등)",
+            inputSchema: {
+              type: "object",
+              properties: {
+                year: { type: "number" },
+                month: { type: "number" },
+                category: { type: "string" },
+              },
+              required: ["year", "month"],
+            },
+          },
+          {
+            name: "vector_search",
+            description:
+              "벡터 검색 (설정되지 않았으면 사용 불가).",
+            inputSchema: {
+              type: "object",
+              properties: {
+                query: { type: "string" },
+                limit: { type: "number" },
+              },
+              required: ["query"],
+            },
+          },
         ],
       },
     };
@@ -358,6 +466,130 @@ async function handleRpc(body) {
         jsonrpc: "2.0",
         id,
         result: { content: [{ type: "text", text: "ok" }] },
+      };
+    }
+
+    if (name === "save_file") {
+      const storeName = String(input.store_name || "default").trim();
+      const filename = String(input.filename || "").trim();
+      const dataBase64 = String(input.data_base64 || "");
+      if (!filename || !dataBase64) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32602, message: "filename and data_base64 required" },
+        };
+      }
+      const store = findStoreByName(config, storeName);
+      if (!store) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32601, message: "store not found" },
+        };
+      }
+      const tsMs = Date.now();
+      const d = new Date(tsMs);
+      const yyyy = String(d.getFullYear());
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      const dayDir = path.join(SOUL_ROOT, yyyy, mm, dd, "files");
+      fs.mkdirSync(dayDir, { recursive: true });
+      const filePath = path.join(dayDir, filename);
+      const buffer = Buffer.from(dataBase64, "base64");
+      fs.writeFileSync(filePath, buffer);
+
+      insertUtterance(db, {
+        store_id: store.id,
+        store_name: store.name,
+        store_folder: store.folder,
+        type: "file",
+        text: filename,
+        conversation_id: input.conversation_id
+          ? String(input.conversation_id)
+          : null,
+        category: String(input.category || "파일"),
+        tags: Array.isArray(input.tags)
+          ? input.tags.map((t) => String(t))
+          : [],
+        confidence: 0.6,
+        ts_ms: tsMs,
+        file_meta: {
+          path: filePath,
+          mime_type: String(input.mime_type || "application/octet-stream"),
+          size: buffer.length,
+        },
+      });
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: { content: [{ type: "text", text: "saved" }] },
+      };
+    }
+
+    if (name === "reclassify") {
+      const entryId = String(input.entry_id || "").trim();
+      const newCategory = String(input.new_category || "").trim();
+      if (!entryId || !newCategory) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32602, message: "entry_id and new_category required" },
+        };
+      }
+      appendReclass(
+        db,
+        entryId,
+        String(input.old_category || ""),
+        newCategory,
+        String(input.reason || "reclassify")
+      );
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: { content: [{ type: "text", text: "reclassified" }] },
+      };
+    }
+
+    if (name === "monthly_totals") {
+      const year = Number(input.year);
+      const month = Number(input.month);
+      const category = input.category ? String(input.category) : null;
+      if (!year || !month) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32602, message: "year and month required" },
+        };
+      }
+      const entries = listEntries(db, 5000);
+      const total = entries.reduce((sum, entry) => {
+        const ts = Number(entry.ts_ms || 0);
+        const d = new Date(ts);
+        if (d.getFullYear() !== year || d.getMonth() + 1 !== month) return sum;
+        if (category && entry.category !== category) return sum;
+        const amounts = extractAmounts(String(entry.text || ""));
+        return sum + amounts.reduce((a, b) => a + b, 0);
+      }, 0);
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: `total=${total}`,
+            },
+          ],
+        },
+      };
+    }
+
+    if (name === "vector_search") {
+      return {
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32000, message: "vector search not configured" },
       };
     }
 
