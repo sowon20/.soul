@@ -444,9 +444,14 @@ function getGoogleTokenFilePath() {
 function loadApiKeyByLabel(label) {
   const dir = path.join(SOUL_ROOT, "credentials");
   if (!fs.existsSync(dir)) return null;
-  const target = `api-key-${label}.txt`;
-  const filePath = path.join(dir, target);
-  if (!fs.existsSync(filePath)) return null;
+  const prefix = `api-key-${label}`;
+  const matches = fs
+    .readdirSync(dir)
+    .filter((name) => name.startsWith(prefix) && name.endsWith(".txt"))
+    .sort()
+    .reverse();
+  if (matches.length === 0) return null;
+  const filePath = path.join(dir, matches[0]);
   return fs.readFileSync(filePath, "utf8").trim();
 }
 
