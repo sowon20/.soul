@@ -1,4 +1,5 @@
 import express from "express";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -245,10 +246,10 @@ app.get("/api/credentials", requireAdmin, (req, res) => {
       }
       return {
         filename: entry.name,
-        size: stat.size,
         updated_at: stat.mtimeMs,
         type: meta.type || "unknown",
         note: meta.note || "",
+        fingerprint: meta.fingerprint || "",
       };
     });
   res.json({ items });
@@ -268,9 +269,14 @@ app.post("/api/credentials", requireAdmin, (req, res) => {
   const filePath = path.join(dir, safeName);
   const buffer = Buffer.from(dataBase64, "base64");
   fs.writeFileSync(filePath, buffer);
+  const fingerprint = crypto
+    .createHash("sha256")
+    .update(buffer)
+    .digest("hex")
+    .slice(0, 8);
   fs.writeFileSync(
     `${filePath}.meta.json`,
-    JSON.stringify({ type, note, uploaded_at: Date.now() }, null, 2)
+    JSON.stringify({ type, note, fingerprint, uploaded_at: Date.now() }, null, 2)
   );
   res.status(201).json({ ok: true, filename: safeName });
 });

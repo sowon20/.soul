@@ -147,12 +147,12 @@ async function loadDataViews() {
 
 function renderCreds(items) {
   credListEl.innerHTML = items
-    .map(
-      (item) =>
-        `<div class="list-item"><input readonly value="${item.filename}" /><input readonly value="${item.type}" /><input readonly value="${item.note || ""}" /><input readonly value="${Math.round(
-          item.size / 1024
-        )} KB" /><button class="danger" data-del="${item.filename}">삭제</button></div>`
-    )
+    .map((item) => {
+      const meta = [item.note, item.fingerprint ? `key:${item.fingerprint}****` : ""]
+        .filter(Boolean)
+        .join(" · ");
+      return `<div class="list-item"><input readonly value="${item.filename}" /><input readonly value="${item.type}" /><input readonly value="${meta}" /><button class="danger" data-del="${item.filename}">삭제</button></div>`;
+    })
     .join("");
   credListEl.querySelectorAll("button[data-del]").forEach((btn) => {
     btn.addEventListener("click", async () => {
