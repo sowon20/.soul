@@ -76,6 +76,20 @@ input {
   font-weight: 600;
 }
 
+.check {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+pre {
+  background: #f7f4ee;
+  padding: 12px;
+  border-radius: 12px;
+  overflow: auto;
+}
+
 
 #cred-form input[type="file"] {
   padding: 8px;

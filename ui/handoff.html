@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codex Handoff</title>
+    <link rel="stylesheet" href="/ui/style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Codex 전환 체크리스트</h1>
+        <p>ChatGPT에서 상의한 내용을 Codex로 안전하게 넘길 때 확인해.</p>
+      </header>
+
+      <section class="card">
+        <h2>필수 확인</h2>
+        <label class="check"><input type="checkbox" /> 최신 요약이 저장됐는지</label>
+        <label class="check"><input type="checkbox" /> 관련 파일/이미지가 저장됐는지</label>
+        <label class="check"><input type="checkbox" /> 적용할 변경 범위가 정리됐는지</label>
+      </section>
+
+      <section class="card">
+        <h2>바로 호출하기</h2>
+        <button id="btn-memory">최근 메모리 불러오기</button>
+        <pre id="memory-output"></pre>
+      </section>
+    </main>
+
+    <script type="module">
+      const btn = document.querySelector("#btn-memory");
+      const out = document.querySelector("#memory-output");
+      btn.addEventListener("click", async () => {
+        const res = await fetch("/api/memory?limit=5");
+        const data = await res.json();
+        out.textContent = JSON.stringify(data.items || [], null, 2);
+      });
+    </script>
+  </body>
+</html>
