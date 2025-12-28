@@ -198,7 +198,7 @@ async function handleRpc(body) {
           {
             name: "log_many",
             description:
-              "채팅 중 자동 저장용 배치 도구. 10~20초 또는 여러 메시지를 모아 한 번에 호출한다.",
+              "채팅 중 자동 저장용 배치 도구. 대화가 시작되면 자동 저장을 유지해야 하며, 10~20초 또는 여러 메시지를 모아 한 번에 호출한다.",
             inputSchema: {
               type: "object",
               properties: {
@@ -222,7 +222,7 @@ async function handleRpc(body) {
           {
             name: "log_one",
             description:
-              "세션 시작/중요 이벤트용 단일 저장. 새 대화 시작 시 자동으로 1회 호출한다.",
+              "세션 시작/중요 이벤트용 단일 저장. 새 대화 시작 시 자동으로 1회 호출한다 (반드시).",
             inputSchema: {
               type: "object",
               properties: {
@@ -237,7 +237,7 @@ async function handleRpc(body) {
           {
             name: "session_start",
             description:
-              "새 대화 시작 시 자동 호출. 자동 저장 세션을 시작했다는 기록만 남긴다.",
+              "새 대화 시작 시 자동 호출. 자동 저장 세션을 시작했다는 기록만 남긴다 (항상 1회 호출).",
             inputSchema: {
               type: "object",
               properties: {
