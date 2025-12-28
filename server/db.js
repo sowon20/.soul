@@ -4,7 +4,8 @@ import Database from "better-sqlite3";
 export function initDb(rootDir) {
   const dbPath = path.join(rootDir, "data", "soul.db");
   const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
+  db.pragma("journal_mode = DELETE");
+  db.pragma("busy_timeout = 5000");
   db.exec(`
     create table if not exists utterances (
       id integer primary key autoincrement,
