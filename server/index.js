@@ -328,6 +328,54 @@ function loadCredentialByType(type) {
   return null;
 }
 
+async function getGoogleAccessToken() {
+  const cred = loadCredentialByType("google-oauth");
+  if (!cred) {
+    throw new Error("google-oauth credential missing");
+  }
+  let payload = {};
+  try {
+    payload = JSON.parse(cred.raw);
+  } catch {
+    payload = {};
+  }
+  const accessToken = payload.access_token || payload.accessToken;
+  if (accessToken) return accessToken;
+
+  const refreshToken = payload.refresh_token || payload.refreshToken;
+  const clientId = payload.client_id || payload.clientId;
+  const clientSecret = payload.client_secret || payload.clientSecret;
+  if (!refreshToken || !clientId || !clientSecret) {
+    throw new Error("refresh_token or client_id/secret missing in google-oauth");
+  }
+
+  const params = new URLSearchParams();
+  params.set("client_id", clientId);
+  params.set("client_secret", clientSecret);
+  params.set("refresh_token", refreshToken);
+  params.set("grant_type", "refresh_token");
+
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(JSON.stringify(data));
+  }
+  const newToken = data.access_token;
+  if (!newToken) throw new Error("access_token missing in refresh response");
+
+  try {
+    const updated = { ...payload, access_token: newToken };
+    fs.writeFileSync(path.join(SOUL_ROOT, "credentials", cred.filename), JSON.stringify(updated, null, 2));
+  } catch {
+    // ignore file write errors
+  }
+  return newToken;
+}
+
 // MCP endpoints
 const sseClients = new Set();
 function handleSse(req, res) {
@@ -790,26 +838,14 @@ async function handleRpc(body) {
           error: { code: -32000, message: "google-home integration disabled" },
         };
       }
-      const cred = loadCredentialByType("google-oauth");
-      if (!cred) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: "google-oauth credential missing" },
-        };
-      }
-      let token;
+      let accessToken;
       try {
-        token = JSON.parse(cred.raw);
-      } catch {
-        token = {};
-      }
-      const accessToken = token.access_token || token.accessToken;
-      if (!accessToken) {
+        accessToken = await getGoogleAccessToken();
+      } catch (error) {
         return {
           jsonrpc: "2.0",
           id,
-          error: { code: -32000, message: "access_token missing in google-oauth" },
+          error: { code: -32000, message: String(error) },
         };
       }
       const res = await fetch("https://home.googleapis.com/v1/devices", {
@@ -843,26 +879,14 @@ async function handleRpc(body) {
           error: { code: -32000, message: "google-home integration disabled" },
         };
       }
-      const cred = loadCredentialByType("google-oauth");
-      if (!cred) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: "google-oauth credential missing" },
-        };
-      }
-      let token;
+      let accessToken;
       try {
-        token = JSON.parse(cred.raw);
-      } catch {
-        token = {};
-      }
-      const accessToken = token.access_token || token.accessToken;
-      if (!accessToken) {
+        accessToken = await getGoogleAccessToken();
+      } catch (error) {
         return {
           jsonrpc: "2.0",
           id,
-          error: { code: -32000, message: "access_token missing in google-oauth" },
+          error: { code: -32000, message: String(error) },
         };
       }
       const res = await fetch("https://home.googleapis.com/v1/devices:execute", {
