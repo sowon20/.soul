@@ -1,7 +1,13 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { initDb, insertUtterance, listRecent } from "./db.js";
+import {
+  initDb,
+  insertUtterance,
+  listRecent,
+  insertSummary,
+  listRecentSummaries,
+} from "./db.js";
 import {
   initStorage,
   loadConfig,
@@ -136,6 +142,11 @@ app.get("/api/recent", requireAdmin, (req, res) => {
   res.json({ items: listRecent(db, limit) });
 });
 
+app.get("/api/memory", requireAdmin, (req, res) => {
+  const limit = Number(req.query.limit || 5);
+  res.json({ items: listRecentSummaries(db, limit) });
+});
+
 // MCP endpoints
 const sseClients = new Set();
 function handleSse(req, res) {
@@ -248,6 +259,31 @@ async function handleRpc(body) {
             },
           },
           {
+            name: "save_summary",
+            description:
+              "대화 중간/끝에 자동 요약을 저장한다. 대화가 이어지도록 핵심 요약을 남긴다.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                conversation_id: { type: "string" },
+                summary: { type: "string" },
+                tags: { type: "array", items: { type: "string" } },
+              },
+              required: ["summary"],
+            },
+          },
+          {
+            name: "get_memory",
+            description:
+              "새 대화 시작 시 최근 요약을 자동으로 불러온다 (항상 호출).",
+            inputSchema: {
+              type: "object",
+              properties: {
+                limit: { type: "number" },
+              },
+            },
+          },
+          {
             name: "list_stores",
             description: "저장소 목록을 가져온다.",
             inputSchema: { type: "object", properties: {} },
@@ -270,6 +306,23 @@ async function handleRpc(body) {
             {
               type: "text",
               text: JSON.stringify(config.stores),
+            },
+          ],
+        },
+      };
+    }
+
+    if (name === "get_memory") {
+      const limit = Number(input.limit || 3);
+      const items = listRecentSummaries(db, limit);
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(items),
             },
           ],
         },
@@ -305,6 +358,32 @@ async function handleRpc(body) {
         jsonrpc: "2.0",
         id,
         result: { content: [{ type: "text", text: "ok" }] },
+      };
+    }
+
+    if (name === "save_summary") {
+      const summaryText = String(input.summary || "").trim();
+      if (!summaryText) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32602, message: "summary required" },
+        };
+      }
+      const tags = Array.isArray(input.tags)
+        ? input.tags.map((t) => String(t)).filter(Boolean)
+        : [];
+      insertSummary(db, {
+        conversation_id: input.conversation_id
+          ? String(input.conversation_id)
+          : null,
+        summary: summaryText,
+        tags,
+      });
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: { content: [{ type: "text", text: "saved" }] },
       };
     }
 

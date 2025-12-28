@@ -5,6 +5,10 @@ function getIndexPath(rootDir) {
   return path.join(rootDir, "index", "entries.ndjson");
 }
 
+function getSummaryPath(rootDir) {
+  return path.join(rootDir, "index", "summaries.ndjson");
+}
+
 function ensureFile(filePath) {
   if (!fs.existsSync(filePath)) {
     fs.writeFileSync(filePath, "");
@@ -21,8 +25,10 @@ function toDateParts(tsMs) {
 
 export function initDb(rootDir) {
   const indexPath = getIndexPath(rootDir);
+  const summaryPath = getSummaryPath(rootDir);
   ensureFile(indexPath);
-  return { rootDir, indexPath };
+  ensureFile(summaryPath);
+  return { rootDir, indexPath, summaryPath };
 }
 
 export function insertUtterance(db, row) {
@@ -42,6 +48,27 @@ export function insertUtterance(db, row) {
 export function listRecent(db, limit = 20) {
   if (!fs.existsSync(db.indexPath)) return [];
   const data = fs.readFileSync(db.indexPath, "utf8").trim();
+  if (!data) return [];
+  const lines = data.split("\n").slice(-limit);
+  return lines
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+export function insertSummary(db, summary) {
+  const line = JSON.stringify({ ...summary, ts_ms: summary.ts_ms || Date.now() });
+  fs.appendFileSync(db.summaryPath, `${line}\n`);
+}
+
+export function listRecentSummaries(db, limit = 5) {
+  if (!fs.existsSync(db.summaryPath)) return [];
+  const data = fs.readFileSync(db.summaryPath, "utf8").trim();
   if (!data) return [];
   const lines = data.split("\n").slice(-limit);
   return lines
