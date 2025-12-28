@@ -226,6 +226,49 @@ app.get("/api/files", requireAdmin, (req, res) => {
   res.json({ items: files });
 });
 
+app.get("/api/credentials", requireAdmin, (req, res) => {
+  const dir = path.join(SOUL_ROOT, "credentials");
+  const items = fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const fullPath = path.join(dir, entry.name);
+      const stat = fs.statSync(fullPath);
+      return {
+        filename: entry.name,
+        size: stat.size,
+        updated_at: stat.mtimeMs,
+      };
+    });
+  res.json({ items });
+});
+
+app.post("/api/credentials", requireAdmin, (req, res) => {
+  const filename = String(req.body?.filename || "").trim();
+  const dataBase64 = String(req.body?.data_base64 || "");
+  if (!filename || !dataBase64) {
+    return res.status(400).json({ error: "filename and data_base64 required" });
+  }
+  const safeName = filename.replace(/[^\w.\-]/g, "_");
+  const dir = path.join(SOUL_ROOT, "credentials");
+  const filePath = path.join(dir, safeName);
+  const buffer = Buffer.from(dataBase64, "base64");
+  fs.writeFileSync(filePath, buffer);
+  res.status(201).json({ ok: true, filename: safeName });
+});
+
+app.delete("/api/credentials/:filename", requireAdmin, (req, res) => {
+  const filename = String(req.params.filename || "").trim();
+  if (!filename) return res.status(400).json({ error: "filename required" });
+  const dir = path.join(SOUL_ROOT, "credentials");
+  const filePath = path.join(dir, filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: "not found" });
+  }
+  fs.unlinkSync(filePath);
+  res.status(204).end();
+});
+
 // MCP endpoints
 const sseClients = new Set();
 function handleSse(req, res) {

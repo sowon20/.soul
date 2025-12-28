@@ -47,6 +47,16 @@
         <div id="tab-memory" class="tab-panel"></div>
         <div id="tab-files" class="tab-panel"></div>
       </section>
+
+      <section class="card">
+        <h2>인증 관리</h2>
+        <form id="cred-form" class="row">
+          <input id="cred-filename" placeholder="파일명 (예: oauth.json)" />
+          <input id="cred-file" type="file" />
+          <button type="submit">업로드</button>
+        </form>
+        <div id="cred-list" class="list"></div>
+      </section>
     </main>
 
     <script src="/ui/app.js" type="module"></script>

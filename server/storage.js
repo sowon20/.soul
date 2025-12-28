@@ -22,6 +22,7 @@ export function initStorage(rootDir) {
   ensureDir(path.join(rootDir, "media"));
   ensureDir(path.join(rootDir, "index"));
   ensureDir(path.join(rootDir, "config"));
+  ensureDir(path.join(rootDir, "credentials"));
 }
 
 export function getConfigPath(rootDir) {

@@ -9,6 +9,10 @@ const tabButtons = document.querySelectorAll(".tab");
 const tabEntriesEl = document.querySelector("#tab-entries");
 const tabMemoryEl = document.querySelector("#tab-memory");
 const tabFilesEl = document.querySelector("#tab-files");
+const credFormEl = document.querySelector("#cred-form");
+const credFilenameEl = document.querySelector("#cred-filename");
+const credFileEl = document.querySelector("#cred-file");
+const credListEl = document.querySelector("#cred-list");
 
 let adminToken = localStorage.getItem("admin_token") || "";
 if (!adminToken) {
@@ -137,6 +141,49 @@ async function loadDataViews() {
   renderFiles(files.items || []);
 }
 
+function renderCreds(items) {
+  credListEl.innerHTML = items
+    .map(
+      (item) =>
+        `<div class="list-item"><input readonly value="${item.filename}" /><input readonly value="${Math.round(
+          item.size / 1024
+        )} KB" /><button class="danger" data-del="${item.filename}">삭제</button></div>`
+    )
+    .join("");
+  credListEl.querySelectorAll("button[data-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const filename = btn.dataset.del;
+      if (!confirm(`${filename} 삭제할까요?`)) return;
+      await fetchJson(`/api/credentials/${filename}`, { method: "DELETE" });
+      await loadCreds();
+    });
+  });
+}
+
+async function loadCreds() {
+  const data = await fetchJson("/api/credentials");
+  renderCreds(data.items || []);
+}
+
+credFormEl.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const filename = credFilenameEl.value.trim();
+  const file = credFileEl.files?.[0];
+  if (!filename || !file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const base64 = String(reader.result || "").split(",")[1] || "";
+    await fetchJson("/api/credentials", {
+      method: "POST",
+      body: JSON.stringify({ filename, data_base64: base64 }),
+    });
+    credFilenameEl.value = "";
+    credFileEl.value = "";
+    await loadCreds();
+  };
+  reader.readAsDataURL(file);
+});
+
 tabButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
     tabButtons.forEach((b) => b.classList.remove("active"));
@@ -169,6 +216,7 @@ storeFormEl.addEventListener("submit", async (event) => {
 loadSettings()
   .then(loadStores)
   .then(loadDataViews)
+  .then(loadCreds)
   .catch((error) => {
     alert(error.message);
   });
