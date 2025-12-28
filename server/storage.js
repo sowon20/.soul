@@ -12,6 +12,12 @@ const DEFAULT_CONFIG = {
   ],
   integrations: [
     { id: "google-home", name: "Google Home", enabled: false },
+    {
+      id: "tuya",
+      name: "Tuya",
+      enabled: false,
+      settings: { endpoint: "https://openapi.tuyaus.com" },
+    },
   ],
 };
 
@@ -40,6 +46,9 @@ export function loadConfig(rootDir) {
   const raw = fs.readFileSync(configPath, "utf8");
   const parsed = JSON.parse(raw);
   if (!parsed.integrations) parsed.integrations = DEFAULT_CONFIG.integrations;
+  if (!parsed.integrations.find((i) => i.id === "tuya")) {
+    parsed.integrations.push(DEFAULT_CONFIG.integrations.find((i) => i.id === "tuya"));
+  }
   return parsed;
 }
 

@@ -76,6 +76,17 @@ input {
   font-weight: 600;
 }
 
+.endpoint {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #d0d7de;
+  font-size: 0.9rem;
+}
+
+.save-endpoint {
+  padding: 8px 12px;
+}
+
 #cred-form input[type="file"] {
   padding: 8px;
   background: #f7f4ee;

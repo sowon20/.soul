@@ -117,9 +117,17 @@ function renderIntegrations(items) {
         item.id === "google-home"
           ? `<a class="link" href="/oauth/google/start" target="_blank">Google 연결</a>`
           : "";
-      return `<div class="list-item"><input readonly value="${item.name}" /><input readonly value="${statusText}" /><label class="toggle"><input type="checkbox" data-id="${item.id}" ${
+      const endpointInput =
+        item.id === "tuya"
+          ? `<input class="endpoint" data-endpoint="${item.id}" value="${item.settings?.endpoint || ""}" placeholder="Tuya Endpoint" />`
+          : "";
+      const saveBtn =
+        item.id === "tuya"
+          ? `<button class="save-endpoint" data-save="${item.id}">저장</button>`
+          : "";
+      return `<div class="list-item"><input readonly value="${item.name}" /><input readonly value="${statusText}" />${endpointInput}<label class="toggle"><input type="checkbox" data-id="${item.id}" ${
         item.enabled ? "checked" : ""
-      } /> 활성화</label>${connectLink}</div>`;
+      } /> 활성화</label>${saveBtn}${connectLink}</div>`;
     })
     .join("");
   integrationListEl.querySelectorAll("input[type=checkbox]").forEach((el) => {
@@ -128,6 +136,19 @@ function renderIntegrations(items) {
       await fetchJson(`/api/integrations/${id}`, {
         method: "PUT",
         body: JSON.stringify({ enabled: el.checked }),
+      });
+      await loadIntegrations();
+    });
+  });
+  integrationListEl.querySelectorAll("button[data-save]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.save;
+      const input = integrationListEl.querySelector(
+        `input[data-endpoint="${id}"]`
+      );
+      await fetchJson(`/api/integrations/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ settings: { endpoint: input?.value || "" } }),
       });
       await loadIntegrations();
     });
