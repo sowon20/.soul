@@ -37,6 +37,69 @@ let config = loadConfig(SOUL_ROOT);
 const db = initDb(SOUL_ROOT);
 const vectorStore = initVectorStore(SOUL_ROOT);
 
+const autoSummaryState = new Map();
+
+function buildAutoSummary(entries) {
+  const trimmed = entries
+    .filter((entry) => entry?.text)
+    .slice(-8)
+    .map((entry) => String(entry.text).replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .map((text) => (text.length > 140 ? `${text.slice(0, 140)}...` : text));
+  if (!trimmed.length) return "";
+  return `최근 대화 요약: ${trimmed.join(" | ")}`;
+}
+
+function extractTags(entries) {
+  const tags = new Set();
+  for (const entry of entries) {
+    if (Array.isArray(entry.tags)) {
+      entry.tags.forEach((tag) => tags.add(String(tag)));
+    }
+    if (entry.category) tags.add(String(entry.category));
+  }
+  return Array.from(tags).slice(0, 8);
+}
+
+function maybeAutoSummary(conversationId) {
+  if (!conversationId) return;
+  const key = String(conversationId);
+  const now = Date.now();
+  const state = autoSummaryState.get(key) || { lastAt: 0, count: 0 };
+  state.count += 1;
+  const shouldSummarize =
+    state.count >= 8 || (state.lastAt && now - state.lastAt > 10 * 60 * 1000);
+  if (!shouldSummarize) {
+    autoSummaryState.set(key, state);
+    return;
+  }
+  const entries = listRecent(db, 120).filter(
+    (entry) =>
+      entry?.conversation_id &&
+      String(entry.conversation_id) === key &&
+      entry.type !== "session_start"
+  );
+  const summaryText = buildAutoSummary(entries);
+  if (!summaryText) {
+    autoSummaryState.set(key, state);
+    return;
+  }
+  const recent = listRecentSummaries(db, 5).find(
+    (item) => String(item.conversation_id || "") === key
+  );
+  if (recent && recent.summary === summaryText) {
+    autoSummaryState.set(key, { lastAt: now, count: 0 });
+    return;
+  }
+  insertSummary(db, {
+    conversation_id: key,
+    summary: summaryText,
+    tags: extractTags(entries),
+    source: "auto",
+  });
+  autoSummaryState.set(key, { lastAt: now, count: 0 });
+}
+
 const app = express();
 app.use(express.json({ limit: "10mb" }));
 
@@ -1098,6 +1161,7 @@ async function handleRpc(body) {
           });
         })
         .catch(() => {});
+      maybeAutoSummary(row.conversation_id);
       return {
         jsonrpc: "2.0",
         id,
@@ -1117,6 +1181,7 @@ async function handleRpc(body) {
       }
       const items = Array.isArray(input.items) ? input.items : [];
       let saved = 0;
+      const convoIds = new Set();
       for (const item of items) {
         if (!item?.text) continue;
         const classification = autoClassify(String(item.text || ""));
@@ -1147,7 +1212,13 @@ async function handleRpc(body) {
           })
           .catch(() => {});
         saved += 1;
+        if (row.conversation_id) {
+          convoIds.add(String(row.conversation_id));
+        }
       }
+      convoIds.forEach((conversationId) => {
+        maybeAutoSummary(conversationId);
+      });
       return {
         jsonrpc: "2.0",
         id,

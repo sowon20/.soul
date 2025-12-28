@@ -19,6 +19,8 @@ const credFileEl = document.querySelector("#cred-file");
 const credTextEl = document.querySelector("#cred-text");
 const credListEl = document.querySelector("#cred-list");
 const credStatusEl = document.querySelector("#cred-status");
+const copyTemplateBtn = document.querySelector("#copy-template");
+const memoryTemplateEl = document.querySelector("#memory-template");
 
 let adminToken = localStorage.getItem("admin_token") || "";
 if (!adminToken) {
@@ -28,6 +30,24 @@ if (!adminToken) {
 
 const apiHeaders = () =>
   adminToken ? { "X-Admin-Token": adminToken } : {};
+
+if (copyTemplateBtn && memoryTemplateEl) {
+  copyTemplateBtn.addEventListener("click", async () => {
+    const raw = memoryTemplateEl.textContent || "";
+    const text = raw.replace(/\s+/g, " ").trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      const original = copyTemplateBtn.textContent;
+      copyTemplateBtn.textContent = "복사됨";
+      setTimeout(() => {
+        copyTemplateBtn.textContent = original;
+      }, 1200);
+    } catch (err) {
+      alert("복사에 실패했어요. 직접 선택해서 복사해주세요.");
+    }
+  });
+}
 
 async function fetchJson(url, options = {}) {
   const res = await fetch(url, {
