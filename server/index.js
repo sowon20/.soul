@@ -31,7 +31,6 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const VECTOR_DIM = Number(process.env.VECTOR_DIM || 256);
 const GOOGLE_HOME_SCOPES =
   process.env.GOOGLE_HOME_SCOPES || "https://www.googleapis.com/auth/homegraph";
-const TUYA_ENDPOINT = process.env.TUYA_ENDPOINT || "https://openapi.tuyaus.com";
 
 initStorage(SOUL_ROOT);
 let config = loadConfig(SOUL_ROOT);
@@ -441,64 +440,6 @@ function getGoogleTokenFilePath() {
   return path.join(SOUL_ROOT, "credentials", "google-oauth.token.json");
 }
 
-function loadApiKeyByLabel(label) {
-  const dir = path.join(SOUL_ROOT, "credentials");
-  if (!fs.existsSync(dir)) return null;
-  const prefix = `api-key-${label}`;
-  const matches = fs
-    .readdirSync(dir)
-    .filter((name) => name.startsWith(prefix) && name.endsWith(".txt"))
-    .sort()
-    .reverse();
-  if (matches.length === 0) return null;
-  const filePath = path.join(dir, matches[0]);
-  return fs.readFileSync(filePath, "utf8").trim();
-}
-
-function sha256Hex(input) {
-  return crypto.createHash("sha256").update(input).digest("hex");
-}
-
-function tuyaSign({ method, url, body, accessId, accessSecret, accessToken }) {
-  const t = Date.now().toString();
-  const bodyStr = body ? JSON.stringify(body) : "";
-  const contentSha256 = sha256Hex(bodyStr);
-  const signUrl = url.pathname + (url.search || "");
-  const stringToSign = [method, contentSha256, "", signUrl].join("\n");
-  const signStr = accessToken
-    ? accessId + accessToken + t + stringToSign
-    : accessId + t + stringToSign;
-  const sign = crypto
-    .createHmac("sha256", accessSecret)
-    .update(signStr)
-    .digest("hex")
-    .toUpperCase();
-  return { t, sign };
-}
-
-async function getTuyaToken(endpoint, accessId, accessSecret) {
-  const url = new URL("/v1.0/token?grant_type=1", endpoint);
-  const { t, sign } = tuyaSign({
-    method: "GET",
-    url,
-    body: null,
-    accessId,
-    accessSecret,
-  });
-  const res = await fetch(url.toString(), {
-    headers: {
-      "client_id": accessId,
-      "t": t,
-      "sign_method": "HMAC-SHA256",
-      "sign": sign,
-    },
-  });
-  const data = await res.json();
-  if (!res.ok || !data?.success) {
-    throw new Error(JSON.stringify(data));
-  }
-  return data.result?.access_token;
-}
 
 async function getGoogleAccessToken() {
   const tokenPath = getGoogleTokenFilePath();
@@ -769,35 +710,6 @@ async function handleRpc(body) {
                 params: { type: "object" },
               },
               required: ["device_id", "command"],
-            },
-          },
-          {
-            name: "tuya_list_devices",
-            description:
-              "Tuya 기기 목록을 가져온다 (tuya 연동 필요).",
-            inputSchema: { type: "object", properties: {} },
-          },
-          {
-            name: "tuya_execute",
-            description:
-              "Tuya 기기 제어 명령을 실행한다 (tuya 연동 필요).",
-            inputSchema: {
-              type: "object",
-              properties: {
-                device_id: { type: "string" },
-                commands: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      code: { type: "string" },
-                      value: {},
-                    },
-                    required: ["code", "value"],
-                  },
-                },
-              },
-              required: ["device_id", "commands"],
             },
           },
         ],
@@ -1122,119 +1034,6 @@ async function handleRpc(body) {
       };
     }
 
-    if (name === "tuya_list_devices") {
-      const integration = (config.integrations || []).find(
-        (i) => i.id === "tuya"
-      );
-      if (!integration?.enabled) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: "tuya integration disabled" },
-        };
-      }
-      const accessId = loadApiKeyByLabel("tuya-access-id");
-      const accessSecret = loadApiKeyByLabel("tuya-access-secret");
-      if (!accessId || !accessSecret) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: "tuya access id/secret missing" },
-        };
-      }
-      const endpoint = integration.settings?.endpoint || TUYA_ENDPOINT;
-      const accessToken = await getTuyaToken(endpoint, accessId, accessSecret);
-      const url = new URL("/v1.0/devices", endpoint);
-      const { t, sign } = tuyaSign({
-        method: "GET",
-        url,
-        body: null,
-        accessId,
-        accessSecret,
-        accessToken,
-      });
-      const res = await fetch(url.toString(), {
-        headers: {
-          "client_id": accessId,
-          "access_token": accessToken,
-          "t": t,
-          "sign_method": "HMAC-SHA256",
-          "sign": sign,
-        },
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.success) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: JSON.stringify(data) },
-        };
-      }
-      return {
-        jsonrpc: "2.0",
-        id,
-        result: { content: [{ type: "text", text: JSON.stringify(data) }] },
-      };
-    }
-
-    if (name === "tuya_execute") {
-      const integration = (config.integrations || []).find(
-        (i) => i.id === "tuya"
-      );
-      if (!integration?.enabled) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: "tuya integration disabled" },
-        };
-      }
-      const accessId = loadApiKeyByLabel("tuya-access-id");
-      const accessSecret = loadApiKeyByLabel("tuya-access-secret");
-      if (!accessId || !accessSecret) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: "tuya access id/secret missing" },
-        };
-      }
-      const endpoint = integration.settings?.endpoint || TUYA_ENDPOINT;
-      const accessToken = await getTuyaToken(endpoint, accessId, accessSecret);
-      const url = new URL(`/v1.0/devices/${input.device_id}/commands`, endpoint);
-      const body = { commands: input.commands || [] };
-      const { t, sign } = tuyaSign({
-        method: "POST",
-        url,
-        body,
-        accessId,
-        accessSecret,
-        accessToken,
-      });
-      const res = await fetch(url.toString(), {
-        method: "POST",
-        headers: {
-          "client_id": accessId,
-          "access_token": accessToken,
-          "t": t,
-          "sign_method": "HMAC-SHA256",
-          "sign": sign,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.success) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: JSON.stringify(data) },
-        };
-      }
-      return {
-        jsonrpc: "2.0",
-        id,
-        result: { content: [{ type: "text", text: JSON.stringify(data) }] },
-      };
-    }
 
     if (name === "save_summary") {
       const summaryText = String(input.summary || "").trim();

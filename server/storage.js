@@ -10,15 +10,7 @@ const DEFAULT_CONFIG = {
       folder: "default",
     },
   ],
-  integrations: [
-    { id: "google-home", name: "Google Home", enabled: false },
-    {
-      id: "tuya",
-      name: "Tuya",
-      enabled: false,
-      settings: { endpoint: "https://openapi.tuyaus.com" },
-    },
-  ],
+  integrations: [{ id: "google-home", name: "Google Home", enabled: false }],
 };
 
 export function ensureDir(dir) {
@@ -50,13 +42,8 @@ export function loadConfig(rootDir) {
     parsed.integrations = DEFAULT_CONFIG.integrations;
     changed = true;
   }
-  if (!parsed.integrations.find((i) => i.id === "tuya")) {
-    parsed.integrations.push({
-      id: "tuya",
-      name: "Tuya",
-      enabled: false,
-      settings: { endpoint: "https://openapi.tuyaus.com" },
-    });
+  if (parsed.integrations.find((i) => i.id === "tuya")) {
+    parsed.integrations = parsed.integrations.filter((i) => i.id !== "tuya");
     changed = true;
   }
   if (changed) {
