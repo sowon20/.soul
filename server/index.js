@@ -337,8 +337,7 @@ app.get("/oauth/google/start", (req, res) => {
     res.status(400).send("google-oauth client_id/secret missing");
     return;
   }
-  const redirectUri =
-    secrets.redirect_uris?.[0] || `${PUBLIC_BASE_URL}/oauth/google/callback`;
+  const redirectUri = `${PUBLIC_BASE_URL}/oauth/google/callback`;
   const params = new URLSearchParams();
   params.set("client_id", secrets.client_id);
   params.set("redirect_uri", redirectUri);
@@ -360,8 +359,7 @@ app.get("/oauth/google/callback", async (req, res) => {
     res.status(400).send("google-oauth client_id/secret missing");
     return;
   }
-  const redirectUri =
-    secrets.redirect_uris?.[0] || `${PUBLIC_BASE_URL}/oauth/google/callback`;
+  const redirectUri = `${PUBLIC_BASE_URL}/oauth/google/callback`;
   const tokenUri = secrets.token_uri || "https://oauth2.googleapis.com/token";
   const params = new URLSearchParams();
   params.set("code", code);
