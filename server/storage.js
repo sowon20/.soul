@@ -10,6 +10,9 @@ const DEFAULT_CONFIG = {
       folder: "default",
     },
   ],
+  integrations: [
+    { id: "google-home", name: "Google Home", enabled: false },
+  ],
 };
 
 export function ensureDir(dir) {
@@ -35,7 +38,9 @@ export function loadConfig(rootDir) {
     fs.writeFileSync(configPath, JSON.stringify(DEFAULT_CONFIG, null, 2));
   }
   const raw = fs.readFileSync(configPath, "utf8");
-  return JSON.parse(raw);
+  const parsed = JSON.parse(raw);
+  if (!parsed.integrations) parsed.integrations = DEFAULT_CONFIG.integrations;
+  return parsed;
 }
 
 export function saveConfig(rootDir, config) {

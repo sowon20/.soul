@@ -9,6 +9,7 @@ const tabButtons = document.querySelectorAll(".tab");
 const tabEntriesEl = document.querySelector("#tab-entries");
 const tabMemoryEl = document.querySelector("#tab-memory");
 const tabFilesEl = document.querySelector("#tab-files");
+const integrationListEl = document.querySelector("#integration-list");
 const credFormEl = document.querySelector("#cred-form");
 const credFilenameEl = document.querySelector("#cred-filename");
 const credTypeEl = document.querySelector("#cred-type");
@@ -99,6 +100,31 @@ function renderStores(stores) {
 async function loadStores() {
   const data = await fetchJson("/api/stores");
   renderStores(data.stores || []);
+}
+
+function renderIntegrations(items) {
+  integrationListEl.innerHTML = items
+    .map(
+      (item) =>
+        `<div class="list-item"><input readonly value="${item.name}" /><label class="toggle"><input type="checkbox" data-id="${item.id}" ${
+          item.enabled ? "checked" : ""
+        } /> 활성화</label></div>`
+    )
+    .join("");
+  integrationListEl.querySelectorAll("input[type=checkbox]").forEach((el) => {
+    el.addEventListener("change", async () => {
+      const id = el.dataset.id;
+      await fetchJson(`/api/integrations/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ enabled: el.checked }),
+      });
+    });
+  });
+}
+
+async function loadIntegrations() {
+  const data = await fetchJson("/api/integrations");
+  renderIntegrations(data.integrations || []);
 }
 
 function renderEntries(items) {
@@ -273,6 +299,7 @@ storeFormEl.addEventListener("submit", async (event) => {
 
 loadSettings()
   .then(loadStores)
+  .then(loadIntegrations)
   .then(loadDataViews)
   .then(loadCreds)
   .catch((error) => {

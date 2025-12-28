@@ -67,6 +67,19 @@ app.get("/api/stores", requireAdmin, (req, res) => {
   res.json({ stores: config.stores });
 });
 
+app.get("/api/integrations", requireAdmin, (req, res) => {
+  res.json({ integrations: config.integrations || [] });
+});
+
+app.put("/api/integrations/:id", requireAdmin, (req, res) => {
+  const id = req.params.id;
+  const integration = (config.integrations || []).find((i) => i.id === id);
+  if (!integration) return res.status(404).json({ error: "not found" });
+  integration.enabled = Boolean(req.body?.enabled);
+  saveConfig(SOUL_ROOT, config);
+  res.json({ integration });
+});
+
 app.post("/api/stores", requireAdmin, (req, res) => {
   const name = String(req.body?.name || "").trim();
   const description = String(req.body?.description || "").trim();
@@ -495,6 +508,26 @@ async function handleRpc(body) {
               required: ["query"],
             },
           },
+          {
+            name: "home_list_devices",
+            description:
+              "Google Home 기기 목록을 가져온다 (google-home 연동이 켜져 있어야 함).",
+            inputSchema: { type: "object", properties: {} },
+          },
+          {
+            name: "home_execute",
+            description:
+              "Google Home 기기 제어 명령을 실행한다 (google-home 연동 필요).",
+            inputSchema: {
+              type: "object",
+              properties: {
+                device_id: { type: "string" },
+                command: { type: "string" },
+                params: { type: "object" },
+              },
+              required: ["device_id", "command"],
+            },
+          },
         ],
       },
     };
@@ -722,6 +755,111 @@ async function handleRpc(body) {
               text: JSON.stringify(hits),
             },
           ],
+        },
+      };
+    }
+
+    if (name === "home_list_devices") {
+      const enabled = (config.integrations || []).find(
+        (i) => i.id === "google-home"
+      )?.enabled;
+      if (!enabled) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32000, message: "google-home integration disabled" },
+        };
+      }
+      const tokenPath = path.join(SOUL_ROOT, "credentials", "google-home.json");
+      if (!fs.existsSync(tokenPath)) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32000, message: "google-home credential missing" },
+        };
+      }
+      const token = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
+      const accessToken = token.access_token;
+      if (!accessToken) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32000, message: "access_token missing" },
+        };
+      }
+      const res = await fetch("https://home.googleapis.com/v1/devices", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32000, message: JSON.stringify(data) },
+        };
+      }
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          content: [{ type: "text", text: JSON.stringify(data) }],
+        },
+      };
+    }
+
+    if (name === "home_execute") {
+      const enabled = (config.integrations || []).find(
+        (i) => i.id === "google-home"
+      )?.enabled;
+      if (!enabled) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32000, message: "google-home integration disabled" },
+        };
+      }
+      const tokenPath = path.join(SOUL_ROOT, "credentials", "google-home.json");
+      if (!fs.existsSync(tokenPath)) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32000, message: "google-home credential missing" },
+        };
+      }
+      const token = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
+      const accessToken = token.access_token;
+      if (!accessToken) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32000, message: "access_token missing" },
+        };
+      }
+      const res = await fetch("https://home.googleapis.com/v1/devices:execute", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          deviceId: input.device_id,
+          command: input.command,
+          params: input.params || {},
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32000, message: JSON.stringify(data) },
+        };
+      }
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          content: [{ type: "text", text: JSON.stringify(data) }],
         },
       };
     }

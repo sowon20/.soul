@@ -63,6 +63,13 @@ input {
   gap: 10px;
 }
 
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
 #cred-form input[type="file"] {
   padding: 8px;
   background: #f7f4ee;
