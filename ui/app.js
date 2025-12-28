@@ -167,15 +167,16 @@ async function loadCreds() {
   renderCreds(data.items || []);
 }
 
+credFileEl.addEventListener("change", () => {
+  const file = credFileEl.files?.[0];
+  credFilenameEl.value = file?.name || "";
+});
+
 credFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const filename = credFilenameEl.value.trim();
+  const filename = credFilenameEl.value.trim() || file?.name || "";
   const type = credTypeEl.value;
   const file = credFileEl.files?.[0];
-  if (!filename) {
-    credStatusEl.textContent = "파일명을 입력해줘.";
-    return;
-  }
   if (!type) {
     credStatusEl.textContent = "인증 종류를 선택해줘.";
     return;
