@@ -248,6 +248,7 @@ app.get("/api/credentials", requireAdmin, (req, res) => {
         size: stat.size,
         updated_at: stat.mtimeMs,
         type: meta.type || "unknown",
+        note: meta.note || "",
       };
     });
   res.json({ items });
@@ -257,6 +258,7 @@ app.post("/api/credentials", requireAdmin, (req, res) => {
   const filename = String(req.body?.filename || "").trim();
   const dataBase64 = String(req.body?.data_base64 || "");
   const type = String(req.body?.type || "").trim();
+  const note = String(req.body?.note || "").trim();
   if (!filename || !dataBase64) {
     return res.status(400).json({ error: "filename and data_base64 required" });
   }
@@ -268,7 +270,7 @@ app.post("/api/credentials", requireAdmin, (req, res) => {
   fs.writeFileSync(filePath, buffer);
   fs.writeFileSync(
     `${filePath}.meta.json`,
-    JSON.stringify({ type, uploaded_at: Date.now() }, null, 2)
+    JSON.stringify({ type, note, uploaded_at: Date.now() }, null, 2)
   );
   res.status(201).json({ ok: true, filename: safeName });
 });

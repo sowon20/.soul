@@ -12,6 +12,7 @@ const tabFilesEl = document.querySelector("#tab-files");
 const credFormEl = document.querySelector("#cred-form");
 const credFilenameEl = document.querySelector("#cred-filename");
 const credTypeEl = document.querySelector("#cred-type");
+const credNoteEl = document.querySelector("#cred-note");
 const credFileEl = document.querySelector("#cred-file");
 const credTextEl = document.querySelector("#cred-text");
 const credListEl = document.querySelector("#cred-list");
@@ -148,7 +149,7 @@ function renderCreds(items) {
   credListEl.innerHTML = items
     .map(
       (item) =>
-        `<div class="list-item"><input readonly value="${item.filename}" /><input readonly value="${item.type}" /><input readonly value="${Math.round(
+        `<div class="list-item"><input readonly value="${item.filename}" /><input readonly value="${item.type}" /><input readonly value="${item.note || ""}" /><input readonly value="${Math.round(
           item.size / 1024
         )} KB" /><button class="danger" data-del="${item.filename}">삭제</button></div>`
     )
@@ -186,6 +187,7 @@ credFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
   const filename = credFilenameEl.value.trim() || file?.name || "";
   const type = credTypeEl.value;
+  const note = credNoteEl.value.trim();
   const file = credFileEl.files?.[0];
   if (!type) {
     credStatusEl.textContent = "인증 종류를 선택해줘.";
@@ -206,10 +208,16 @@ credFormEl.addEventListener("submit", async (event) => {
     try {
       await fetchJson("/api/credentials", {
         method: "POST",
-        body: JSON.stringify({ filename: finalName, type, data_base64: base64 }),
+        body: JSON.stringify({
+          filename: finalName,
+          type,
+          note,
+          data_base64: base64,
+        }),
       });
       credFilenameEl.value = "";
       credTypeEl.value = "";
+      credNoteEl.value = "";
       credFileEl.value = "";
       credTextEl.value = "";
       credStatusEl.textContent = "업로드 완료.";
