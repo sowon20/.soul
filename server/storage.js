@@ -20,6 +20,7 @@ export function initStorage(rootDir) {
   ensureDir(rootDir);
   ensureDir(path.join(rootDir, "data"));
   ensureDir(path.join(rootDir, "media"));
+  ensureDir(path.join(rootDir, "index"));
   ensureDir(path.join(rootDir, "config"));
 }
 
