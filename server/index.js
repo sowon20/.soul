@@ -197,7 +197,8 @@ async function handleRpc(body) {
         tools: [
           {
             name: "log_many",
-            description: "여러 건을 한 번에 저장한다.",
+            description:
+              "채팅 중 자동 저장용 배치 도구. 10~20초 또는 여러 메시지를 모아 한 번에 호출한다.",
             inputSchema: {
               type: "object",
               properties: {
@@ -220,7 +221,8 @@ async function handleRpc(body) {
           },
           {
             name: "log_one",
-            description: "한 건 저장한다.",
+            description:
+              "세션 시작/중요 이벤트용 단일 저장. 새 대화 시작 시 자동으로 1회 호출한다.",
             inputSchema: {
               type: "object",
               properties: {
@@ -230,6 +232,19 @@ async function handleRpc(body) {
                 conversation_id: { type: "string" },
               },
               required: ["text"],
+            },
+          },
+          {
+            name: "session_start",
+            description:
+              "새 대화 시작 시 자동 호출. 자동 저장 세션을 시작했다는 기록만 남긴다.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                store_name: { type: "string" },
+                conversation_id: { type: "string" },
+                note: { type: "string" },
+              },
             },
           },
           {
@@ -258,6 +273,38 @@ async function handleRpc(body) {
             },
           ],
         },
+      };
+    }
+
+    if (name === "session_start") {
+      const storeName = String(input.store_name || "default").trim();
+      const store = findStoreByName(config, storeName);
+      if (!store) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32601, message: "store not found" },
+        };
+      }
+      const row = {
+        store_id: store.id,
+        store_name: store.name,
+        store_folder: store.folder,
+        type: "session_start",
+        text: String(input.note || "session started"),
+        conversation_id: input.conversation_id
+          ? String(input.conversation_id)
+          : null,
+        category: "세션",
+        tags: ["세션"],
+        confidence: 0.9,
+        ts_ms: Date.now(),
+      };
+      insertUtterance(db, row);
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: { content: [{ type: "text", text: "ok" }] },
       };
     }
 
