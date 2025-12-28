@@ -45,9 +45,22 @@ export function loadConfig(rootDir) {
   }
   const raw = fs.readFileSync(configPath, "utf8");
   const parsed = JSON.parse(raw);
-  if (!parsed.integrations) parsed.integrations = DEFAULT_CONFIG.integrations;
+  let changed = false;
+  if (!parsed.integrations) {
+    parsed.integrations = DEFAULT_CONFIG.integrations;
+    changed = true;
+  }
   if (!parsed.integrations.find((i) => i.id === "tuya")) {
-    parsed.integrations.push(DEFAULT_CONFIG.integrations.find((i) => i.id === "tuya"));
+    parsed.integrations.push({
+      id: "tuya",
+      name: "Tuya",
+      enabled: false,
+      settings: { endpoint: "https://openapi.tuyaus.com" },
+    });
+    changed = true;
+  }
+  if (changed) {
+    fs.writeFileSync(configPath, JSON.stringify(parsed, null, 2));
   }
   return parsed;
 }
