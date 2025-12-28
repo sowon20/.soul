@@ -3,7 +3,12 @@ import path from "path";
 
 const DEFAULT_CONFIG = {
   stores: [
-    { id: "default", name: "default", description: "기본 저장소" },
+    {
+      id: "default",
+      name: "default",
+      description: "기본 저장소",
+      folder: "default",
+    },
   ],
 };
 

@@ -3,6 +3,7 @@ const tokenEnabledEl = document.querySelector("#token-enabled");
 const storeListEl = document.querySelector("#store-list");
 const storeFormEl = document.querySelector("#store-form");
 const storeNameEl = document.querySelector("#store-name");
+const storeFolderEl = document.querySelector("#store-folder");
 const storeDescEl = document.querySelector("#store-desc");
 
 let adminToken = localStorage.getItem("admin_token") || "";
@@ -45,6 +46,9 @@ function renderStores(stores) {
     const name = document.createElement("input");
     name.value = store.name;
 
+    const folder = document.createElement("input");
+    folder.value = store.folder || "";
+
     const desc = document.createElement("input");
     desc.value = store.description || "";
 
@@ -53,7 +57,11 @@ function renderStores(stores) {
     save.addEventListener("click", async () => {
       await fetchJson(`/api/stores/${store.id}`, {
         method: "PUT",
-        body: JSON.stringify({ name: name.value, description: desc.value }),
+        body: JSON.stringify({
+          name: name.value,
+          folder: folder.value,
+          description: desc.value,
+        }),
       });
       await loadStores();
     });
@@ -68,6 +76,7 @@ function renderStores(stores) {
     });
 
     item.appendChild(name);
+    item.appendChild(folder);
     item.appendChild(desc);
     item.appendChild(save);
     item.appendChild(del);
@@ -83,13 +92,16 @@ async function loadStores() {
 storeFormEl.addEventListener("submit", async (event) => {
   event.preventDefault();
   const name = storeNameEl.value.trim();
+  const folder = storeFolderEl.value.trim();
   if (!name) return;
+  if (!folder) return;
   const description = storeDescEl.value.trim();
   await fetchJson("/api/stores", {
     method: "POST",
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify({ name, folder, description }),
   });
   storeNameEl.value = "";
+  storeFolderEl.value = "";
   storeDescEl.value = "";
   await loadStores();
 });

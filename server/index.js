@@ -53,12 +53,17 @@ app.get("/api/stores", requireAdmin, (req, res) => {
 app.post("/api/stores", requireAdmin, (req, res) => {
   const name = String(req.body?.name || "").trim();
   const description = String(req.body?.description || "").trim();
+  const folder = String(req.body?.folder || "").trim();
   if (!name) return res.status(400).json({ error: "name required" });
+  if (!folder) return res.status(400).json({ error: "folder required" });
   if (findStoreByName(config, name)) {
     return res.status(409).json({ error: "store name exists" });
   }
+  if (config.stores.find((store) => store.folder === folder)) {
+    return res.status(409).json({ error: "folder exists" });
+  }
   const id = `store_${Date.now()}`;
-  const store = { id, name, description };
+  const store = { id, name, description, folder };
   config.stores = [...config.stores, store];
   saveConfig(SOUL_ROOT, config);
   res.status(201).json({ store });
@@ -70,12 +75,18 @@ app.put("/api/stores/:id", requireAdmin, (req, res) => {
   if (!store) return res.status(404).json({ error: "store not found" });
   const name = String(req.body?.name || store.name).trim();
   const description = String(req.body?.description || store.description).trim();
+  const folder = String(req.body?.folder || store.folder).trim();
   if (!name) return res.status(400).json({ error: "name required" });
+  if (!folder) return res.status(400).json({ error: "folder required" });
   if (name !== store.name && findStoreByName(config, name)) {
     return res.status(409).json({ error: "store name exists" });
   }
+  if (folder !== store.folder && config.stores.find((s) => s.folder === folder)) {
+    return res.status(409).json({ error: "folder exists" });
+  }
   store.name = name;
   store.description = description;
+  store.folder = folder;
   saveConfig(SOUL_ROOT, config);
   res.json({ store });
 });
