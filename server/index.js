@@ -100,6 +100,64 @@ function maybeAutoSummary(conversationId) {
   autoSummaryState.set(key, { lastAt: now, count: 0 });
 }
 
+function extractChatGPTConversation(html) {
+  const jsonMatch = html.match(
+    /<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)<\/script>/s
+  );
+  if (!jsonMatch) return null;
+  let payload;
+  try {
+    payload = JSON.parse(jsonMatch[1]);
+  } catch {
+    return null;
+  }
+
+  const messages = [];
+  const seen = new Set();
+
+  function pushMessage(role, text) {
+    if (!text) return;
+    const key = `${role}:${text}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    messages.push({ role, text });
+  }
+
+  function walk(node) {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    if (typeof node !== "object") return;
+
+    if (typeof node.role === "string") {
+      if (typeof node.content === "string") {
+        pushMessage(node.role, node.content);
+      } else if (Array.isArray(node.content)) {
+        const parts = node.content
+          .map((part) =>
+            typeof part === "string"
+              ? part
+              : typeof part?.text === "string"
+                ? part.text
+                : ""
+          )
+          .filter(Boolean)
+          .join("\n");
+        pushMessage(node.role, parts);
+      } else if (node.message && typeof node.message === "string") {
+        pushMessage(node.role, node.message);
+      }
+    }
+
+    Object.values(node).forEach(walk);
+  }
+
+  walk(payload);
+  return messages.length ? messages : null;
+}
+
 const app = express();
 app.use(express.json({ limit: "10mb" }));
 
@@ -258,6 +316,68 @@ app.post("/api/ingest", (req, res) => {
     })
     .catch(() => {});
   res.status(201).json({ ok: true });
+});
+
+app.post("/api/share", async (req, res) => {
+  const link = String(req.body?.url || req.body?.link || "").trim();
+  const storeName = String(req.body?.store_name || "chats").trim();
+  if (!link) return res.status(400).json({ error: "url required" });
+  const store = findStoreByName(config, storeName);
+  if (!store) return res.status(404).json({ error: "store not found" });
+
+  let html = "";
+  try {
+    const r = await fetch(link, {
+      headers: { "User-Agent": "soul-share/1.0" },
+    });
+    if (!r.ok) {
+      return res.status(400).json({ error: `fetch failed ${r.status}` });
+    }
+    html = await r.text();
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+
+  const messages = extractChatGPTConversation(html);
+  const conversationId = req.body?.conversation_id
+    ? String(req.body.conversation_id)
+    : link.split("/").pop() || `share-${Date.now()}`;
+
+  if (!messages) {
+    const row = {
+      store_id: store.id,
+      store_name: store.name,
+      store_folder: store.folder,
+      type: "share_link",
+      text: `ChatGPT 공유 링크: ${link}`,
+      conversation_id: conversationId,
+      category: "공유",
+      tags: ["공유", "ChatGPT"],
+      confidence: 0.8,
+      ts_ms: Date.now(),
+    };
+    insertUtterance(db, row);
+    return res.status(201).json({ ok: true, saved: 1, parsed: false });
+  }
+
+  let saved = 0;
+  for (const msg of messages) {
+    const row = {
+      store_id: store.id,
+      store_name: store.name,
+      store_folder: store.folder,
+      type: msg.role,
+      text: msg.text,
+      conversation_id: conversationId,
+      category: "공유",
+      tags: ["공유", "ChatGPT"],
+      confidence: 0.9,
+      ts_ms: Date.now(),
+    };
+    insertUtterance(db, row);
+    saved += 1;
+  }
+  return res.status(201).json({ ok: true, saved, parsed: true });
 });
 
 app.post("/api/files", (req, res) => {
