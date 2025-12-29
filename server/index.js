@@ -376,6 +376,13 @@ app.post("/api/share", async (req, res) => {
 
   let saved = 0;
   messages.forEach((msg, index) => {
+    const classification = autoClassify(msg.text);
+    const tagSet = new Set([
+      "공유",
+      "ChatGPT",
+      String(msg.role || ""),
+      ...classification.tags,
+    ]);
     const row = {
       store_id: store.id,
       store_name: store.name,
@@ -383,9 +390,9 @@ app.post("/api/share", async (req, res) => {
       type: msg.role,
       text: msg.text,
       conversation_id: conversationId,
-      category: "공유",
-      tags: ["공유", "ChatGPT"],
-      confidence: 0.9,
+      category: classification.category || "공유",
+      tags: Array.from(tagSet).filter(Boolean),
+      confidence: classification.confidence ?? 0.85,
       ts_ms: baseTs + index + 1,
     };
     insertUtterance(db, row);
