@@ -817,11 +817,18 @@ async function handleRpc(body) {
           {
             name: "get_memory",
             description:
-              "새 대화 시작 시 최근 요약을 자동으로 불러온다 (항상 호출).",
+              "최근 원문과 요약을 함께 불러온다. 기본값은 최근 원문 10개 + 요약 1개.",
             inputSchema: {
               type: "object",
               properties: {
-                limit: { type: "number" },
+                limit: {
+                  type: "number",
+                  description: "요약 개수 (기본 1)",
+                },
+                recent_limit: {
+                  type: "number",
+                  description: "최근 원문 개수 (기본 10)",
+                },
               },
             },
           },
@@ -934,8 +941,10 @@ async function handleRpc(body) {
     }
 
     if (name === "get_memory") {
-      const limit = Number(input.limit || 3);
-      const items = listRecentSummaries(db, limit);
+      const limit = Number(input.limit || 1);
+      const recentLimit = Number(input.recent_limit || 10);
+      const summaries = listRecentSummaries(db, limit);
+      const recent = listRecent(db, recentLimit);
       return {
         jsonrpc: "2.0",
         id,
@@ -943,7 +952,7 @@ async function handleRpc(body) {
           content: [
             {
               type: "text",
-              text: JSON.stringify(items),
+              text: JSON.stringify({ summaries, recent }),
             },
           ],
         },
