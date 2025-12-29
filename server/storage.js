@@ -10,7 +10,7 @@ const DEFAULT_CONFIG = {
       folder: "default",
     },
   ],
-  integrations: [{ id: "google-home", name: "Google Home", enabled: false }],
+  integrations: [],
 };
 
 export function ensureDir(dir) {
@@ -42,8 +42,8 @@ export function loadConfig(rootDir) {
     parsed.integrations = DEFAULT_CONFIG.integrations;
     changed = true;
   }
-  if (parsed.integrations.find((i) => i.id === "tuya")) {
-    parsed.integrations = parsed.integrations.filter((i) => i.id !== "tuya");
+  if (parsed.integrations.length) {
+    parsed.integrations = [];
     changed = true;
   }
   if (changed) {

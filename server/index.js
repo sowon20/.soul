@@ -29,8 +29,6 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
 const VECTOR_PROVIDER = process.env.VECTOR_PROVIDER || "fallback";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const VECTOR_DIM = Number(process.env.VECTOR_DIM || 256);
-const GOOGLE_HOME_SCOPES =
-  process.env.GOOGLE_HOME_SCOPES || "https://www.googleapis.com/auth/homegraph";
 
 initStorage(SOUL_ROOT);
 let config = loadConfig(SOUL_ROOT);
@@ -188,43 +186,6 @@ app.get("/api/settings", requireAdmin, (req, res) => {
 // Store management
 app.get("/api/stores", requireAdmin, (req, res) => {
   res.json({ stores: config.stores });
-});
-
-app.get("/api/integrations", requireAdmin, (req, res) => {
-  res.json({ integrations: config.integrations || [] });
-});
-
-app.put("/api/integrations/:id", requireAdmin, (req, res) => {
-  const id = req.params.id;
-  const integration = (config.integrations || []).find((i) => i.id === id);
-  if (!integration) return res.status(404).json({ error: "not found" });
-  integration.enabled = Boolean(req.body?.enabled);
-  if (req.body?.settings && typeof req.body.settings === "object") {
-    integration.settings = { ...(integration.settings || {}), ...req.body.settings };
-  }
-  saveConfig(SOUL_ROOT, config);
-  res.json({ integration });
-});
-
-app.get("/api/integrations/google-home/status", requireAdmin, (req, res) => {
-  const tokenPath = getGoogleTokenFilePath();
-  let connected = false;
-  let hasRefresh = false;
-  if (fs.existsSync(tokenPath)) {
-    try {
-      const payload = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
-      connected = Boolean(payload.access_token);
-      hasRefresh = Boolean(payload.refresh_token);
-    } catch {
-      connected = false;
-      hasRefresh = false;
-    }
-  }
-  if (!hasRefresh) {
-    const secrets = loadGoogleClientSecrets();
-    hasRefresh = Boolean(secrets?.refresh_token);
-  }
-  res.json({ connected, has_refresh: hasRefresh });
 });
 
 app.post("/api/stores", requireAdmin, (req, res) => {
@@ -550,152 +511,6 @@ app.delete("/api/credentials/:filename", requireAdmin, (req, res) => {
   res.status(204).end();
 });
 
-function startGoogleOAuth(req, res) {
-  const secrets = loadGoogleClientSecrets();
-  if (!secrets?.client_id || !secrets?.client_secret) {
-    res.status(400).send("google-oauth client_id/secret missing");
-    return;
-  }
-  const redirectUri = `${PUBLIC_BASE_URL}/oauth/google/callback`;
-  const params = new URLSearchParams();
-  params.set("client_id", secrets.client_id);
-  params.set("redirect_uri", redirectUri);
-  params.set("response_type", "code");
-  params.set("scope", GOOGLE_HOME_SCOPES);
-  params.set("access_type", "offline");
-  params.set("prompt", "consent");
-  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
-}
-
-app.get("/oauth/google/start", startGoogleOAuth);
-app.get("/api/auth/google/start", startGoogleOAuth);
-
-async function handleGoogleCallback(req, res) {
-  const code = String(req.query.code || "");
-  if (!code) {
-    res.status(400).send("missing code");
-    return;
-  }
-  const secrets = loadGoogleClientSecrets();
-  if (!secrets?.client_id || !secrets?.client_secret) {
-    res.status(400).send("google-oauth client_id/secret missing");
-    return;
-  }
-  const redirectUri = `${PUBLIC_BASE_URL}/oauth/google/callback`;
-  const tokenUri = secrets.token_uri || "https://oauth2.googleapis.com/token";
-  const params = new URLSearchParams();
-  params.set("code", code);
-  params.set("client_id", secrets.client_id);
-  params.set("client_secret", secrets.client_secret);
-  params.set("redirect_uri", redirectUri);
-  params.set("grant_type", "authorization_code");
-
-  const tokenRes = await fetch(tokenUri, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-  const tokenData = await tokenRes.json();
-  if (!tokenRes.ok) {
-    res.status(400).send(JSON.stringify(tokenData));
-    return;
-  }
-  fs.writeFileSync(getGoogleTokenFilePath(), JSON.stringify(tokenData, null, 2));
-  res.redirect("/ui/");
-}
-
-app.get("/oauth/google/callback", handleGoogleCallback);
-app.get("/api/auth/google/callback", handleGoogleCallback);
-
-function loadCredentialByType(type) {
-  const dir = path.join(SOUL_ROOT, "credentials");
-  if (!fs.existsSync(dir)) return null;
-  const entries = fs.readdirSync(dir).filter((name) => !name.endsWith(".meta.json"));
-  for (const name of entries) {
-    const fullPath = path.join(dir, name);
-    const metaPath = `${fullPath}.meta.json`;
-    if (!fs.existsSync(metaPath)) continue;
-    try {
-      const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
-      if (meta.type !== type) continue;
-      const raw = fs.readFileSync(fullPath, "utf8");
-      return { filename: name, meta, raw };
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-function loadGoogleClientSecrets() {
-  const cred = loadCredentialByType("google-oauth");
-  if (!cred) return null;
-  try {
-    const data = JSON.parse(cred.raw);
-    if (data.web) return data.web;
-    if (data.installed) return data.installed;
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-function getGoogleTokenFilePath() {
-  return path.join(SOUL_ROOT, "credentials", "google-oauth.token.json");
-}
-
-
-async function getGoogleAccessToken() {
-  const tokenPath = getGoogleTokenFilePath();
-  let payload = {};
-  if (fs.existsSync(tokenPath)) {
-    try {
-      payload = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
-    } catch {
-      payload = {};
-    }
-  }
-  const accessToken = payload.access_token || payload.accessToken;
-  if (accessToken) return accessToken;
-
-  const secrets = loadGoogleClientSecrets();
-  if (!secrets?.client_id || !secrets?.client_secret) {
-    throw new Error("google-oauth client_id/secret missing");
-  }
-  const refreshToken = payload.refresh_token || payload.refreshToken || secrets.refresh_token;
-  const clientId = secrets.client_id;
-  const clientSecret = secrets.client_secret;
-  if (!refreshToken || !clientId || !clientSecret) {
-    throw new Error("refresh_token or client_id/secret missing in google-oauth");
-  }
-
-  const params = new URLSearchParams();
-  params.set("client_id", clientId);
-  params.set("client_secret", clientSecret);
-  params.set("refresh_token", refreshToken);
-  params.set("grant_type", "refresh_token");
-
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(JSON.stringify(data));
-  }
-  const newToken = data.access_token;
-  if (!newToken) throw new Error("access_token missing in refresh response");
-
-  try {
-    const updated = { ...payload, access_token: newToken };
-    fs.writeFileSync(getGoogleTokenFilePath(), JSON.stringify(updated, null, 2));
-  } catch {
-    // ignore file write errors
-  }
-  return newToken;
-}
-
 // MCP endpoints
 const sseClients = new Set();
 function handleSse(req, res) {
@@ -904,25 +719,6 @@ async function handleRpc(body) {
             },
           },
           {
-            name: "home_list_devices",
-            description:
-              "Google Home 기기 목록을 가져온다 (google-home 연동이 켜져 있어야 함).",
-            inputSchema: { type: "object", properties: {} },
-          },
-          {
-            name: "home_execute",
-            description:
-              "Google Home 기기 제어 명령을 실행한다 (google-home 연동 필요).",
-            inputSchema: {
-              type: "object",
-              properties: {
-                device_id: { type: "string" },
-                command: { type: "string" },
-                params: { type: "object" },
-              },
-              required: ["device_id", "command"],
-            },
-          },
         ],
       },
     };
@@ -1155,98 +951,6 @@ async function handleRpc(body) {
         },
       };
     }
-
-    if (name === "home_list_devices") {
-      const enabled = (config.integrations || []).find(
-        (i) => i.id === "google-home"
-      )?.enabled;
-      if (!enabled) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: "google-home integration disabled" },
-        };
-      }
-      let accessToken;
-      try {
-        accessToken = await getGoogleAccessToken();
-      } catch (error) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: String(error) },
-        };
-      }
-      const res = await fetch("https://home.googleapis.com/v1/devices", {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: JSON.stringify(data) },
-        };
-      }
-      return {
-        jsonrpc: "2.0",
-        id,
-        result: {
-          content: [{ type: "text", text: JSON.stringify(data) }],
-        },
-      };
-    }
-
-    if (name === "home_execute") {
-      const enabled = (config.integrations || []).find(
-        (i) => i.id === "google-home"
-      )?.enabled;
-      if (!enabled) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: "google-home integration disabled" },
-        };
-      }
-      let accessToken;
-      try {
-        accessToken = await getGoogleAccessToken();
-      } catch (error) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: String(error) },
-        };
-      }
-      const res = await fetch("https://home.googleapis.com/v1/devices:execute", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          deviceId: input.device_id,
-          command: input.command,
-          params: input.params || {},
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: -32000, message: JSON.stringify(data) },
-        };
-      }
-      return {
-        jsonrpc: "2.0",
-        id,
-        result: {
-          content: [{ type: "text", text: JSON.stringify(data) }],
-        },
-      };
-    }
-
 
     if (name === "save_summary") {
       const summaryText = String(input.summary || "").trim();

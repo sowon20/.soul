@@ -9,7 +9,6 @@ const tabButtons = document.querySelectorAll(".tab");
 const tabEntriesEl = document.querySelector("#tab-entries");
 const tabMemoryEl = document.querySelector("#tab-memory");
 const tabFilesEl = document.querySelector("#tab-files");
-const integrationListEl = document.querySelector("#integration-list");
 const credFormEl = document.querySelector("#cred-form");
 const credFilenameEl = document.querySelector("#cred-filename");
 const credTypeEl = document.querySelector("#cred-type");
@@ -121,51 +120,6 @@ function renderStores(stores) {
 async function loadStores() {
   const data = await fetchJson("/api/stores");
   renderStores(data.stores || []);
-}
-
-function renderIntegrations(items) {
-  integrationListEl.innerHTML = items
-    .map((item) => {
-      const statusText = item.status
-        ? item.status.connected
-          ? "연결됨"
-          : item.status.has_refresh
-            ? "토큰 갱신 필요"
-            : "미연결"
-        : "";
-      const connectLink =
-        item.id === "google-home"
-          ? `<a class="link" href="/oauth/google/start" target="_blank">Google 연결</a>`
-          : "";
-      return `<div class="list-item"><input readonly value="${item.name}" /><input readonly value="${statusText}" /><label class="toggle"><input type="checkbox" data-id="${item.id}" ${
-        item.enabled ? "checked" : ""
-      } /> 활성화</label>${connectLink}</div>`;
-    })
-    .join("");
-  integrationListEl.querySelectorAll("input[type=checkbox]").forEach((el) => {
-    el.addEventListener("change", async () => {
-      const id = el.dataset.id;
-      await fetchJson(`/api/integrations/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({ enabled: el.checked }),
-      });
-      await loadIntegrations();
-    });
-  });
-}
-
-async function loadIntegrations() {
-  const data = await fetchJson("/api/integrations");
-  let status = { connected: false, has_refresh: false };
-  try {
-    status = await fetchJson("/api/integrations/google-home/status");
-  } catch {
-    status = { connected: false, has_refresh: false };
-  }
-  const items = (data.integrations || []).map((item) =>
-    item.id === "google-home" ? { ...item, status } : item
-  );
-  renderIntegrations(items);
 }
 
 function renderEntries(items) {
@@ -347,7 +301,6 @@ storeFormEl.addEventListener("submit", async (event) => {
 
 loadSettings()
   .then(loadStores)
-  .then(loadIntegrations)
   .then(loadDataViews)
   .then(loadCreds)
   .catch((error) => {

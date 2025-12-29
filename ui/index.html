@@ -54,11 +54,6 @@
       </section>
 
       <section class="card">
-        <h2>연동</h2>
-        <div id="integration-list" class="list"></div>
-      </section>
-
-      <section class="card">
         <h2>데이터 보기</h2>
         <div class="tabs">
           <button type="button" class="tab active" data-tab="entries">최근 기록</button>
@@ -76,13 +71,11 @@
           <input id="cred-filename" placeholder="파일명 (자동)" readonly />
           <select id="cred-type">
             <option value="">인증 종류 선택</option>
-            <option value="google-oauth">Google OAuth</option>
-            <option value="google-service-account">Google Service Account</option>
             <option value="api-key">API Key</option>
             <option value="other">Other</option>
           </select>
-          <input id="cred-label" placeholder="API Key 이름 (예: tuya-access-id)" />
-          <input id="cred-note" placeholder="메모 (예: Google Home API)" />
+          <input id="cred-label" placeholder="API Key 이름 (예: service-key)" />
+          <input id="cred-note" placeholder="메모 (예: 외부 서비스)" />
           <input id="cred-file" type="file" />
           <textarea id="cred-text" placeholder="API Key 입력" rows="2"></textarea>
           <button type="submit">업로드</button>
