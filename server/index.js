@@ -342,6 +342,7 @@ app.post("/api/share", async (req, res) => {
   const conversationId = req.body?.conversation_id
     ? String(req.body.conversation_id)
     : link.split("/").pop() || `share-${Date.now()}`;
+  const baseTs = Date.now();
 
   if (!messages) {
     const row = {
@@ -354,14 +355,27 @@ app.post("/api/share", async (req, res) => {
       category: "공유",
       tags: ["공유", "ChatGPT"],
       confidence: 0.8,
-      ts_ms: Date.now(),
+      ts_ms: baseTs,
     };
     insertUtterance(db, row);
     return res.status(201).json({ ok: true, saved: 1, parsed: false });
   }
 
+  insertUtterance(db, {
+    store_id: store.id,
+    store_name: store.name,
+    store_folder: store.folder,
+    type: "share_meta",
+    text: `saved_at=${new Date(baseTs).toISOString()} source=${link}`,
+    conversation_id: conversationId,
+    category: "공유",
+    tags: ["공유", "ChatGPT", "meta"],
+    confidence: 0.6,
+    ts_ms: baseTs,
+  });
+
   let saved = 0;
-  for (const msg of messages) {
+  messages.forEach((msg, index) => {
     const row = {
       store_id: store.id,
       store_name: store.name,
@@ -372,11 +386,11 @@ app.post("/api/share", async (req, res) => {
       category: "공유",
       tags: ["공유", "ChatGPT"],
       confidence: 0.9,
-      ts_ms: Date.now(),
+      ts_ms: baseTs + index + 1,
     };
     insertUtterance(db, row);
     saved += 1;
-  }
+  });
   return res.status(201).json({ ok: true, saved, parsed: true });
 });
 
