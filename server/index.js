@@ -755,7 +755,6 @@ async function handleRpc(body) {
               required: ["query"],
             },
           },
-          {
         ],
       },
     };
