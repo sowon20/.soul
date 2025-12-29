@@ -434,16 +434,33 @@ app.get("/api/files", requireAdmin, (req, res) => {
 // Notion webhook (test)
 function handleNotionWebhook(req, res) {
   try {
+    const verificationToken =
+      req.headers["notion-webhook-verification-token"] ||
+      req.headers["x-notion-verification-token"] ||
+      req.body?.verification_token ||
+      req.body?.challenge ||
+      null;
     const logDir = path.join(SOUL_ROOT, "logs");
     fs.mkdirSync(logDir, { recursive: true });
     const line = JSON.stringify({
       received_at: new Date().toISOString(),
       headers: req.headers || {},
       body: req.body || {},
+      verification: verificationToken ? String(verificationToken) : null,
     });
     fs.appendFileSync(path.join(logDir, "notion_webhook.jsonl"), `${line}\n`);
   } catch {
     // best-effort logging
+  }
+  const token =
+    req.headers["notion-webhook-verification-token"] ||
+    req.headers["x-notion-verification-token"] ||
+    req.body?.verification_token ||
+    req.body?.challenge ||
+    null;
+  if (token) {
+    res.status(200).send(String(token));
+    return;
   }
   res.status(200).json({ ok: true });
 }
