@@ -431,6 +431,26 @@ app.get("/api/files", requireAdmin, (req, res) => {
   res.json({ items: files });
 });
 
+// Notion webhook (test)
+function handleNotionWebhook(req, res) {
+  try {
+    const logDir = path.join(SOUL_ROOT, "logs");
+    fs.mkdirSync(logDir, { recursive: true });
+    const line = JSON.stringify({
+      received_at: new Date().toISOString(),
+      headers: req.headers || {},
+      body: req.body || {},
+    });
+    fs.appendFileSync(path.join(logDir, "notion_webhook.jsonl"), `${line}\n`);
+  } catch {
+    // best-effort logging
+  }
+  res.status(200).json({ ok: true });
+}
+
+app.post("/notion", handleNotionWebhook);
+app.post("/soul/notion", handleNotionWebhook);
+
 app.get("/api/credentials", requireAdmin, (req, res) => {
   const dir = path.join(SOUL_ROOT, "credentials");
   const items = fs
