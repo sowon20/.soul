@@ -1,4 +1,5 @@
 const memoryUtils = require('./memory');
+const smartSearchUtils = require('./smart-search');
 
 /**
  * 검색 유틸리티
@@ -289,6 +290,41 @@ class SearchUtils {
       },
       topTags: tags.slice(0, 10),
       categoriesDistribution: categories
+    };
+  }
+
+  /**
+   * 자연어 검색 (지능형 검색)
+   */
+  async smartSearch(naturalQuery, options = {}) {
+    // 오타 수정 및 동의어 확장
+    const corrected = smartSearchUtils.fuzzyCorrection(naturalQuery);
+
+    // 자연어 파싱
+    const { keywords, filters } = smartSearchUtils.convertToFilters(corrected);
+
+    // 맥락 기반 확장 (선택적)
+    const recentSearches = options.recentSearches || [];
+    const expanded = smartSearchUtils.expandContext(keywords.join(' '), recentSearches);
+
+    // 확장된 키워드로 검색 (OR 조건)
+    const searchParams = {
+      anyKeywords: options.useExpanded ? expanded.expandedKeywords : keywords,
+      ...filters,
+      ...options.additionalFilters
+    };
+
+    const result = await this.advancedSearch(searchParams);
+
+    return {
+      ...result,
+      parsedQuery: {
+        original: naturalQuery,
+        corrected,
+        keywords,
+        filters,
+        expanded: options.useExpanded ? expanded.expandedKeywords : null
+      }
     };
   }
 }
