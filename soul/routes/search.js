@@ -115,4 +115,35 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/search/smart
+ * 자연어 지능형 검색
+ */
+router.post('/smart', async (req, res) => {
+  try {
+    const { query, recentSearches, useExpanded, additionalFilters } = req.body;
+
+    if (!query) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'query is required'
+      });
+    }
+
+    const result = await searchUtils.smartSearch(query, {
+      recentSearches: recentSearches || [],
+      useExpanded: useExpanded || false,
+      additionalFilters: additionalFilters || {}
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error in smart search:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;

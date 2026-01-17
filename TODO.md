@@ -365,10 +365,36 @@
   - 관련성 점수 계산
 
 ### 3.2 지능형 검색
-- [ ] "개떡같이" 검색어 해석
-- [ ] 시간 추론 ("저번에", "최근")
-- [ ] 맥락 기반 검색
-- [ ] 관련성 순위
+- [x] "개떡같이" 검색어 해석
+- [x] 시간 추론 ("저번에", "최근")
+- [x] 맥락 기반 검색
+- [x] 관련성 순위
+
+**완료**: 2026-01-17 ✅
+- smart-search.js 유틸리티 구현
+  - parseTimeExpression() - 시간 표현 파싱
+    - 오늘, 어제, 그저께
+    - 이번주, 지난주
+    - 이번달, 지난달
+    - 최근, 요즘, 저번에, 예전에
+    - N일/주/달 전 (예: "3일 전", "2주 전")
+  - parseNaturalQuery() - 자연어 쿼리 파싱
+    - 카테고리 키워드 인식 (개발, 일상, 업무, 학습 등)
+    - 중요도 키워드 (중요한, 급한, 사소한 등)
+    - 시간 표현 추출 및 변환
+  - fuzzyCorrection() - 오타 수정 & 동의어 확장
+  - expandContext() - 최근 검색 기반 맥락 확장
+- search.js에 smartSearch() 메서드 추가
+  - 자연어 → 필터 자동 변환
+  - 맥락 기반 키워드 확장 (선택)
+- API: POST /api/search/smart
+  - Body: { query, recentSearches, useExpanded }
+  - Returns: 검색 결과 + parsedQuery 정보
+
+**예시**:
+- "최근 개발 관련 중요한 대화" → filters: { startDate: 7일전, category: 개발, minImportance: 8 }
+- "어제 테스트" → filters: { startDate: 어제 0시, endDate: 오늘 0시 }
+- "3일 전 업무" → filters: { startDate: 3일 전, category: 업무 }
 
 ### 3.3 전문 검색
 - [ ] Elasticsearch/MeiliSearch 연동
