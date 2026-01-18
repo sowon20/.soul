@@ -73,29 +73,39 @@
 ## 📅 개발 계획 (80시간)
 
 ### Week 1: 클린업 & 기반 (30h)
-- [ ] **코드 감사** (8h)
-  - [ ] librechat → soul 전면 변경
-  - [ ] 하드코딩 제거 (sowon, 경로 등)
-  - [ ] 환경변수 분리
-  - [ ] 네이밍 통일
-  
+- [x] **코드 감사** (완료)
+  - [x] 하드코딩 제거 확인 (sowon, 경로 등)
+  - [x] 환경변수 분리 확인 (.env.example 완비)
+  - [x] 네이밍 통일 확인 (soul 네이밍 적용됨)
+  - [x] install.sh 자동 설치 스크립트 작성
+  - [x] README.md 전문 문서화
+
 - [ ] **Phase 9 UI 완성** (10h)
   - [ ] 기존 UI 통합 (6h)
   - [ ] Claude 스타일 적용 (4h)
-  
+
 - [ ] **패널 시스템** (4h)
   - [ ] 탭/분할/팝업 모드
   - [ ] 자연어 제어 ("투두 보여줘", "탭으로 바꿔")
-  
-- [ ] **MCP 정리** (2h)
-  - [ ] hub-server.js 재작성
-  - [ ] tools/ 모듈화
-  
-- [ ] **자연어 제어 기초** (2h)
-  - [ ] 의도 감지 로직
-  - [ ] 패턴 매칭
-  
-- [ ] **통합 테스트** (4h)
+
+- [x] **MCP 정리** (완료)
+  - [x] hub-server.js 작성 (MCP 허브 서버)
+  - [x] tools/ 모듈화 (memory, context, nlp)
+  - [x] 10개 MCP 도구 구현
+  - [x] package.json 및 문서화
+  - [x] example-client.js 예제
+
+- [x] **자연어 제어 기초** (완료)
+  - [x] 의도 감지 로직 (intent-detector.js)
+  - [x] 패턴 매칭 시스템
+  - [x] 8개 API 엔드포인트
+  - [x] 14개 의도, 21개 패턴
+  - [x] 테스트 (100% 통과)
+  - [x] 문서화 (NLP_SYSTEM.md)
+
+- [x] **통합 테스트** (완료)
+  - [x] test-all-apis.sh 작성 및 테스트
+  - [x] 40개 API 엔드포인트 검증 (메모리/AI/검색/컨텍스트/비유/NLP)
 
 ### Week 2: 고급 기능 (30h)
 - [ ] **메모리 고도화** (8h)
@@ -429,37 +439,268 @@
 ## 🧠 Phase 4: 자율 기억
 
 ### 4.1 맥락 감지
-- [ ] 관련 주제 자동 감지
-- [ ] 트리거 조건 설정
-- [ ] 자동 검색 실행
+- [x] 관련 주제 자동 감지
+- [x] 트리거 조건 설정
+- [x] 자동 검색 실행
+
+**완료**: 2026-01-18 ✅
+- context-detector.js 유틸리티 구현
+  - extractKeywords() - 키워드, 엔티티, 시간 참조 추출
+  - evaluateTrigger() - 트리거 조건 평가 (신뢰도 점수)
+  - findRelatedMemories() - 관련 메모리 자동 검색
+  - detectAndRetrieve() - 전체 파이프라인
+  - generateContextPrompt() - 시스템 프롬프트 생성
+  - checkSpamPrevention() - 스팸 방지
+- API 엔드포인트 (/api/context):
+  - POST /detect - 맥락 감지 및 메모리 검색
+  - POST /extract-keywords - 키워드 추출
+  - POST /evaluate-trigger - 트리거 평가
+  - POST /find-memories - 메모리 검색
+  - POST /generate-prompt - 프롬프트 생성
+  - POST /check-spam - 스팸 방지 체크
+- 기능:
+  - 시간 참조 감지 ("저번에", "최근에", "어제" 등)
+  - 주제 참조 감지 ("그때", "아까 말한", "비슷한" 등)
+  - 엔티티 감지 (기술 키워드, 프로젝트명 등)
+  - 트리거 신뢰도 점수 (0.0~1.0)
+  - 다중 검색 전략 (시간 기반, 키워드 기반, 엔티티 기반)
+  - 관련성 점수 계산
+  - 스팸 방지 (시간당 최대 횟수, 최소 간격)
+- 테스트 결과:
+  - "저번에 얘기했던 React 프로젝트 기억나?" → 트리거 발동 (confidence: 1.0)
+  - "최근에 MongoDB 설정 어떻게 했었지?" → 트리거 발동 (confidence: 0.8)
+  - 스팸 방지 정상 작동
+
+**메모**:
+- 현재 메모리 DB가 비어있어 실제 메모리 검색은 0건
+- Phase 2 (AI 분류)로 메모리가 쌓이면 자동으로 작동
+- UI 통합은 Phase 9에서 진행 예정
 
 ### 4.2 자연스러운 통합
-- [ ] 시스템 프롬프트 주입
-- [ ] "그때 애기했던..." 패턴
-- [ ] 스팸 방지
+- [x] 시스템 프롬프트 주입
+- [x] "그때 애기했던..." 패턴
+- [x] 스팸 방지
+
+**완료**: 2026-01-18 ✅ (4.1과 함께 구현)
+- generateContextPrompt()로 자연스러운 프롬프트 생성
+- 과거 대화 참조 시 자동으로 관련 메모리 제공
+- 강제 주입 없이 자연스러운 언급 유도
+- 스팸 방지 내장
 
 ### 4.3 비유/연결
-- [ ] 과거 대화 비유 찾기
-- [ ] 선택적 활성화
+- [x] 과거 대화 비유 찾기
+- [x] 선택적 활성화
+
+**완료**: 2026-01-18 ✅
+- analogy-finder.js 유틸리티 구현
+  - detectPatterns() - 문제/해결/결과 패턴 감지
+  - calculateAnalogyScore() - 비유 점수 계산 (최대 50점)
+  - findAnalogies() - 비유 검색 (문제/해결책 키워드 기반)
+  - shouldActivate() - 선택적 활성화 (패턴 매칭 기반)
+  - analyze() - 전체 파이프라인
+- API 엔드포인트 (/api/analogy):
+  - POST /analyze - 비유 분석 (전체)
+  - POST /find - 비유 검색만
+  - POST /detect-patterns - 패턴 감지
+  - POST /should-activate - 활성화 체크
+  - GET/PATCH /config - 설정 관리
+- 기능:
+  - 문제/해결/결과 패턴 자동 감지
+  - 유사도 기반 비유 점수 계산
+  - 선택적 활성화 (최소 패턴 매칭 필요)
+  - 컨텍스트 프롬프트 자동 생성
+- 비유 타입:
+  - similar_problem - 비슷한 문제
+  - similar_solution - 비슷한 해결책
+  - similar_outcome - 비슷한 결과
+  - general_context - 일반 맥락
+- 테스트 결과:
+  - 패턴 감지 정상 작동
+  - 활성화 체크 정상 작동
+  - 비유 분석 파이프라인 정상 작동
+  - 설정 관리 정상 작동
+
+**메모**:
+- 현재 메모리 DB가 비어있어 실제 비유 검색 결과는 0건
+- Phase 2 (AI 분류)로 메모리가 쌓이면 비유 검색 작동
+- UI 통합은 Phase 9에서 진행 예정
 
 ---
 
 ## 🎛️ Phase 5: 컨텍스트 관리
 
 ### 5.1 토큰 모니터링
-- [ ] 현재 토큰 수 추적
-- [ ] 80% 경고, 90% 자동 압축
+- [x] 현재 토큰 수 추적
+- [x] 80% 경고, 90% 자동 압축
 - [ ] UI 게이지 (선택)
 
+**완료**: 2026-01-18 ✅
+- token-counter.js 유틸리티 구현
+  - estimateTokens() - 텍스트 토큰 수 추정 (정확도 ~85%)
+  - countMessagesTokens() - 메시지 배열 토큰 계산
+  - analyzeUsage() - 컨텍스트 사용량 분석
+  - calculateCompressionPriority() - 압축 우선순위 계산
+  - selectMessagesForCompression() - 압축 대상 선택
+- 모델별 최대 컨텍스트 길이 지원:
+  - Claude: 200K 토큰
+  - GPT-4: 8K ~ 128K 토큰
+  - Gemini: 32K ~ 1M 토큰
+- 자동 압축 트리거:
+  - 경고: 80% 도달 시
+  - 위험: 90% 도달 시 (자동 압축)
+- 압축 우선순위 알고리즘:
+  - 최근 N개 메시지 보호
+  - 시스템 메시지 우선 보호
+  - 오래되고 긴 메시지 우선 압축
+
 ### 5.2 자동 압축
-- [ ] 오래된 메시지 요약
-- [ ] 핵심만 남기기
-- [ ] 원본 파일 저장
+- [x] 오래된 메시지 요약
+- [x] 핵심만 남기기
+- [x] 원본 파일 저장
+
+**완료**: 2026-01-18 ✅
+- context-compressor.js 유틸리티 구현
+  - compressMessages() - 메시지 압축 실행
+  - shouldAutoCompress() - 자동 압축 필요 여부 체크
+  - generateSessionSummary() - 세션 요약 생성
+  - saveOriginalToMemory() - 원본 메모리에 저장
+  - generateAISummary() - AI 요약 생성 (선택)
+- 압축 기능:
+  - 간단한 요약 (키워드 추출)
+  - AI 요약 지원 (선택적)
+  - 원본 자동 저장
+  - 압축 통계 제공
+- 세션 요약 기능:
+  - 키워드 추출
+  - 결정사항 추출
+  - TODO 추출
+  - 주요 주제 추출
+- API 엔드포인트 (/api/context-mgmt):
+  - POST /analyze - 컨텍스트 사용량 분석
+  - POST /estimate-tokens - 토큰 수 추정
+  - POST /compress - 메시지 압축
+  - POST /should-compress - 압축 필요 여부 체크
+  - POST /session-summary - 세션 요약
+  - GET /restore/:id - 압축된 세션 복원
+  - GET/PATCH /config - 설정 관리
+  - GET /model-limits - 모델 제한 조회
+
+**테스트 결과**:
+- 토큰 추정: 정상 작동
+- 사용량 분석: gpt-4 모델로 16 토큰 / 8192 토큰 = 0.2% 확인
+- 압축 API: 정상 작동
+- 설정 관리: 정상 작동
 
 ### 5.3 세션 연속성
-- [ ] 종료 시 요약 생성
-- [ ] 시작 시 요약 로드
+- [x] 종료 시 요약 생성
+- [x] 시작 시 요약 로드
 - [ ] "이어가기" 버튼
+
+**완료**: 2026-01-18 ✅ (5.2와 함께 구현)
+- generateSessionSummary()로 세션 종료 시 자동 요약
+- restoreCompressedSession()로 압축된 세션 복원
+- UI "이어가기" 버튼은 Phase 9에서 구현 예정
+
+---
+
+## 🎛️ Phase 5.4: 영속적 대화방 시스템 ⭐
+
+**목표**: LibreChat의 대화 처리 로직을 참고하여 무한 메모리를 가진 단일 영속 대화방 구현
+
+**핵심 철학**: 단일 인격 AI
+- ❌ 모드 분리 (기본/업무/상담) 금지
+- ✅ 하나의 복합적이고 유동적인 인격체
+- 내부 모델 전환은 사용자에게 투명
+- 다중 AI 제공사 지원 (Anthropic, Google, OpenAI, xAI)
+
+### 5.4.1 대화 처리 파이프라인
+- [ ] conversation-pipeline.js 구현
+  - [ ] buildConversationMessages() - 메시지 배열 구성
+  - [ ] getMessagesWithinTokenLimit() - 역순 메시지 추가
+  - [ ] handleResponse() - 응답 처리 및 저장
+- [ ] POST /api/chat 엔드포인트
+- [ ] 시스템 프롬프트 동적 구성
+- [ ] 자동 메모리 주입 (과거 대화 참조 감지시)
+
+**주요 기능:**
+- 역순 메시지 추가 (최신부터 토큰 제한 내)
+- 컨텍스트 감지 → 장기 메모리 자동 검색
+- 80% 도달시 자동 압축
+- 시스템 프롬프트 레이어링
+
+### 5.4.2 토큰 폭발 방지
+- [ ] token-safeguard.js 구현
+  - [ ] TokenSafeguard 클래스 - 실시간 모니터링
+  - [ ] emergencyCompress() - 95% 강제 압축
+  - [ ] truncateToolOutput() - Tool 출력 제한
+- [ ] Vision 토큰 정확한 계산 (width/height 기반)
+- [ ] ManagedTokenizer - 5분/25회 자동 초기화
+- [ ] 단일 메시지 10% 제한
+
+**토큰 폭발 버그 해결:**
+- 원인 1: Tool output 무제한 누적 → 500 토큰 제한
+- 원인 2: Vision 이미지 토큰 중복 계산 → Claude API 공식 계산식
+- 원인 3: Tokenizer 캐시 누수 → 주기적 초기화
+
+### 5.4.3 에이전트 체이닝 시스템
+- [ ] agent-chain.js 구현
+  - [ ] Agent 클래스 - 단일 에이전트
+  - [ ] SequentialChain - 순차 실행
+  - [ ] ParallelChain - 병렬 실행
+  - [ ] ToolLayer - Tool 레이어
+- [ ] POST /api/agents/chain 엔드포인트
+- [ ] 에이전트 간 컨텍스트 전달
+- [ ] 중간 결과 제거 옵션 (excludeResults)
+
+**LibreChat 에이전트 기능:**
+- 기능별 체인 구성 ✅
+- 단계별 처리 ✅
+- Tool/Memory 레이어 ✅
+- 다중 에이전트 조합 ✅
+
+### 5.4.4 메모리 계층 통합
+- [ ] memory-layers.js 구현
+  - [ ] ShortTermMemory - 최근 50개 메시지
+  - [ ] MiddleTermMemory - 세션 요약
+  - [ ] LongTermMemory - 아카이브
+  - [ ] MemoryManager - 통합 관리
+- [ ] 자동 계층 이동 (단기 → 중기 → 장기)
+- [ ] 컨텍스트 수집 최적화
+
+**메모리 흐름:**
+```
+단기 (50개) → 중기 (요약) → 장기 (아카이브)
+    ↓            ↓             ↓
+  즉시참조      세션복원       검색
+```
+
+### 5.4.5 세션 연속성
+- [ ] session-continuity.js 구현
+  - [ ] saveSessionState() - 세션 상태 저장
+  - [ ] restoreSession() - 세션 복원
+  - [ ] generateResumePrompt() - 재개 프롬프트
+- [ ] 대화 중단/재개 완벽 처리
+- [ ] 시간 인지 재개 메시지 (N시간 전, N일 전)
+
+**완료 후 달성:**
+- ✅ 무한 연속 대화 (토큰 제한 극복)
+- ✅ 자연스러운 맥락 유지
+- ✅ 토큰 폭발 방지
+- ✅ 에이전트 체이닝 지원
+- ✅ 단기/중기/장기 메모리 자동 관리
+
+**LibreChat 분석 활용:**
+- 역순 메시지 추가 로직
+- 누적 요약 메커니즘
+- 토큰 계산 정확도
+- 에이전트 체인 구조
+- 메모리 계층 설계
+
+**참고 파일:**
+- librechat.tar.gz 분석 완료 (Agent ID: aaae15f)
+- /tmp/api/app/clients/BaseClient.js
+- /tmp/api/app/clients/AnthropicClient.js
+- /tmp/packages/api/src/agents/
 
 ---
 
@@ -491,17 +732,48 @@
 
 **메모**: Anthropic API 전용
 
+**중요**: 단일 인격 철학 유지
+- 프롬프트 캐싱은 성능 최적화 목적
+- 사용자 인식 변화 없음 (투명한 내부 처리)
+- 캐시된 시스템 프롬프트 = 일관된 인격 유지
+
 ---
 
-## 🎯 Phase 8: 스마트 라우팅
+## 🎯 Phase 8: 스마트 라우팅 (단일 인격 핵심 기능)
 
-- [ ] 복잡도 분석: complexity.js
+**목표**: 작업에 맞는 최적 모델 자동 선택 (사용자는 모름)
+
+- [ ] complexity.js - 작업 유형 감지
+  - [ ] detectTaskType() - vision, reasoning, coding, simple_chat 등
+  - [ ] estimateComplexity() - 복잡도 점수 (1-10)
+  - [ ] requiresSpecialCapability() - 특수 기능 필요 여부
+- [ ] model-router.js - 모델 선택 로직
+  - [ ] selectBestModel() - 작업 + 사용자 설정 → 최적 모델
+  - [ ] getAvailableProviders() - 활성화된 AI 제공사 목록
+  - [ ] fallbackChain() - 1순위 실패 시 2순위 자동 시도
 - [ ] API 라우트 수정
+  - [ ] POST /api/chat에 라우팅 로직 통합
+  - [ ] 모델 전환 로그 (디버깅용, 사용자에게 노출 X)
 - [ ] Batch 큐 구현
+  - [ ] 백그라운드 작업 큐 (요약, 태그 생성 등)
+  - [ ] 저렴한 모델 우선 사용
 - [ ] Cron Job
+  - [ ] 매일 새벽 배치 작업 실행
 - [ ] 테스트
+  - [ ] 다양한 작업 유형별 라우팅 검증
+  - [ ] Fallback 체인 테스트
 
-**메모**: Haiku(간단) vs Sonnet(복잡) 자동 선택
+**라우팅 예시**:
+- "이미지 설명해줘" → Gemini (vision 최적)
+- "복잡한 코드 리팩토링" → Claude Sonnet (추론 최적)
+- "간단한 질문" → GPT-4o-mini (빠르고 저렴)
+- "중요한 문서 분석" → Claude Opus (최고 품질)
+
+**중요**: 단일 인격 철학
+- ❌ 모델마다 다른 인격/말투
+- ✅ 모델 전환해도 동일한 인격 유지
+- 시스템 프롬프트는 항상 통일된 인격 주입
+- 사용자는 모델 전환을 전혀 인식하지 못함
 
 ---
 
@@ -511,7 +783,10 @@
 - [ ] 알림 큐 관리
 - [ ] 상태 추적 (pending/delivered/read)
 - [ ] 트리거 조건 (작업 완료, 에러, 결정 등)
-- [ ] 전달 채널 (웹/대화창/외부)
+- [ ] 전달 방식
+  - 메시지로 직접 전달 (대화창)
+  - 알림창 표시 (패널 열 때만 fetch)
+  - polling 없음
 - [ ] 우선순위 관리 (1-10)
 - [ ] 맥락 인지
 - [ ] 자연어 메시지 생성

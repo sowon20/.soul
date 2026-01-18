@@ -15,11 +15,19 @@ const memoryRoutes = require('../routes/memory');
 const aiModelsRoutes = require('../routes/ai-models');
 const configRoutes = require('../routes/config');
 const searchRoutes = require('../routes/search');
+const contextRoutes = require('../routes/context');
+const contextMgmtRoutes = require('../routes/context-management');
+const analogyRoutes = require('../routes/analogy');
+const nlpRoutes = require('../routes/nlp');
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/ai-models', aiModelsRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/context', contextRoutes);
+app.use('/api/context-mgmt', contextMgmtRoutes);
+app.use('/api/analogy', analogyRoutes);
+app.use('/api/nlp', nlpRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
