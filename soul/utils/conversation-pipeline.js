@@ -12,7 +12,7 @@
  */
 
 const { getMemoryManager } = require('./memory-layers');
-const { analyzeUsage } = require('./token-counter');
+const tokenCounter = require('./token-counter');
 const { shouldAutoCompress, compressMessages } = require('./context-compressor');
 const { detectContext } = require('./context-detector');
 
@@ -90,7 +90,7 @@ class ConversationPipeline {
       totalTokens += this._estimateTokens(userMessage);
 
       // 5. 토큰 사용량 분석
-      const usage = analyzeUsage(messages, this.config.model);
+      const usage = tokenCounter.analyzeUsage(messages, this.config.model);
 
       // 6. 자동 압축 필요 여부 체크
       if (usage.percentage >= this.config.compressionThreshold) {
@@ -100,7 +100,7 @@ class ConversationPipeline {
           messages: compressed.messages,
           totalTokens: compressed.totalTokens,
           compressed: true,
-          usage: analyzeUsage(compressed.messages, this.config.model),
+          usage: tokenCounter.analyzeUsage(compressed.messages, this.config.model),
           contextData
         };
       }

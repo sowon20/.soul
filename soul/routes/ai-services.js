@@ -7,7 +7,7 @@ const express = require('express');
 const router = express.Router();
 const AIService = require('../models/AIService');
 const APIKey = require('../models/APIKey');
-const AIServiceFactory = require('../utils/ai-service');
+const { AIServiceFactory } = require('../utils/ai-service');
 
 /**
  * GET /api/ai-services
@@ -308,10 +308,15 @@ router.post('/:id/refresh-models', async (req, res) => {
     }
 
     // 모델 목록 가져오기
-    const result = await AIServiceFactory.getAvailableModels(
-      service.type === 'openai-compatible' ? 'openai' : service.type,
-      apiKey
-    );
+    // xAI는 serviceId로 판단
+    let serviceType = service.type;
+    if (service.type === 'openai-compatible' && service.serviceId === 'xai') {
+      serviceType = 'xai';
+    } else if (service.type === 'openai-compatible') {
+      serviceType = 'openai';
+    }
+
+    const result = await AIServiceFactory.getAvailableModels(serviceType, apiKey);
 
     if (!result.success) {
       return res.status(400).json({
@@ -365,10 +370,15 @@ router.post('/:id/test', async (req, res) => {
     }
 
     // 연결 테스트 (API 키 검증)
-    const result = await AIServiceFactory.validateApiKey(
-      service.type === 'openai-compatible' ? 'openai' : service.type,
-      apiKey
-    );
+    // xAI는 serviceId로 판단
+    let serviceType = service.type;
+    if (service.type === 'openai-compatible' && service.serviceId === 'xai') {
+      serviceType = 'xai';
+    } else if (service.type === 'openai-compatible') {
+      serviceType = 'openai';
+    }
+
+    const result = await AIServiceFactory.validateApiKey(serviceType, apiKey);
 
     res.json({
       success: result.valid,
