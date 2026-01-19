@@ -40,6 +40,7 @@ const workersRoutes = require('../routes/workers');
 const notificationsRoutes = require('../routes/notifications');
 const nlpAdvancedRoutes = require('../routes/nlp-advanced');
 const profileRoutes = require('../routes/profile');
+const rolesRoutes = require('../routes/roles');
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/ai-models', aiModelsRoutes);
@@ -58,6 +59,7 @@ app.use('/api/workers', workersRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/nlp-advanced', nlpAdvancedRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/api/roles', rolesRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -84,7 +86,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-const PORT = process.env.PORT || 3080;
+const PORT = process.env.PORT || 4000;
 
 app.listen(PORT, () => {
   console.log(`🌟 Soul server running on port ${PORT}`);
