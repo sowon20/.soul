@@ -14,6 +14,7 @@ const { getTokenSafeguard } = require('../utils/token-safeguard');
 const { getSessionContinuity } = require('../utils/session-continuity');
 const { getSmartRouter } = require('../utils/smart-router');
 const { getPersonalityCore } = require('../utils/personality-core');
+const { detectRole, ROLES } = require('../config/roles');
 
 /**
  * POST /api/chat
@@ -29,6 +30,60 @@ router.post('/', async (req, res) => {
         success: false,
         error: 'Message is required'
       });
+    }
+
+    // 0. 역할 감지 - 전문 작업이 필요한지 확인
+    const detectedRole = detectRole(message);
+
+    if (detectedRole) {
+      // 전문 알바에게 위임
+      try {
+        const role = ROLES[detectedRole];
+        const modelId = role.preferredModel;
+
+        // AI 서비스 생성
+        const serviceName = modelId.includes('claude') ? 'anthropic'
+          : modelId.includes('gpt') ? 'openai'
+          : modelId.includes('gemini') ? 'google'
+          : 'anthropic';
+
+        const { AIServiceFactory } = require('../utils/ai-service');
+        const aiService = await AIServiceFactory.createService(serviceName, modelId);
+
+        // 역할 실행
+        const roleResult = await aiService.chat(
+          [{ role: 'user', content: message }],
+          {
+            systemPrompt: role.systemPrompt,
+            maxTokens: role.maxTokens,
+            temperature: role.temperature
+          }
+        );
+
+        // Soul의 목소리로 감싸기
+        const personality = getPersonalityCore();
+        const wrappedResponse = `${roleResult}`;  // PersonalityCore가 자동으로 일관성 유지
+
+        // 응답 저장 (메모리에 기록)
+        const pipeline = await getConversationPipeline({ model: modelId });
+        await pipeline.handleResponse(message, wrappedResponse, sessionId);
+
+        return res.json({
+          success: true,
+          sessionId,
+          message: wrappedResponse,
+          reply: wrappedResponse,
+          routing: {
+            selectedModel: role.name,
+            modelId: modelId,
+            reason: `전문 작업 감지: ${role.description}`,
+            delegatedRole: detectedRole
+          }
+        });
+      } catch (roleError) {
+        console.warn('역할 실행 실패, 일반 대화로 fallback:', roleError);
+        // 실패시 아래 일반 대화 로직으로 계속 진행
+      }
     }
 
     // 1. 스마트 라우팅 - 최적 모델 선택

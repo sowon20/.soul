@@ -52,7 +52,11 @@ class SoulApp {
     console.log('🌟 Soul UI 초기화 시작...');
 
     // Initialize managers
-    this.apiClient = new APIClient();
+    // API 서버는 4000 포트, 클라이언트는 8000 포트
+    const apiBaseURL = window.location.port === '8000'
+      ? `${window.location.protocol}//${window.location.hostname}:4000/api`
+      : '/api';
+    this.apiClient = new APIClient(apiBaseURL);
     this.themeManager = new ThemeManager();
     this.chatManager = new ChatManager(this.apiClient);
     this.panelManager = new PanelManager(this.apiClient);
