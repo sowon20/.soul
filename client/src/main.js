@@ -8,6 +8,7 @@ import { ChatManager } from './utils/chat-manager.js';
 import { PanelManager } from './utils/panel-manager.js';
 import { MenuManager } from './utils/menu-manager.js';
 import { APIClient } from './utils/api-client.js';
+import { initRoleManager } from './utils/role-manager.js';
 
 class SoulApp {
   constructor() {
@@ -61,6 +62,7 @@ class SoulApp {
     this.chatManager = new ChatManager(this.apiClient);
     this.panelManager = new PanelManager(this.apiClient);
     this.menuManager = new MenuManager();
+    this.roleManager = initRoleManager(this.apiClient);
 
     // Load user profile and theme
     await this.loadUserProfile();

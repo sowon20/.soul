@@ -33,6 +33,10 @@ export class MenuManager {
         title: '파일 관리',
         render: () => this.renderFiles(),
       },
+      roles: {
+        title: '역할 관리',
+        render: () => this.renderRoles(),
+      },
       mcp: {
         title: 'MCP 도구',
         render: () => this.renderMCP(),
@@ -209,6 +213,34 @@ export class MenuManager {
         </p>
       </div>
     `;
+  }
+
+  async renderRoles() {
+    // 역할 관리 UI 렌더링
+    this.subMenuContent.innerHTML = '<div class="loading">역할 관리 로딩 중...</div>';
+
+    try {
+      const roleManager = window.roleManager;
+      if (roleManager) {
+        const roleUI = await roleManager.render();
+        this.subMenuContent.innerHTML = '';
+        this.subMenuContent.appendChild(roleUI);
+      } else {
+        this.subMenuContent.innerHTML = `
+          <div class="error">
+            <p>역할 관리자를 초기화할 수 없습니다.</p>
+          </div>
+        `;
+      }
+    } catch (error) {
+      console.error('역할 UI 렌더링 실패:', error);
+      this.subMenuContent.innerHTML = `
+        <div class="error">
+          <p>역할 관리 UI를 불러오는데 실패했습니다.</p>
+          <p style="font-size: var(--font-size-sm); opacity: 0.7;">${error.message}</p>
+        </div>
+      `;
+    }
   }
 
   renderMCP() {
@@ -474,7 +506,43 @@ export class MenuManager {
   /**
    * AI 설정 렌더링
    */
-  renderAISettings() {
+  async renderAISettings() {
+    // AI 서비스 관리 UI 로딩
+    this.subMenuContent.innerHTML = '<div class="loading">AI 서비스 설정 로딩 중...</div>';
+
+    try {
+      // AIServiceManager 동적 import
+      const { AIServiceManager } = await import('./ai-service-manager.js');
+
+      // 컨테이너 생성
+      this.subMenuContent.innerHTML = `
+        <link rel="stylesheet" href="/src/styles/ai-service-manager.css">
+        <div class="ai-service-container">
+          <div class="ai-service-header">
+            <h1>🤖 AI 서비스 관리</h1>
+            <p>API 키 설정 및 서비스 활성화</p>
+          </div>
+          <div id="aiServiceList"></div>
+        </div>
+      `;
+
+      // AIServiceManager 초기화
+      const manager = new AIServiceManager();
+      window.aiServiceManager = manager; // 전역으로 노출
+      await manager.init();
+    } catch (error) {
+      console.error('AI 서비스 관리 UI 로드 실패:', error);
+      this.subMenuContent.innerHTML = `
+        <div style="padding: 2rem; text-align: center;">
+          <p style="color: #ef4444; margin-bottom: 1rem;">AI 서비스 관리를 불러오는데 실패했습니다.</p>
+          <p style="font-size: 0.875rem; opacity: 0.7;">${error.message}</p>
+        </div>
+      `;
+    }
+  }
+
+  // 기존 하드코딩 UI 백업 (필요시 복구)
+  renderAISettingsOld() {
     this.subMenuContent.innerHTML = `
       <div style="padding: 1.5rem;">
         <h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 2rem;">
