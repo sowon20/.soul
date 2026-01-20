@@ -14,7 +14,8 @@ const { getTokenSafeguard } = require('../utils/token-safeguard');
 const { getSessionContinuity } = require('../utils/session-continuity');
 const { getSmartRouter } = require('../utils/smart-router');
 const { getPersonalityCore } = require('../utils/personality-core');
-const { detectRole, ROLES } = require('../config/roles');
+const Role = require('../models/Role');
+const { getRoleSelector } = require('../utils/role-selector');
 
 /**
  * POST /api/chat
@@ -32,14 +33,48 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // 0. 역할 감지 - 전문 작업이 필요한지 확인
-    const detectedRole = detectRole(message);
+    // 0. 역할 감지 - LLM 기반 컨텍스트 이해
+    const startTime = Date.now();
+    let detectedRole = null;
+    let selectionInfo = null;
+
+    try {
+      // MongoDB에서 활성 역할 검색
+      const activeRoles = await Role.getActiveRoles();
+
+      if (activeRoles.length > 0) {
+        // RoleSelector로 지능형 역할 선택
+        const roleSelector = getRoleSelector();
+        const selection = await roleSelector.selectRole(message, activeRoles);
+
+        if (selection && selection.confidence >= 0.5) {
+          detectedRole = selection.role;
+          selectionInfo = {
+            confidence: selection.confidence,
+            reasoning: selection.reasoning,
+            method: selection.method
+          };
+          console.log(`✅ 역할 선택: ${detectedRole.name} (확신도: ${selection.confidence}, 방법: ${selection.method})`);
+          console.log(`   이유: ${selection.reasoning}`);
+        } else if (selection === null && activeRoles.length > 0) {
+          // 적합한 역할이 없음 → 새 역할 제안
+          console.log('⚠️ 적합한 역할 없음. 새 역할 제안 중...');
+          const suggestion = await roleSelector.suggestNewRole(message);
+
+          if (suggestion.success) {
+            console.log(`💡 제안: ${suggestion.suggestion.name} 역할 생성 권장`);
+            // TODO: 자동 생성 옵션 추가 (사용자 확인 후)
+          }
+        }
+      }
+    } catch (roleDetectError) {
+      console.warn('역할 감지 실패:', roleDetectError);
+    }
 
     if (detectedRole) {
       // 전문 알바에게 위임
       try {
-        const role = ROLES[detectedRole];
-        const modelId = role.preferredModel;
+        const modelId = detectedRole.preferredModel;
 
         // AI 서비스 생성
         const serviceName = modelId.includes('claude') ? 'anthropic'
@@ -54,15 +89,20 @@ router.post('/', async (req, res) => {
         const roleResult = await aiService.chat(
           [{ role: 'user', content: message }],
           {
-            systemPrompt: role.systemPrompt,
-            maxTokens: role.maxTokens,
-            temperature: role.temperature
+            systemPrompt: detectedRole.systemPrompt,
+            maxTokens: detectedRole.maxTokens,
+            temperature: detectedRole.temperature
           }
         );
 
+        // 성과 기록
+        const responseTime = Date.now() - startTime;
+        const tokensUsed = roleResult.length;
+        await detectedRole.recordUsage(true, tokensUsed, responseTime);
+
         // Soul의 목소리로 감싸기
         const personality = getPersonalityCore();
-        const wrappedResponse = `${roleResult}`;  // PersonalityCore가 자동으로 일관성 유지
+        const wrappedResponse = `${roleResult}`;
 
         // 응답 저장 (메모리에 기록)
         const pipeline = await getConversationPipeline({ model: modelId });
@@ -74,14 +114,23 @@ router.post('/', async (req, res) => {
           message: wrappedResponse,
           reply: wrappedResponse,
           routing: {
-            selectedModel: role.name,
+            selectedModel: detectedRole.name,
             modelId: modelId,
-            reason: `전문 작업 감지: ${role.description}`,
-            delegatedRole: detectedRole
+            reason: `전문 작업 감지: ${detectedRole.description}`,
+            delegatedRole: detectedRole.roleId,
+            successRate: detectedRole.getSuccessRate(),
+            selection: selectionInfo // LLM 선택 정보 추가
           }
         });
       } catch (roleError) {
         console.warn('역할 실행 실패, 일반 대화로 fallback:', roleError);
+
+        // 실패 기록
+        if (detectedRole) {
+          const responseTime = Date.now() - startTime;
+          await detectedRole.recordUsage(false, 0, responseTime);
+        }
+
         // 실패시 아래 일반 대화 로직으로 계속 진행
       }
     }

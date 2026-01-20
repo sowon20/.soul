@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -14,6 +14,11 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/soul')
   // 기본 AI 서비스 초기화
   const AIService = require('../models/AIService');
   await AIService.initializeBuiltInServices();
+
+  // 기본 역할(알바) 초기화
+  const Role = require('../models/Role');
+  await Role.initializeDefaultRoles();
+  console.log('✅ Role system initialized');
 })
 .catch(err => console.error('❌ MongoDB connection error:', err));
 
