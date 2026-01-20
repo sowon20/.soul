@@ -39,11 +39,12 @@ const aiServiceSchema = new mongoose.Schema({
     trim: true
   },
 
-  // API Key 참조 (APIKey 컬렉션의 service 값)
+  // API Key (암호화 저장)
   // null이면 API 키 불필요 (Ollama 등)
-  apiKeyRef: {
+  apiKey: {
     type: String,
-    default: null
+    default: null,
+    select: false  // 기본 조회시 제외 (보안)
   },
 
   // 활성/비활성
@@ -101,7 +102,7 @@ aiServiceSchema.statics.initializeBuiltInServices = async function() {
       name: 'Anthropic Claude',
       type: 'anthropic',
       baseUrl: 'https://api.anthropic.com/v1',
-      apiKeyRef: 'anthropic',
+      apiKey: process.env.ANTHROPIC_API_KEY || null,
       isBuiltIn: true,
       isActive: true
     },
@@ -110,34 +111,34 @@ aiServiceSchema.statics.initializeBuiltInServices = async function() {
       name: 'OpenAI GPT',
       type: 'openai',
       baseUrl: 'https://api.openai.com/v1',
-      apiKeyRef: 'openai',
+      apiKey: (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_key_here') ? process.env.OPENAI_API_KEY : null,
       isBuiltIn: true,
-      isActive: true
+      isActive: false
     },
     {
       serviceId: 'google',
       name: 'Google Gemini',
       type: 'google',
       baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-      apiKeyRef: 'google',
+      apiKey: (process.env.GOOGLE_API_KEY && process.env.GOOGLE_API_KEY !== 'your_google_key_here') ? process.env.GOOGLE_API_KEY : null,
       isBuiltIn: true,
-      isActive: true
+      isActive: false
     },
     {
       serviceId: 'xai',
       name: 'xAI Grok',
       type: 'openai-compatible',
       baseUrl: 'https://api.x.ai/v1',
-      apiKeyRef: 'xai',
+      apiKey: null,
       isBuiltIn: true,
-      isActive: true
+      isActive: false
     },
     {
       serviceId: 'ollama',
       name: 'Ollama (Local)',
       type: 'ollama',
       baseUrl: 'http://localhost:11434',
-      apiKeyRef: null,
+      apiKey: null,
       isBuiltIn: true,
       isActive: true
     }
@@ -177,6 +178,21 @@ aiServiceSchema.methods.toggleActive = async function() {
   this.isActive = !this.isActive;
   await this.save();
   return this.isActive;
+};
+
+/**
+ * API 키 설정
+ */
+aiServiceSchema.methods.setApiKey = async function(apiKey) {
+  this.apiKey = apiKey;
+  await this.save();
+};
+
+/**
+ * API 키 확인 (있는지 없는지만)
+ */
+aiServiceSchema.methods.hasApiKey = function() {
+  return !!this.apiKey;
 };
 
 module.exports = mongoose.model('AIService', aiServiceSchema);

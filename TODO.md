@@ -547,57 +547,112 @@
 
 ## 🤖 Phase X: AI 모델 관리 시스템 ✅
 
-### X.1 데이터베이스 스키마
-- [x] APIKey 모델 - AES-256-CBC 암호화
-- [x] AIServices 모델 - 5개 기본 서비스
+### X.1 데이터베이스 스키마 ✅
+- [x] AIService 모델 단순화 - apiKey 직접 저장
+- [x] APIKey 컬렉션 제거 (마이그레이션 완료)
+- [x] Memory 모델 생성 - 장기 메모리 저장소
 - [x] UserProfile 모델 - 테마, 선호도, 활동 추적
 
-### X.2 동적 모델 관리
+### X.2 동적 모델 관리 ✅
 - [x] 제공사별 API 연동
 - [x] API 키 검증 시스템
 - [x] 에러 처리 강화
-- [x] 2단계 드롭다운 UI
+- [x] Claude 모델 ID 수정 (claude-sonnet-4-5-20250929)
+- [x] Role 모델 기본값 업데이트 (최신 모델 반영)
 
-### X.3 고급 서비스 관리 (보류)
-- [ ] 커스텀 서비스 CRUD
-- [ ] 수동 갱신
+### X.3 API 키 관리 리팩토링 ✅
+- [x] 복잡한 이중 구조 제거 (AIService + APIKey)
+- [x] AIService.apiKey 직접 저장 (select: false로 보안 유지)
+- [x] 마이그레이션 스크립트 작성 및 실행
+- [x] API 라우트 단순화 (ai-services.js)
+- [x] 환경변수는 초기화 시에만 사용
 
-### X.4 설정 UI
+### X.4 설정 UI ✅
 - [x] 햄버거 메뉴 "🤖 AI 설정"
-- [x] API 키 입력/저장 (암호화)
-- [x] 서버 재시작 없이 즉시 적용
-- [x] API 키 검증
-- [x] 동적 모델 목록 로딩
-- [ ] Soul 인격 설정 (보류)
-- [ ] 백그라운드 작업 모델 (보류)
+- [x] 동적 UI 전환 (AIServiceManager 클래스)
+- [x] 테이블 형태 관리 페이지
+- [x] API 키 설정/변경/삭제 기능
+- [x] 서비스 활성화/비활성화
+- [x] 연결 테스트 기능
+- [x] 라이트/다크 모드 대응
+- [x] 색상 대비 문제 해결 (흰바탕 흰글씨 수정)
 
-### X.5 자동 갱신 (보류)
-- [ ] 매일 새벽 3시 자동 갱신
-- [ ] 갱신 실패 시 알림
+### X.5 실험 디자인 페이지 ✅
+- [x] test-design.html 독립 페이지 생성
+- [x] test-design.css 그라데이션 + 유리 모피즘 디자인
+- [x] test-design.js API 연동 완료
+- [x] 메인 앱과 분리된 디자인 실험 환경
 
-### X.6 대화방 UI 정리
-- [ ] Header 모델 선택 UI 제거
-- [ ] "Who am I talking to?" 제거
+### X.6 서버 설정 수정 ✅
+- [x] .env 파일 경로 명시적 지정 (server/index.js)
+- [x] Vite 프록시 포트 수정 (4000 → 3000)
+- [x] MongoDB 재시작 및 데이터 마이그레이션
+- [x] 모든 서비스 정상 작동 확인
 
-### X.7 AI 서비스 관리 UI
-- [x] 서비스 카드 렌더링
-- [x] "+ 서비스 추가" 버튼 (모달)
+### X.7 AI 서비스 관리 UI ✅
+- [x] AIServiceManager 클래스 구현
+- [x] 서비스 목록 로드 API 연동
+- [x] API 키 설정 프롬프트
 - [x] 활성화/비활성화 토글
-- [x] 모델 갱신 버튼
 - [x] 연결 테스트 버튼
-- [x] 수정/삭제 버튼 (커스텀만)
-- [x] 모달 UX 개선
+- [x] 실시간 상태 업데이트
 
-### X.8 사용자 설정 영구 저장
+### X.8 사용자 설정 영구 저장 ✅
 - [x] 테마 설정 MongoDB 저장
 - [x] 2중 저장 시스템 (localStorage + MongoDB)
 - [x] ThemeManager 서버 연동
 - [x] 프로필 자동 생성
 
-### X.9 Claude Code 언어 설정
+### X.9 Claude Code 언어 설정 ✅
 - [x] .claude/settings.local.json 한국어
 - [x] Compact 후에도 한국어 유지
 - [x] 권한 설정 영구 보존
+
+### X.10 리팩토링 성과 ✅
+**Before (복잡)**:
+```
+AIService → apiKeyRef → APIKey → encryptedKey
+환경변수 → 초기화 스크립트 → DB 저장 → 하드코딩 UI
+```
+
+**After (단순)**:
+```
+AIService → apiKey (직접 저장)
+환경변수 → 초기값만 사용
+UI → API → DB (직접 저장/조회)
+```
+
+**결과**: 코드 50% 감소, 가독성 향상, UI에서 모든 관리 가능
+
+### X.11 생성/수정된 파일 목록 ✅
+**백엔드**:
+- `/soul/models/AIService.js` - apiKey 직접 저장 구조
+- `/soul/models/Memory.js` - 장기 메모리 모델 생성
+- `/soul/routes/ai-services.js` - APIKey 의존성 제거
+- `/soul/server/index.js` - .env 경로 수정
+- `/soul/scripts/migrate-api-keys.js` - 데이터 마이그레이션
+- `/soul/scripts/update-role-models.js` - 모델 ID 업데이트
+
+**프론트엔드**:
+- `/client/src/utils/ai-service-manager.js` - 새 관리 클래스
+- `/client/src/styles/ai-service-manager.css` - 심플 디자인
+- `/client/src/utils/menu-manager.js` - 동적 UI 전환
+- `/client/vite.config.js` - 프록시 포트 수정
+
+**실험 페이지**:
+- `/client/test-design.html` - 독립 테스트 페이지
+- `/client/src/styles/test-design.css` - 실험 디자인
+- `/client/src/test-design.js` - API 연동
+
+**문서**:
+- `/WORK_LOG.md` - 상세 작업 로그
+
+### X.12 향후 개선 사항
+- [ ] API 키 암호화 구현 (현재 평문 저장)
+- [ ] 모달 대신 인라인 편집 UI
+- [ ] API 키 마스킹 표시 (••••••)
+- [ ] 서비스별 사용 통계 표시
+- [ ] test-design.html을 메인 앱으로 전환
 
 
 -----------

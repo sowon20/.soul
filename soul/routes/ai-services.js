@@ -6,7 +6,6 @@
 const express = require('express');
 const router = express.Router();
 const AIService = require('../models/AIService');
-const APIKey = require('../models/APIKey');
 const { AIServiceFactory } = require('../utils/ai-service');
 
 /**
@@ -15,33 +14,24 @@ const { AIServiceFactory } = require('../utils/ai-service');
  */
 router.get('/', async (req, res) => {
   try {
-    const services = await AIService.find().sort({ isBuiltIn: -1, name: 1 });
+    const services = await AIService.find().select('+apiKey').sort({ isBuiltIn: -1, name: 1 });
 
-    // API 키 설정 여부 확인
-    const servicesWithKeyStatus = await Promise.all(services.map(async (service) => {
-      let hasApiKey = false;
-      if (service.apiKeyRef) {
-        const keyDoc = await APIKey.findOne({ service: service.apiKeyRef });
-        hasApiKey = !!keyDoc;
-      }
-
-      return {
-        id: service._id,
-        serviceId: service.serviceId,
-        name: service.name,
-        type: service.type,
-        baseUrl: service.baseUrl,
-        isActive: service.isActive,
-        isBuiltIn: service.isBuiltIn,
-        hasApiKey: hasApiKey,
-        modelCount: service.models?.length || 0,
-        lastRefresh: service.lastRefresh
-      };
+    const servicesData = services.map(service => ({
+      id: service._id,
+      serviceId: service.serviceId,
+      name: service.name,
+      type: service.type,
+      baseUrl: service.baseUrl,
+      isActive: service.isActive,
+      isBuiltIn: service.isBuiltIn,
+      hasApiKey: !!service.apiKey,
+      modelCount: service.models?.length || 0,
+      lastRefresh: service.lastRefresh
     }));
 
     res.json({
       success: true,
-      services: servicesWithKeyStatus
+      services: servicesData
     });
   } catch (error) {
     console.error('Failed to fetch AI services:', error);
@@ -58,7 +48,7 @@ router.get('/', async (req, res) => {
  */
 router.get('/:id', async (req, res) => {
   try {
-    const service = await AIService.findById(req.params.id);
+    const service = await AIService.findById(req.params.id).select('+apiKey');
 
     if (!service) {
       return res.status(404).json({
@@ -75,7 +65,7 @@ router.get('/:id', async (req, res) => {
         name: service.name,
         type: service.type,
         baseUrl: service.baseUrl,
-        apiKeyRef: service.apiKeyRef,
+        hasApiKey: !!service.apiKey,
         isActive: service.isActive,
         isBuiltIn: service.isBuiltIn,
         models: service.models,
@@ -117,20 +107,13 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // API 키가 있으면 저장
-    let apiKeyRef = null;
-    if (apiKey && apiKey.trim()) {
-      await APIKey.saveKey(serviceId, apiKey);
-      apiKeyRef = serviceId;
-    }
-
     // 서비스 생성
     const service = new AIService({
       serviceId,
       name,
       type,
       baseUrl,
-      apiKeyRef,
+      apiKey: apiKey && apiKey.trim() ? apiKey : null,
       isBuiltIn: false,
       isActive: true
     });
@@ -161,7 +144,7 @@ router.post('/', async (req, res) => {
  */
 router.patch('/:id', async (req, res) => {
   try {
-    const service = await AIService.findById(req.params.id);
+    const service = await AIService.findById(req.params.id).select('+apiKey');
 
     if (!service) {
       return res.status(404).json({
@@ -179,11 +162,7 @@ router.patch('/:id', async (req, res) => {
 
     // API 키 업데이트
     if (apiKey !== undefined) {
-      if (apiKey && apiKey.trim()) {
-        const keyRef = service.apiKeyRef || service.serviceId;
-        await APIKey.saveKey(keyRef, apiKey);
-        service.apiKeyRef = keyRef;
-      }
+      service.apiKey = apiKey && apiKey.trim() ? apiKey : null;
     }
 
     await service.save();
@@ -194,7 +173,8 @@ router.patch('/:id', async (req, res) => {
       service: {
         id: service._id,
         serviceId: service.serviceId,
-        name: service.name
+        name: service.name,
+        hasApiKey: !!service.apiKey
       }
     });
   } catch (error) {
@@ -227,11 +207,6 @@ router.delete('/:id', async (req, res) => {
         success: false,
         error: '기본 제공 서비스는 삭제할 수 없습니다'
       });
-    }
-
-    // API 키도 함께 삭제
-    if (service.apiKeyRef) {
-      await APIKey.deleteOne({ service: service.apiKeyRef });
     }
 
     await AIService.findByIdAndDelete(req.params.id);
@@ -286,7 +261,7 @@ router.post('/:id/toggle', async (req, res) => {
  */
 router.post('/:id/refresh-models', async (req, res) => {
   try {
-    const service = await AIService.findById(req.params.id);
+    const service = await AIService.findById(req.params.id).select('+apiKey');
 
     if (!service) {
       return res.status(404).json({
@@ -295,16 +270,12 @@ router.post('/:id/refresh-models', async (req, res) => {
       });
     }
 
-    // API 키 가져오기
-    let apiKey = null;
-    if (service.apiKeyRef) {
-      apiKey = await APIKey.getKey(service.apiKeyRef);
-      if (!apiKey) {
-        return res.status(400).json({
-          success: false,
-          error: 'API 키가 설정되지 않았습니다'
-        });
-      }
+    // API 키 확인
+    if (!service.apiKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'API 키가 설정되지 않았습니다'
+      });
     }
 
     // 모델 목록 가져오기
@@ -316,7 +287,7 @@ router.post('/:id/refresh-models', async (req, res) => {
       serviceType = 'openai';
     }
 
-    const result = await AIServiceFactory.getAvailableModels(serviceType, apiKey);
+    const result = await AIServiceFactory.getAvailableModels(serviceType, service.apiKey);
 
     if (!result.success) {
       return res.status(400).json({
@@ -348,7 +319,7 @@ router.post('/:id/refresh-models', async (req, res) => {
  */
 router.post('/:id/test', async (req, res) => {
   try {
-    const service = await AIService.findById(req.params.id);
+    const service = await AIService.findById(req.params.id).select('+apiKey');
 
     if (!service) {
       return res.status(404).json({
@@ -357,16 +328,12 @@ router.post('/:id/test', async (req, res) => {
       });
     }
 
-    // API 키 가져오기
-    let apiKey = null;
-    if (service.apiKeyRef) {
-      apiKey = await APIKey.getKey(service.apiKeyRef);
-      if (!apiKey) {
-        return res.status(400).json({
-          success: false,
-          error: 'API 키가 설정되지 않았습니다'
-        });
-      }
+    // API 키 확인
+    if (!service.apiKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'API 키가 설정되지 않았습니다'
+      });
     }
 
     // 연결 테스트 (API 키 검증)
@@ -378,7 +345,7 @@ router.post('/:id/test', async (req, res) => {
       serviceType = 'openai';
     }
 
-    const result = await AIServiceFactory.validateApiKey(serviceType, apiKey);
+    const result = await AIServiceFactory.validateApiKey(serviceType, service.apiKey);
 
     res.json({
       success: result.valid,
