@@ -112,8 +112,13 @@ export class ChatManager {
         // 맨 아래로 스크롤
         this.scrollToBottom(false);
       }
+
+      // 로딩 완료 표시
+      this.messagesArea.classList.add('loaded');
     } catch (error) {
       console.error('최근 메시지 로드 실패:', error);
+      // 실패해도 로딩 완료 표시 (데모 메시지 보이게)
+      this.messagesArea.classList.add('loaded');
       // 실패하면 환영 메시지 표시
       this.addWelcomeMessage();
     }

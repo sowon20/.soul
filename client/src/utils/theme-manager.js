@@ -246,13 +246,20 @@ export class ThemeManager {
     }
 
     try {
+      // 1초 타임아웃 설정
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1000);
+
       const response = await fetch(`/api/profile/user/${this.userId}/theme`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(themeUpdate),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error('테마 설정 저장 실패');
@@ -261,7 +268,11 @@ export class ThemeManager {
       console.log('💾 서버에 테마 설정 저장 완료:', themeUpdate);
       return await response.json();
     } catch (error) {
-      console.error('서버 저장 오류 (로컬 저장은 유지):', error);
+      if (error.name === 'AbortError') {
+        console.warn('서버 저장 타임아웃 (로컬 저장은 유지)');
+      } else {
+        console.error('서버 저장 오류 (로컬 저장은 유지):', error);
+      }
       // 서버 저장 실패해도 로컬 저장은 유지됨
     }
   }

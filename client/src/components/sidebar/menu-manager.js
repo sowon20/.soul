@@ -33,6 +33,10 @@ export class MenuManager {
         title: '파일 관리',
         render: () => this.renderFiles(),
       },
+      profile: {
+        title: '프로필',
+        render: () => this.renderProfile(),
+      },
       roles: {
         title: '역할 관리',
         render: () => this.renderRoles(),
@@ -512,7 +516,7 @@ export class MenuManager {
 
     try {
       // AIServiceManager 동적 import
-      const { AIServiceManager } = await import('./ai-service-manager.js');
+      const { AIServiceManager } = await import('../../utils/ai-service-manager.js');
 
       // 컨테이너 생성
       this.subMenuContent.innerHTML = `
@@ -1364,6 +1368,77 @@ export class MenuManager {
     // 배경(오버레이) 클릭 시 닫기
     modal.addEventListener('click', () => {
       modal.remove();
+    });
+  }
+
+  /**
+   * 프로필 메뉴 렌더링 - Phase P
+   */
+  renderProfile() {
+    this.subMenuContent.innerHTML = `
+      <div class="profile-menu">
+        <h2 style="font-size: var(--font-size-xl); font-weight: 400; margin-bottom: 1.5rem;">
+          프로필 관리
+        </h2>
+
+        <div class="menu-description" style="background: rgba(255, 255, 255, 0.08); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: var(--font-size-sm); line-height: 1.6; opacity: 0.9;">
+          <p>소원님의 개인 정보를 관리하고, 소울이 참조할 수 있는 프로필을 설정합니다.</p>
+          <p style="margin-top: 0.5rem; font-size: 0.875rem; opacity: 0.8;">
+            필드를 자유롭게 추가/수정하고, 소울의 접근 권한을 설정할 수 있습니다.
+          </p>
+        </div>
+
+        <div class="menu-actions" style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <button
+            class="menu-action-btn"
+            onclick="window.soulApp.panelManager.openPanel('profile')"
+            style="padding: 1rem; background: rgba(96, 165, 250, 0.2); color: #ffffff; border: 1px solid rgba(96, 165, 250, 0.4); border-radius: 8px; cursor: pointer; font-size: var(--font-size-base); font-weight: 400; transition: all 0.2s; text-align: left;"
+          >
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <span style="font-size: 1.5rem;">👤</span>
+              <div>
+                <div style="font-weight: 500; margin-bottom: 0.25rem;">프로필 관리</div>
+                <div style="font-size: 0.875rem; opacity: 0.8;">개인 정보 및 커스텀 필드 편집</div>
+              </div>
+            </div>
+          </button>
+
+          <div style="background: rgba(255, 255, 255, 0.06); padding: 1rem; border-radius: 8px;">
+            <h3 style="font-size: var(--font-size-base); font-weight: 500; margin-bottom: 0.75rem;">
+              프로필 구성 요소
+            </h3>
+            <ul style="list-style: none; padding: 0; margin: 0; font-size: var(--font-size-sm); line-height: 2; opacity: 0.9;">
+              <li>✓ 기본 정보 (이름, 닉네임, 위치, 타임존)</li>
+              <li>✓ 커스텀 필드 (자유롭게 추가 가능)</li>
+              <li>✓ 권한 설정 (소울의 접근 범위 제어)</li>
+              <li>✓ 자동 컨텍스트 포함 (대화 시 자동 참조)</li>
+            </ul>
+          </div>
+
+          <div style="background: rgba(139, 92, 246, 0.15); padding: 1rem; border-radius: 8px; border: 1px solid rgba(139, 92, 246, 0.3);">
+            <h3 style="font-size: var(--font-size-base); font-weight: 500; margin-bottom: 0.5rem;">
+              💡 사용 팁
+            </h3>
+            <p style="font-size: var(--font-size-sm); line-height: 1.6; opacity: 0.9; margin: 0;">
+              프로필 정보는 대화 시 소울이 자동으로 참조합니다.
+              취향, 관심사, 중요한 날짜 등을 추가하면 더 개인화된 대화가 가능합니다.
+            </p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // 호버 효과
+    const actionBtns = this.subMenuContent.querySelectorAll('.menu-action-btn');
+    actionBtns.forEach(btn => {
+      btn.addEventListener('mouseenter', () => {
+        btn.style.background = 'rgba(96, 165, 250, 0.3)';
+        btn.style.transform = 'translateX(4px)';
+      });
+      btn.addEventListener('mouseleave', () => {
+        btn.style.background = 'rgba(96, 165, 250, 0.2)';
+        btn.style.transform = 'translateX(0)';
+      });
     });
   }
 }

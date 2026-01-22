@@ -1,0 +1,447 @@
+/**
+ * Settings UI Styles
+ * 설정 페이지 공통 스타일
+ */
+
+/* 설정 컨테이너 */
+.settings-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 0.375rem;
+}
+
+/* 설정 네비게이션 */
+.settings-nav {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  margin: 0;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 0.375rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.settings-nav-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.settings-nav-item.active {
+  background: rgba(96, 165, 250, 0.2);
+  border-color: rgba(96, 165, 250, 0.4);
+  color: white;
+}
+
+.nav-icon {
+  font-size: 1rem;
+}
+
+.nav-label {
+  font-size: 0.7rem;
+}
+
+/* 설정 컨텐츠 래퍼 (스크롤바 오버레이) */
+.settings-content-wrapper {
+  padding-right: 6px;
+  margin-right: -6px;
+}
+
+/* 설정 컨텐츠 */
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0;
+  min-height: 0;
+}
+
+/* 스크롤바 스타일 - 겹쳐지도록 */
+.settings-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.settings-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-content::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.settings-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.settings-content {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  scrollbar-gutter: stable;
+}
+
+/* 섹션 */
+.settings-section {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.375rem;
+  padding: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.settings-section:first-child {
+  margin-top: 0;
+}
+
+.settings-section:last-child {
+  margin-bottom: 0.5rem;
+}
+
+.settings-section-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.settings-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+/* 필드 목록 */
+.settings-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* 개별 필드 */
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.settings-field-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.settings-field label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.settings-field-hint {
+  font-size: 0.7rem;
+  color: rgba(239, 68, 68, 0.8);
+  margin-top: 0.25rem;
+}
+
+/* 토글 버튼 */
+.settings-field-toggles {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  margin: 0;
+}
+
+.toggle-checkbox {
+  display: none;
+}
+
+.toggle-icon {
+  font-size: 1rem;
+  opacity: 0.7;
+  transition: all 0.2s;
+  padding: 0.2rem;
+  border-radius: 0.25rem;
+}
+
+.toggle-label:hover .toggle-icon {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 입력 필드 */
+.settings-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.375rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.8rem;
+  transition: border-color 0.2s;
+}
+
+.settings-input:focus {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.6);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+}
+
+/* 버튼 */
+.settings-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-btn-add {
+  background: rgba(96, 165, 250, 0.25);
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(96, 165, 250, 0.4);
+}
+
+.settings-btn-add:hover {
+  background: rgba(96, 165, 250, 0.35);
+  transform: translateY(-1px);
+}
+
+/* 커스텀 필드 */
+.settings-custom-field {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.375rem;
+  cursor: move;
+  transition: all 0.2s;
+}
+
+.settings-custom-field:hover {
+  border-color: rgba(96, 165, 250, 0.4);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.settings-field-drag-handle {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: grab;
+  display: flex;
+  align-items: center;
+}
+
+.settings-field-drag-handle:active {
+  cursor: grabbing;
+}
+
+.settings-field-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-field-label {
+  flex: 1;
+  font-weight: 600;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.8rem;
+}
+
+.settings-field-label:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.settings-field-label:focus {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.settings-field-delete {
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: rgba(239, 68, 68, 0.8);
+  font-size: 1.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  line-height: 1;
+}
+
+.settings-field-delete:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: white;
+}
+
+.settings-field-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.8rem;
+  transition: border-color 0.2s;
+}
+
+.settings-field-input:focus {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.6);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.15);
+}
+
+textarea.settings-field-input {
+  min-height: 4rem;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.settings-field-meta {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.settings-field-type {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.settings-field-type:focus {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.5);
+}
+
+/* 빈 상태 */
+.settings-empty {
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  padding: 2rem 1rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+/* 에러 상태 */
+.settings-error {
+  padding: 2rem;
+  text-align: center;
+  color: var(--destructive);
+}
+
+.settings-error p {
+  margin: 0.5rem 0;
+}
+
+/* 플레이스홀더 */
+.settings-placeholder {
+  padding: 3rem 2rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.settings-placeholder h3 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+/* 저장 상태 */
+.settings-save-status {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  display: none;
+  z-index: 1000;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.settings-save-status.info {
+  background: var(--primary);
+  color: white;
+}
+
+.settings-save-status.success {
+  background: var(--success, #10b981);
+  color: white;
+}
+
+.settings-save-status.error {
+  background: var(--destructive);
+  color: white;
+}
+
+/* 반응형 */
+@media (max-width: 768px) {
+  .settings-nav {
+    flex-direction: column;
+  }
+
+  .nav-label {
+    font-size: 0.85rem;
+  }
+}

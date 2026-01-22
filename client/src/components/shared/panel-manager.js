@@ -3,6 +3,8 @@
  * 오른쪽 패널 관리
  */
 
+import { ProfileManager } from '../../utils/profile-manager.js';
+
 export class PanelManager {
   constructor(apiClient) {
     this.apiClient = apiClient;
@@ -51,6 +53,10 @@ export class PanelManager {
       terminal: {
         title: '터미널',
         render: () => this.renderTerminalPanel(),
+      },
+      profile: {
+        title: '프로필',
+        render: () => this.renderProfilePanel(),
       },
     };
   }
@@ -316,5 +322,10 @@ export class PanelManager {
         </p>
       </div>
     `;
+  }
+
+  async renderProfilePanel() {
+    const profileManager = new ProfileManager(this.apiClient);
+    await profileManager.renderProfilePanel(this.panelContent);
   }
 }
