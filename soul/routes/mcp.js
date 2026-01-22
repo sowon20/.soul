@@ -3,6 +3,29 @@ const router = express.Router();
 const fs = require('fs').promises;
 const path = require('path');
 
+// 서버 상태 설정 파일 경로
+const CONFIG_PATH = path.join(__dirname, '../../mcp/server-config.json');
+
+/**
+ * 서버 설정 로드
+ */
+async function loadServerConfig() {
+  try {
+    const data = await fs.readFile(CONFIG_PATH, 'utf-8');
+    return JSON.parse(data);
+  } catch {
+    // 파일이 없으면 기본값 반환
+    return { servers: {} };
+  }
+}
+
+/**
+ * 서버 설정 저장
+ */
+async function saveServerConfig(config) {
+  await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
+}
+
 /**
  * GET /api/mcp/servers
  * MCP 서버 목록 조회
@@ -11,6 +34,9 @@ router.get('/servers', async (req, res) => {
   try {
     // soul 디렉토리가 아닌 프로젝트 루트의 mcp 폴더
     const mcpPath = path.join(__dirname, '../../mcp');
+
+    // 저장된 서버 설정 로드
+    const config = await loadServerConfig();
 
     // tools 디렉토리에서 도구 목록 가져오기
     const toolsPath = path.join(mcpPath, 'tools');
@@ -24,7 +50,7 @@ router.get('/servers', async (req, res) => {
       name: 'Soul Hub Server',
       description: 'Soul의 내장 MCP 서버 - 메모리, 컨텍스트, NLP 도구 제공',
       type: 'built-in',
-      enabled: true,
+      enabled: config.servers['hub-server']?.enabled ?? true,
       tools: toolFiles.filter(f => f.endsWith('.js')).map(f => f.replace('.js', ''))
     });
 
@@ -50,7 +76,7 @@ router.get('/servers', async (req, res) => {
           name: packageJson.description || dir.name,
           description: packageJson.description || `${dir.name} MCP Server`,
           type: 'external',
-          enabled: false, // 기본적으로 비활성화
+          enabled: config.servers[dir.name]?.enabled ?? false,
           tools: [], // 외부 서버는 별도로 실행되어야 도구 조회 가능
           port: portMap[dir.name] || null,
           webUI: portMap[dir.name] ? `http://localhost:${portMap[dir.name]}` : null
@@ -135,15 +161,173 @@ router.post('/servers/:id/enable', async (req, res) => {
     const { id } = req.params;
     const { enabled } = req.body;
 
-    // TODO: 서버 활성화/비활성화 상태 저장
+    // 설정 로드
+    const config = await loadServerConfig();
+
+    // 서버 상태 업데이트
+    if (!config.servers) {
+      config.servers = {};
+    }
+    config.servers[id] = { enabled: !!enabled };
+
+    // 설정 저장
+    await saveServerConfig(config);
+
+    console.log(`[MCP] Server ${id} ${enabled ? 'enabled' : 'disabled'}`);
 
     res.json({
       success: true,
       server: id,
-      enabled
+      enabled: !!enabled
     });
   } catch (error) {
     console.error('Error toggling server:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/mcp/google-home/control
+ * Google Home 기기 제어
+ */
+router.post('/google-home/control', async (req, res) => {
+  try {
+    const { command } = req.body;
+
+    if (!command) {
+      return res.status(400).json({
+        success: false,
+        error: 'command is required'
+      });
+    }
+
+    // MCP 도구 실행
+    const { executeMCPTool, loadMCPTools } = require('../utils/mcp-tools');
+    loadMCPTools();
+
+    const result = await executeMCPTool('control_smart_device', { command });
+
+    res.json({
+      success: true,
+      command,
+      result
+    });
+  } catch (error) {
+    console.error('Error controlling device:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/mcp/google-home/devices
+ * Google Home 기기 목록 조회
+ */
+router.get('/google-home/devices', async (req, res) => {
+  try {
+    const devicesPath = path.join(__dirname, '../../mcp/google-home/devices.json');
+
+    if (!await fs.access(devicesPath).then(() => true).catch(() => false)) {
+      return res.json({
+        success: false,
+        error: 'devices.json not found. Parse HomeApp.json first.',
+        devices: []
+      });
+    }
+
+    const devices = JSON.parse(await fs.readFile(devicesPath, 'utf-8'));
+
+    // 구조물 > 방 > 기기 계층 구조로 그룹화
+    const byStructure = {};
+    for (const device of devices) {
+      const structure = device.structure || '미지정';
+      const room = device.room || '미지정';
+
+      if (!byStructure[structure]) {
+        byStructure[structure] = { rooms: {}, deviceCount: 0 };
+      }
+      if (!byStructure[structure].rooms[room]) {
+        byStructure[structure].rooms[room] = [];
+      }
+
+      byStructure[structure].rooms[room].push({
+        id: device.id,
+        name: device.name,
+        type: device.type,
+        state: device.state,
+        online: device.online,
+        structure,
+        room
+      });
+      byStructure[structure].deviceCount++;
+    }
+
+    // 구버전 호환: byRoom도 제공
+    const byRoom = {};
+    for (const device of devices) {
+      const room = device.room || '미지정';
+      if (!byRoom[room]) byRoom[room] = [];
+      byRoom[room].push({
+        id: device.id,
+        name: device.name,
+        type: device.type,
+        state: device.state,
+        online: device.online,
+        structure: device.structure,
+        room
+      });
+    }
+
+    res.json({
+      success: true,
+      total: devices.length,
+      byStructure,
+      byRoom,
+      devices
+    });
+  } catch (error) {
+    console.error('Error getting Google Home devices:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/mcp/google-home/summary
+ * Google Home 요약 정보
+ */
+router.get('/google-home/summary', async (req, res) => {
+  try {
+    const devicesPath = path.join(__dirname, '../../mcp/google-home/devices.json');
+
+    if (!await fs.access(devicesPath).then(() => true).catch(() => false)) {
+      return res.json({
+        success: false,
+        connected: false,
+        message: 'Google Home 연결 안됨'
+      });
+    }
+
+    const devices = JSON.parse(await fs.readFile(devicesPath, 'utf-8'));
+    const onCount = devices.filter(d => d.state?.on === true).length;
+    const rooms = [...new Set(devices.map(d => d.room))].filter(Boolean);
+
+    res.json({
+      success: true,
+      connected: true,
+      총기기: devices.length,
+      켜진기기: onCount,
+      방수: rooms.length,
+      방목록: rooms
+    });
+  } catch (error) {
     res.status(500).json({
       success: false,
       error: error.message

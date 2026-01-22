@@ -250,17 +250,25 @@ export class MenuManager {
     }
   }
 
-  renderMCP() {
-    this.subMenuContent.innerHTML = `
-      <div class="mcp">
-        <h2 style="font-size: var(--font-size-xl); font-weight: 400; margin-bottom: 1.5rem;">
-          MCP 도구
-        </h2>
-        <p style="font-size: var(--font-size-sm); opacity: 0.7; text-align: center; padding: 2rem;">
-          MCP 도구가 연결되지 않았습니다.
-        </p>
-      </div>
-    `;
+  async renderMCP() {
+    // MCP Manager 로드
+    this.subMenuContent.innerHTML = '<div class="loading" style="padding: 2rem; text-align: center;">MCP 관리자 로딩 중...</div>';
+
+    try {
+      const { MCPManager } = await import('../mcp/mcp-manager.js');
+      const mcpManager = new MCPManager(window.soulApp.apiClient);
+
+      // MCP Manager 렌더링
+      await mcpManager.render(this.subMenuContent);
+    } catch (error) {
+      console.error('MCP Manager 로드 실패:', error);
+      this.subMenuContent.innerHTML = `
+        <div style="padding: 2rem; text-align: center;">
+          <p style="color: #ef4444; margin-bottom: 1rem;">MCP 관리자를 불러오는데 실패했습니다.</p>
+          <p style="font-size: 0.875rem; opacity: 0.7;">${error.message}</p>
+        </div>
+      `;
+    }
   }
 
   renderSettings() {

@@ -1,0 +1,7 @@
+{
+  "servers": {
+    "google-home": {
+      "enabled": true
+    }
+  }
+}
