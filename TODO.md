@@ -603,44 +603,53 @@ src/
 ## 📝 Phase P 작업 완료 메모 (2026-01-22)
 
 ### 주요 구현 내용
-1. **Profile 모델** (`/soul/models/Profile.js`)
-   - basicInfo: 이름, 닉네임, 위치, 타임존 등 고정 필드
-   - customFields[]: 동적 필드 (text, number, date, tag, list, url, select)
-   - permissions: 소울 접근 권한 제어 (readScope, canWrite, canDelete, autoIncludeInContext)
-   - 메서드: addField, updateField, deleteField, reorderFields, generateSummary, findFieldsByKeywords
 
-2. **API 엔드포인트** (`/soul/routes/profile.js`)
-   - 프로필 CRUD: GET/POST/PUT/DELETE /api/profile/p/*
-   - 필드 관리: POST/PUT/DELETE /api/profile/p/fields/*
-   - 권한 관리: GET/PATCH /api/profile/p/permissions
-   - 키워드 검색: GET /api/profile/p/summary?keywords=...
+#### 1. Profile 모델 구현 ✅
+- [x] `/soul/models/Profile.js` 생성
+- [x] basicInfo 고정 필드 (이름, 닉네임, 위치, 타임존 등)
+- [x] customFields[] 동적 필드 (text, number, date, tag, list, url, select)
+- [x] permissions 권한 제어 (readScope, canWrite, canDelete, autoIncludeInContext)
+- [x] 필드 관리 메서드 (addField, updateField, deleteField, reorderFields)
+- [x] 요약 생성 메서드 (generateSummary, findFieldsByKeywords)
 
-3. **프론트엔드**
-   - ProfileManager 클래스 (`/client/src/utils/profile-manager.js`)
-   - Inline 편집, 드래그 앤 드롭 정렬
-   - 실시간 자동 저장
-   - 프로필 스타일 (`/client/src/styles/profile-manager.css`)
-   - 메뉴 통합 (menu-manager.js, panel-manager.js)
+#### 2. API 엔드포인트 구현 ✅
+- [x] `/soul/routes/profile.js` Phase P API 추가
+- [x] 프로필 CRUD: GET/POST/PUT/DELETE /api/profile/p/*
+- [x] 필드 관리: POST/PUT/DELETE /api/profile/p/fields/*
+- [x] 권한 관리: GET/PATCH /api/profile/p/permissions
+- [x] 키워드 검색: GET /api/profile/p/summary?keywords=...
 
-4. **소울 통합**
-   - conversation-pipeline.js: 시스템 프롬프트에 프로필 요약 자동 포함
-   - context-detector.js: 개인 키워드 감지 시 상세 필드 로드
-   - _buildSystemPromptWithProfile(): 대화 시작 시 프로필 자동 주입
-   - _buildProfileFieldsPrompt(): 키워드 기반 상세 정보 주입
+#### 3. 프론트엔드 UI 구현 ✅
+- [x] `/client/src/utils/profile-manager.js` ProfileManager 클래스
+- [x] `/client/src/styles/profile-manager.css` 프로필 스타일
+- [x] Inline 편집 기능
+- [x] 드래그 앤 드롭 정렬
+- [x] 실시간 자동 저장
+- [x] `/client/src/utils/panel-manager.js` 프로필 패널 통합
+- [x] `/client/src/utils/menu-manager.js` 프로필 메뉴 통합
+- [x] `/client/src/main.js` 프로필 버튼 베이지 레이어 연결
 
-5. **테스트**
-   - test-profile-api.sh: 8개 API 엔드포인트 테스트
-   - 권한 체크 로직 구현
-   - UI 상호작용 구현
+#### 4. 소울 AI 통합 ✅
+- [x] `/soul/utils/conversation-pipeline.js` 프로필 통합
+  - [x] _buildSystemPromptWithProfile() - 대화 시작 시 프로필 자동 주입
+  - [x] _buildProfileFieldsPrompt() - 키워드 기반 상세 정보 주입
+- [x] `/soul/utils/context-detector.js` 개인 키워드 감지
+  - [x] 개인 정보 관련 키워드 감지 시 상세 필드 로드
+
+#### 5. 테스트 스크립트 작성 ✅
+- [x] `/scripts/test-profile-api.sh` 생성
+- [x] 8개 API 엔드포인트 테스트
+- [x] 권한 체크 로직 검증
+- [x] UI 상호작용 테스트
 
 ### 핵심 기능
-- ✅ 사용자 프로필 동적 관리 (필드 자유 추가/수정/삭제)
-- ✅ 소울 접근 권한 세밀 제어 (full/limited/minimal)
-- ✅ 대화 시 자동 컨텍스트 포함
-- ✅ 키워드 감지 시 관련 필드 자동 로드
-- ✅ Inline 편집 & 드래그 앤 드롭 UI
+- [x] 사용자 프로필 동적 관리 (필드 자유 추가/수정/삭제)
+- [x] 소울 접근 권한 세밀 제어 (full/limited/minimal)
+- [x] 대화 시 자동 컨텍스트 포함
+- [x] 키워드 감지 시 관련 필드 자동 로드
+- [x] Inline 편집 & 드래그 앤 드롭 UI
 
-### 아키텍처
+### 아키텍처 흐름
 ```
 사용자 대화
     ↓
@@ -653,55 +662,40 @@ Profile.generateSummary() (권한 기반 요약)
 시스템 프롬프트 자동 구성
 ```
 
-### 생성된 파일
-- `/soul/models/Profile.js`
-- `/soul/routes/profile.js` (Phase P API 추가)
-- `/client/src/utils/profile-manager.js`
-- `/client/src/styles/profile-manager.css`
-- `/client/index.html` (CSS 추가)
-- `/scripts/test-profile-api.sh`
-
-### 수정된 파일
-- `/soul/utils/conversation-pipeline.js` (프로필 통합)
-- `/soul/utils/context-detector.js` (개인 키워드 감지)
-- `/client/src/utils/panel-manager.js` (프로필 패널 추가)
-- `/client/src/utils/menu-manager.js` (프로필 메뉴 추가)
-- `/client/src/main.js` (프로필 버튼 베이지 레이어 연결 - 2026-01-22)
-
 ### 2026-01-22 추가 작업
 
 #### 설정 페이지 프레임워크 리팩토링 ✅
-- ✅ **컴포넌트 기반 아키텍처로 전면 재구성**
-  - `settings/settings-manager.js`: 메인 프레임워크 (라우팅, 네비게이션)
-  - `settings/components/`: 각 설정 페이지를 독립 컴포넌트로 분리
-    - `profile-settings.js`: 프로필 설정 컴포넌트
-    - `ai-settings.js`: AI 설정 (플레이스홀더)
-    - `theme-settings.js`: 테마 설정 (플레이스홀더)
-  - `settings/styles/settings.css`: 공통 스타일 (모듈 방식으로 임포트)
+- [x] 컴포넌트 기반 아키텍처로 전면 재구성
+  - [x] `settings/settings-manager.js` 메인 프레임워크 (라우팅, 네비게이션)
+  - [x] `settings/components/` 각 설정 페이지 독립 컴포넌트
+    - [x] `profile-settings.js` 프로필 설정
+    - [x] `ai-settings.js` AI 설정 (플레이스홀더)
+    - [x] `theme-settings.js` 테마 설정 (플레이스홀더)
+  - [x] `settings/styles/settings.css` 공통 스타일
 
-- ✅ **동적 모듈 로딩**
-  - 각 설정 페이지는 필요할 때만 동적으로 로드 (`import()`)
-  - 컴포넌트 캐싱으로 재사용 효율성 증대
-  - CSS도 JavaScript 모듈로 임포트하여 Vite가 자동 핫 리로드
+- [x] 동적 모듈 로딩
+  - [x] 필요할 때만 동적 로드 (`import()`)
+  - [x] 컴포넌트 캐싱으로 재사용 효율성 증대
+  - [x] CSS는 main.css에서 import (Vite HMR)
 
-- ✅ **탭 네비게이션**
-  - 프로필, AI 설정, 테마 설정 간 쉬운 전환
-  - 활성 상태 표시 및 부드러운 전환
+- [x] 탭 네비게이션
+  - [x] 프로필, AI 설정, 테마 설정 간 전환
+  - [x] 활성 상태 표시 및 부드러운 전환
 
 #### 프로필 설정 기능 ✅
-- ✅ 기본 정보 필드 (실용적인 개인정보)
-  - 이름, 닉네임, 이메일, 전화번호, 생년월일
-  - 성별, 주민번호(민감정보), 국가, 주소
-  - 타임존, 언어 (시스템용)
-- ✅ 각 필드마다 개별 공개 설정 토글
-  - 👁️/🔒: 소울에게 공개 여부
-  - 🔄/⏸️: 자동으로 컨텍스트에 포함 여부
-- ✅ 백엔드 API 연동
-  - PUT /api/profile/p/basic/:fieldKey - 값 업데이트
-  - PUT /api/profile/p/basic/:fieldKey/visibility - 공개 설정 업데이트
-- ✅ Profile 모델 스키마
-  - basicInfo 각 필드마다 { value, visibility } 구조
-  - fieldVisibilitySchema 지원
+- [x] 기본 정보 필드 (실용적인 개인정보)
+  - [x] 이름, 닉네임, 이메일, 전화번호, 생년월일
+  - [x] 성별, 주민번호(민감정보), 국가, 주소
+  - [x] 타임존, 언어 (시스템용)
+- [x] 각 필드 개별 공개 설정 토글
+  - [x] 👁️/🔒 소울에게 공개 여부
+  - [x] 🔄/⏸️ 자동 컨텍스트 포함 여부
+- [x] 백엔드 API 연동
+  - [x] PUT /api/profile/p/basic/:fieldKey - 값 업데이트
+  - [x] PUT /api/profile/p/basic/:fieldKey/visibility - 공개 설정 업데이트
+- [x] Profile 모델 스키마
+  - [x] basicInfo 각 필드마다 { value, visibility } 구조
+  - [x] fieldVisibilitySchema 지원
 
 ---
 
