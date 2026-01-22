@@ -1,6 +1,8 @@
 /**
  * Settings Manager
  * 설정 페이지 프레임워크 - 컴포넌트 기반 라우팅
+ *
+ * Note: CSS는 main.css에서 import됨
  */
 
 export class SettingsManager {
@@ -8,18 +10,12 @@ export class SettingsManager {
     this.apiClient = apiClient;
     this.currentPage = null;
     this.components = new Map();
-    this.cssLoaded = false;
   }
 
   /**
    * 설정 페이지 렌더링
    */
   async render(container, pageName = 'profile') {
-    // CSS 동적 로드 (한 번만)
-    if (!this.cssLoaded) {
-      await import('./styles/settings.css');
-      this.cssLoaded = true;
-    }
 
     // 컨테이너 초기화
     container.innerHTML = `

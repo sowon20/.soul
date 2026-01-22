@@ -508,37 +508,23 @@ export class MenuManager {
   }
 
   /**
-   * AI 설정 렌더링
+   * AI 설정 렌더링 - SettingsManager 사용
    */
   async renderAISettings() {
-    // AI 서비스 관리 UI 로딩
-    this.subMenuContent.innerHTML = '<div class="loading">AI 서비스 설정 로딩 중...</div>';
+    // Settings 프레임워크 로드
+    this.subMenuContent.innerHTML = '<div class="loading">AI 설정 로딩 중...</div>';
 
     try {
-      // AIServiceManager 동적 import
-      const { AIServiceManager } = await import('../../utils/ai-service-manager.js');
+      const { SettingsManager } = await import('../../settings/settings-manager.js');
+      const settingsManager = new SettingsManager(window.soulApp.apiClient);
 
-      // 컨테이너 생성
-      this.subMenuContent.innerHTML = `
-        <link rel="stylesheet" href="/src/styles/ai-service-manager.css">
-        <div class="ai-service-container">
-          <div class="ai-service-header">
-            <h1>🤖 AI 서비스 관리</h1>
-            <p>API 키 설정 및 서비스 활성화</p>
-          </div>
-          <div id="aiServiceList"></div>
-        </div>
-      `;
-
-      // AIServiceManager 초기화
-      const manager = new AIServiceManager();
-      window.aiServiceManager = manager; // 전역으로 노출
-      await manager.init();
+      // Settings 프레임워크를 subMenuContent에 렌더링하고 'ai' 페이지 표시
+      await settingsManager.render(this.subMenuContent, 'ai');
     } catch (error) {
-      console.error('AI 서비스 관리 UI 로드 실패:', error);
+      console.error('AI 설정 로드 실패:', error);
       this.subMenuContent.innerHTML = `
         <div style="padding: 2rem; text-align: center;">
-          <p style="color: #ef4444; margin-bottom: 1rem;">AI 서비스 관리를 불러오는데 실패했습니다.</p>
+          <p style="color: #ef4444; margin-bottom: 1rem;">AI 설정을 불러오는데 실패했습니다.</p>
           <p style="font-size: 0.875rem; opacity: 0.7;">${error.message}</p>
         </div>
       `;
