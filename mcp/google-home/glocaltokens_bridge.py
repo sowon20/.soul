@@ -36,43 +36,104 @@ def get_master_token(username, password, android_id=None):
     return client.get_master_token()
 
 
-def get_devices(username=None, password=None, master_token=None, android_id=None):
-    """Google Home 기기 목록과 로컬 토큰 조회
+def discover_devices_mdns(timeout=5):
+    """mDNS/Zeroconf로 Google Cast 기기 검색 (인증 불필요)"""
+    try:
+        from zeroconf import Zeroconf, ServiceBrowser
+        import socket
+        import time
+    except ImportError:
+        return None, "zeroconf 패키지가 필요합니다: pip install zeroconf"
 
-    참고: master_token을 사용할 때도 username이 필요할 수 있습니다.
-    """
+    devices = []
+
+    class CastListener:
+        def add_service(self, zc, type_, name):
+            info = zc.get_service_info(type_, name)
+            if info:
+                device_name = name.replace("._googlecast._tcp.local.", "")
+                ip = socket.inet_ntoa(info.addresses[0]) if info.addresses else None
+                devices.append({
+                    "device_name": info.properties.get(b'fn', b'').decode('utf-8') or device_name,
+                    "device_id": info.properties.get(b'id', b'').decode('utf-8'),
+                    "model": info.properties.get(b'md', b'').decode('utf-8'),
+                    "ip": ip,
+                    "port": info.port
+                })
+                print(f"  📡 발견: {devices[-1]['device_name']} ({ip})", file=sys.stderr)
+
+        def remove_service(self, zc, type_, name):
+            pass
+
+        def update_service(self, zc, type_, name):
+            pass
+
+    print(f"[mDNS] Google Cast 기기 검색 중... ({timeout}초)", file=sys.stderr)
+    zc = Zeroconf()
+    listener = CastListener()
+    browser = ServiceBrowser(zc, "_googlecast._tcp.local.", listener)
+
+    time.sleep(timeout)
+    zc.close()
+
+    print(f"[mDNS] 검색 완료: {len(devices)}개 기기 발견", file=sys.stderr)
+    return devices, None
+
+
+def get_devices(username=None, password=None, master_token=None, android_id=None):
+    """Google Home 기기 목록과 로컬 토큰 조회"""
     print(f"[glocaltokens] 기기 검색 시작...", file=sys.stderr)
     print(f"[glocaltokens] username: {username}", file=sys.stderr)
     print(f"[glocaltokens] master_token: {'있음' if master_token else '없음'}", file=sys.stderr)
 
-    # master_token이 있으면 password 없이 사용
+    # 먼저 mDNS로 기기 검색 시도
+    mdns_devices, mdns_error = discover_devices_mdns()
+    if mdns_devices:
+        print(f"[mDNS] {len(mdns_devices)}개 기기를 mDNS로 발견", file=sys.stderr)
+
+    # glocaltokens로 로컬 토큰 획득 시도
     kwargs = {
         "username": username,
         "master_token": master_token,
         "verbose": True
     }
-    # password는 master_token 없을 때만 추가
     if password and not master_token:
         kwargs["password"] = password
     if android_id:
         kwargs["android_id"] = android_id
 
-    client = GLocalAuthenticationTokens(**kwargs)
+    try:
+        client = GLocalAuthenticationTokens(**kwargs)
+        print(f"[glocaltokens] 클라이언트 생성됨, 토큰 조회 중...", file=sys.stderr)
 
-    print(f"[glocaltokens] 클라이언트 생성됨, 기기 검색 중...", file=sys.stderr)
+        devices_json = client.get_google_devices_json()
+        glocal_devices = json.loads(devices_json) if devices_json else []
 
-    # get_google_devices_json()은 JSON 문자열을 반환하므로 파싱 필요
-    devices_json = client.get_google_devices_json()
-    devices = json.loads(devices_json) if devices_json else []
+        print(f"[glocaltokens] {len(glocal_devices)}개 기기 (토큰 포함)", file=sys.stderr)
 
-    print(f"[glocaltokens] 검색 완료: {len(devices)}개 기기 발견", file=sys.stderr)
-    for d in devices:
-        print(f"  - {d.get('device_name', 'unknown')}: {d.get('local_auth_token', 'no token')[:20]}...", file=sys.stderr)
+        # glocaltokens 성공시 그 결과 사용
+        if glocal_devices:
+            return {
+                "master_token": client.get_master_token(),
+                "access_token": client.get_access_token(),
+                "devices": glocal_devices
+            }
+    except Exception as e:
+        print(f"[glocaltokens] 토큰 조회 실패: {e}", file=sys.stderr)
+
+    # glocaltokens 실패시 mDNS 결과만 반환 (토큰 없음)
+    if mdns_devices:
+        return {
+            "master_token": master_token,
+            "access_token": None,
+            "devices": mdns_devices,
+            "note": "mDNS로 기기 발견됨 (로컬 토큰 없음)"
+        }
 
     return {
-        "master_token": client.get_master_token(),
-        "access_token": client.get_access_token(),
-        "devices": devices
+        "master_token": master_token,
+        "access_token": None,
+        "devices": []
     }
 
 
