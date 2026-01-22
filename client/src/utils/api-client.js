@@ -6,6 +6,9 @@
 export class APIClient {
   constructor(baseURL = '/api') {
     this.baseURL = baseURL;
+    console.log(`🔧 APIClient initialized with baseURL: ${this.baseURL}`);
+    console.log(`🔧 window.location.origin: ${window.location.origin}`);
+    console.log(`🔧 window.location.href: ${window.location.href}`);
   }
 
   /**
@@ -13,6 +16,12 @@ export class APIClient {
    */
   async request(endpoint, options = {}) {
     const url = `${this.baseURL}${endpoint}`;
+    console.log(`🌐 API Request - endpoint: ${endpoint}`);
+    console.log(`🌐 API Request - this.baseURL: ${this.baseURL}`);
+    console.log(`🌐 API Request - constructed url: ${url}`);
+    console.log(`🌐 API Request - window.location.origin: ${window.location.origin}`);
+    console.log(`🌐 Full URL will be: ${new URL(url, window.location.origin).href}`);
+
     const config = {
       headers: {
         'Content-Type': 'application/json',
@@ -21,8 +30,14 @@ export class APIClient {
       ...options,
     };
 
+    // 10초 타임아웃 설정
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    config.signal = controller.signal;
+
     try {
       const response = await fetch(url, config);
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
@@ -31,6 +46,11 @@ export class APIClient {
 
       return await response.json();
     } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        console.warn(`API 요청 타임아웃 [${endpoint}]`);
+        throw new Error('Request timeout');
+      }
       console.error(`API 요청 실패 [${endpoint}]:`, error);
       throw error;
     }

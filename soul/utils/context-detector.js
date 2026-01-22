@@ -1,6 +1,7 @@
 const memoryUtils = require('./memory');
 const searchUtils = require('./search');
 const recommendationUtils = require('./recommendation');
+const ProfileModel = require('../models/Profile');
 
 /**
  * 맥락 감지 및 자율 기억 시스템
@@ -14,13 +15,14 @@ class ContextDetector {
    */
   extractKeywords(message) {
     if (!message || typeof message !== 'string') {
-      return { keywords: [], entities: [], timeRefs: [] };
+      return { keywords: [], entities: [], timeRefs: [], personalKeywords: [] };
     }
 
     const lowerMessage = message.toLowerCase();
     const keywords = [];
     const entities = [];
     const timeRefs = [];
+    const personalKeywords = []; // Phase P: 개인 정보 관련 키워드
 
     // 1. 시간 참조 감지
     const timePatterns = [
@@ -61,7 +63,19 @@ class ContextDetector {
 
     const hasTopicReference = topicPatterns.some(pattern => pattern.test(lowerMessage));
 
-    // 4. 중요 키워드 추출 (명사형)
+    // 4. 개인 정보 키워드 감지 (Phase P)
+    const personalPatterns = [
+      '개인', '나', '내', '소원', '취향', '좋아하는', '싫어하는',
+      '선호', '관심', '취미', '습관', '성격', '특징', '프로필'
+    ];
+
+    personalPatterns.forEach(keyword => {
+      if (lowerMessage.includes(keyword)) {
+        personalKeywords.push(keyword);
+      }
+    });
+
+    // 5. 중요 키워드 추출 (명사형)
     const words = message.split(/\s+/);
     words.forEach(word => {
       // 3글자 이상, 특수문자 제외
@@ -75,6 +89,7 @@ class ContextDetector {
       entities,
       timeRefs,
       hasTopicReference,
+      personalKeywords, // Phase P
       originalMessage: message
     };
   }
@@ -279,7 +294,8 @@ class ContextDetector {
     const {
       triggerConfig = {},
       searchOptions = {},
-      autoTrigger = true
+      autoTrigger = true,
+      userId = 'sowon' // Phase P
     } = options;
 
     // 1. 키워드 추출
@@ -294,10 +310,26 @@ class ContextDetector {
       memories = await this.findRelatedMemories(extracted, searchOptions);
     }
 
+    // 4. Phase P: 개인 정보 키워드 감지 시 프로필 상세 필드 로드
+    let profileFields = null;
+    if (extracted.personalKeywords && extracted.personalKeywords.length > 0) {
+      try {
+        const profile = await ProfileModel.getOrCreateDefault(userId);
+        profileFields = profile.findFieldsByKeywords(extracted.personalKeywords);
+
+        if (profileFields.length > 0) {
+          console.log(`[Phase P] 개인 키워드 감지 → 프로필 필드 ${profileFields.length}개 로드`);
+        }
+      } catch (error) {
+        console.error('Error loading profile fields:', error);
+      }
+    }
+
     return {
       extracted,
       trigger: triggerResult,
       memories,
+      profileFields, // Phase P
       shouldInject: triggerResult.triggered && memories?.totalFound > 0
     };
   }

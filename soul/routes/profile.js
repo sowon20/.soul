@@ -15,6 +15,7 @@ const router = express.Router();
 const { getAgentProfileManager } = require('../utils/agent-profile');
 const { getUserProfileManager } = require('../utils/user-profile');
 const UserProfileModel = require('../models/UserProfile');
+const ProfileModel = require('../models/Profile'); // Phase P
 
 // ============================================
 // 에이전트 프로필 API
@@ -583,6 +584,343 @@ router.patch('/user/:userId/theme', async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating theme settings:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ============================================
+// Phase P: 프로필 시스템 API
+// ============================================
+
+/**
+ * GET /api/profile/p
+ * 전체 프로필 조회 (소원의 프로필)
+ */
+router.get('/p', async (req, res) => {
+  try {
+    const userId = req.query.userId || 'sowon';
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+
+    res.json({
+      success: true,
+      profile
+    });
+  } catch (error) {
+    console.error('Error getting profile:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/profile/p/summary
+ * 프로필 요약 조회 (소울용 컨텍스트)
+ */
+router.get('/p/summary', async (req, res) => {
+  try {
+    const userId = req.query.userId || 'sowon';
+    const scope = req.query.scope || 'limited'; // full, limited, minimal
+    const keywords = req.query.keywords ? req.query.keywords.split(',') : null;
+
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+
+    let result;
+    if (keywords && keywords.length > 0) {
+      // 키워드로 관련 필드 찾기
+      const matchedFields = profile.findFieldsByKeywords(keywords);
+      result = {
+        basicInfo: profile.generateSummary(scope).basicInfo,
+        matchedFields
+      };
+    } else {
+      // 일반 요약
+      result = profile.generateSummary(scope);
+    }
+
+    // 액세스 기록
+    await profile.recordAccess('soul');
+
+    res.json({
+      success: true,
+      summary: result,
+      permissions: profile.permissions
+    });
+  } catch (error) {
+    console.error('Error getting profile summary:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/profile/p/detail/:fieldId
+ * 특정 필드 상세 조회
+ */
+router.get('/p/detail/:fieldId', async (req, res) => {
+  try {
+    const { fieldId } = req.params;
+    const userId = req.query.userId || 'sowon';
+
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+    const field = profile.customFields.find(f => f.id === fieldId);
+
+    if (!field) {
+      return res.status(404).json({
+        success: false,
+        error: 'Field not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      field
+    });
+  } catch (error) {
+    console.error('Error getting field detail:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/profile/p/fields
+ * 필드 추가
+ */
+router.post('/p/fields', async (req, res) => {
+  try {
+    const userId = req.body.userId || 'sowon';
+    const fieldData = req.body;
+
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+    await profile.addField(fieldData);
+
+    res.json({
+      success: true,
+      message: 'Field added',
+      field: profile.customFields[profile.customFields.length - 1]
+    });
+  } catch (error) {
+    console.error('Error adding field:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * PUT /api/profile/p/fields/:id
+ * 필드 수정
+ */
+router.put('/p/fields/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.body.userId || 'sowon';
+    const updates = req.body;
+
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+    await profile.updateField(id, updates);
+
+    const updatedField = profile.customFields.find(f => f.id === id);
+
+    res.json({
+      success: true,
+      message: 'Field updated',
+      field: updatedField
+    });
+  } catch (error) {
+    console.error('Error updating field:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * DELETE /api/profile/p/fields/:id
+ * 필드 삭제
+ */
+router.delete('/p/fields/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.query.userId || 'sowon';
+
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+    await profile.deleteField(id);
+
+    res.json({
+      success: true,
+      message: 'Field deleted'
+    });
+  } catch (error) {
+    console.error('Error deleting field:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * PUT /api/profile/p/fields/reorder
+ * 필드 순서 변경
+ */
+router.put('/p/fields/reorder', async (req, res) => {
+  try {
+    const userId = req.body.userId || 'sowon';
+    const fieldOrders = req.body.fieldOrders; // [{ id, order }, ...]
+
+    if (!Array.isArray(fieldOrders)) {
+      return res.status(400).json({
+        success: false,
+        error: 'fieldOrders must be an array'
+      });
+    }
+
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+    await profile.reorderFields(fieldOrders);
+
+    res.json({
+      success: true,
+      message: 'Fields reordered',
+      customFields: profile.customFields
+    });
+  } catch (error) {
+    console.error('Error reordering fields:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/profile/p/permissions
+ * 권한 설정 조회
+ */
+router.get('/p/permissions', async (req, res) => {
+  try {
+    const userId = req.query.userId || 'sowon';
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+
+    res.json({
+      success: true,
+      permissions: profile.permissions
+    });
+  } catch (error) {
+    console.error('Error getting permissions:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * PUT /api/profile/p/basic/:fieldKey
+ * 기본 정보 값 업데이트
+ */
+router.put('/p/basic/:fieldKey', async (req, res) => {
+  try {
+    const userId = req.body.userId || 'sowon';
+    const { fieldKey } = req.params;
+    const { value } = req.body;
+
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+
+    // basicInfo 구조 확인 및 초기화
+    if (!profile.basicInfo[fieldKey]) {
+      profile.basicInfo[fieldKey] = {};
+    }
+
+    profile.basicInfo[fieldKey].value = value;
+    profile.metadata.updatedAt = Date.now();
+
+    await profile.save();
+
+    res.json({
+      success: true,
+      message: `Basic info ${fieldKey} updated`,
+      value
+    });
+  } catch (error) {
+    console.error('Error updating basic info:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * PUT /api/profile/p/basic/:fieldKey/visibility
+ * 기본 정보 공개 설정 업데이트
+ */
+router.put('/p/basic/:fieldKey/visibility', async (req, res) => {
+  try {
+    const userId = req.body.userId || 'sowon';
+    const { fieldKey } = req.params;
+    const visibilityUpdates = req.body;
+
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+
+    // basicInfo 구조 확인 및 초기화
+    if (!profile.basicInfo[fieldKey]) {
+      profile.basicInfo[fieldKey] = { visibility: {} };
+    }
+    if (!profile.basicInfo[fieldKey].visibility) {
+      profile.basicInfo[fieldKey].visibility = {};
+    }
+
+    // visibility 업데이트
+    Object.assign(profile.basicInfo[fieldKey].visibility, visibilityUpdates);
+    profile.metadata.updatedAt = Date.now();
+
+    await profile.save();
+
+    res.json({
+      success: true,
+      message: `Basic info ${fieldKey} visibility updated`,
+      visibility: profile.basicInfo[fieldKey].visibility
+    });
+  } catch (error) {
+    console.error('Error updating basic info visibility:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * PATCH /api/profile/p/permissions
+ * 권한 설정 수정
+ */
+router.patch('/p/permissions', async (req, res) => {
+  try {
+    const userId = req.body.userId || 'sowon';
+    const permissionUpdates = req.body;
+
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+    await profile.updatePermissions(permissionUpdates);
+
+    res.json({
+      success: true,
+      message: 'Permissions updated',
+      permissions: profile.permissions
+    });
+  } catch (error) {
+    console.error('Error updating permissions:', error);
     res.status(500).json({
       success: false,
       error: error.message
