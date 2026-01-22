@@ -3,198 +3,625 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Soul - AI Assistant</title>
+  <title>Soul</title>
   <link rel="stylesheet" href="/src/styles/main.css">
+  <!-- Prism.js CSS - VSCode Dark Theme -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <!-- Google Fonts for Neomorphic Title -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500&family=Poppins:wght@700;800&family=Montserrat:wght@700;800&family=Raleway:wght@700;800&family=Roboto:wght@700;900&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Header (Minimal) -->
-  <header class="header">
-    <button class="hamburger-btn" id="hamburgerBtn" aria-label="메뉴 열기">
-      <span class="hamburger-icon">☰</span>
-    </button>
-  </header>
+  <!-- 배경 -->
+  <div class="bg"></div>
 
-  <!-- 2단 슬라이딩 메뉴 (왼쪽) -->
-  <!-- 주요 메뉴 (좁은 레이어) -->
-  <aside class="main-menu" id="mainMenu">
-    <div class="main-menu-header">
-      <button class="close-btn" id="closeMenuBtn" aria-label="메뉴 닫기">✕</button>
-    </div>
+  <!-- 모바일 오버레이 -->
+  <div class="mobile-overlay" id="mobileOverlay"></div>
 
-    <nav class="main-menu-nav">
-      <button class="main-menu-item active" data-menu="dashboard">
-        <span class="icon">🏠</span>
-        <span class="label">대시보드</span>
-      </button>
+  <!-- 3개 카드 레이아웃 -->
+  <div class="container">
+    <!-- 왼쪽 카드 (좁은 사이드바) -->
+    <div class="card left-card">
+      <div class="left-resizer"></div>
+      <h1 class="neomorphic-title">
+        <span class="neomorphic-text" data-text=".soul">.soul</span>
+      </h1>
 
-      <button class="main-menu-item" data-menu="conversations">
-        <span class="icon">💬</span>
-        <span class="label">대화</span>
-      </button>
+      <div class="search-box">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="M21 21l-4.35-4.35"/>
+        </svg>
+        <input type="text" placeholder="Search" class="search-input">
+      </div>
 
-      <button class="main-menu-item" data-menu="search">
-        <span class="icon">🔍</span>
-        <span class="label">검색</span>
-      </button>
-
-      <button class="main-menu-item" data-menu="memory">
-        <span class="icon">🧠</span>
-        <span class="label">메모리</span>
-      </button>
-
-      <button class="main-menu-item" data-menu="files">
-        <span class="icon">📁</span>
-        <span class="label">파일</span>
-      </button>
-
-      <button class="main-menu-item" data-menu="roles">
-        <span class="icon">👥</span>
-        <span class="label">역할 관리</span>
-      </button>
-
-      <button class="main-menu-item" data-menu="mcp">
-        <span class="icon">🔌</span>
-        <span class="label">MCP</span>
-      </button>
-
-      <hr class="menu-divider">
-
-      <button class="main-menu-item" data-menu="aiSettings">
-        <span class="icon">🤖</span>
-        <span class="label">AI 설정</span>
-      </button>
-
-      <button class="main-menu-item" data-menu="settings">
-        <span class="icon">⚙️</span>
-        <span class="label">설정</span>
-      </button>
-    </nav>
-  </aside>
-
-  <!-- 서브 레이어 (넓은 레이어, 유리 스타일) -->
-  <aside class="sub-menu" id="subMenu">
-    <div class="sub-menu-content" id="subMenuContent">
-      <!-- 동적 컨텐츠 -->
-    </div>
-    <div class="sub-menu-resizer" id="subMenuResizer"></div>
-  </aside>
-
-  <!-- Menu Overlay -->
-  <div class="menu-overlay" id="menuOverlay"></div>
-
-  <!-- Main Chat Container -->
-  <main class="chat-container" id="chatContainer">
-    <div class="messages-area custom-scrollbar" id="messagesArea">
-      <!-- 메시지가 여기에 표시됩니다 -->
-    </div>
-
-    <form class="input-area" id="chatForm">
-      <div class="input-wrapper">
-        <textarea
-          id="messageInput"
-          class="message-input"
-          placeholder="메시지를 입력하세요..."
-          rows="1"
-          autocomplete="off"
-        ></textarea>
-
-        <div class="input-actions">
-          <div class="input-actions-left">
-            <button type="button" class="input-btn attach-btn" id="attachBtn" aria-label="파일 첨부" title="파일 첨부">
-              <span class="icon">📎</span>
-            </button>
-            <button type="button" class="input-btn mcp-btn" id="mcpBtn" aria-label="MCP 도구" title="MCP 도구">
-              <span class="icon">🔌</span>
-            </button>
-          </div>
-
-          <div class="input-actions-right">
-            <button type="submit" class="input-btn send-btn" id="sendBtn" aria-label="전송" title="전송">
-              <span class="icon">▶</span>
-            </button>
+      <!-- 대시보드 -->
+      <div class="dashboard">
+        <!-- 오늘의 통계 -->
+        <div class="dashboard-section">
+          <h3 class="dashboard-title">오늘의 통계</h3>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <div class="stat-label">총 대화</div>
+              <div class="stat-value" id="stat-conversations">0개</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">메시지</div>
+              <div class="stat-value" id="stat-messages">0개</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">토큰 사용</div>
+              <div class="stat-value" id="stat-tokens">0</div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- 입력 안내 -->
-      <div class="input-hint">
-        <span>Enter로 전송</span>
-        <span class="separator">·</span>
-        <span>Shift + Enter로 줄바꿈</span>
+      <button class="add-page-btn">
+        <span class="add-icon">+</span> New page
+      </button>
+
+      <div class="profile-section" id="profileSection" style="cursor: pointer;" title="프로필 관리">
+        <div class="avatar"></div>
+        <div class="user-info">
+          <div class="user-name">소원</div>
+          <div class="user-email">sowon@soul.ai</div>
+        </div>
+        <button class="notification-btn">
+          <span class="notification-dot"></span>
+        </button>
       </div>
-    </form>
-  </main>
-
-  <!-- Right Panel (오른쪽) -->
-  <aside class="right-panel" id="rightPanel">
-    <div class="panel-header">
-      <h2 id="panelTitle">패널</h2>
-      <button class="close-btn" id="closePanelBtn" aria-label="패널 닫기">✕</button>
     </div>
 
-    <div class="panel-content custom-scrollbar" id="panelContent">
-      <!-- 동적 컨텐츠가 여기에 로드됩니다 -->
-    </div>
-  </aside>
+    <!-- 가운데 카드 + 토글 버튼 래퍼 -->
+    <div class="center-group">
+      <!-- 가운데 카드 (좁은 아이콘 사이드바) -->
+      <div class="card center-card">
+        <!-- 캘린더 위젯 -->
+        <div class="calendar-widget">
+          <div class="calendar-weekday" id="calendarWeekday">Mon</div>
+          <div class="calendar-month" id="calendarMonth">Jul</div>
+          <div class="calendar-day" id="calendarDay">15</div>
+        </div>
 
-  <!-- Typing Indicator Template (AI 응답 로딩) -->
-  <template id="typingIndicatorTemplate">
-    <div class="message message-assistant">
-      <div class="message-content">
-        <div class="typing-indicator">
-          <span></span><span></span><span></span>
+        <!-- 시간 표시 (플립 스타일) -->
+        <div class="flip-time">
+          <div class="flip-digit" id="hourTens">0</div>
+          <div class="flip-digit" id="hourOnes">0</div>
+          <div class="flip-separator">:</div>
+          <div class="flip-digit" id="minuteTens">0</div>
+          <div class="flip-digit" id="minuteOnes">0</div>
+        </div>
+
+        <!-- 구분선 -->
+        <div style="width: 100%; height: 1px; background: rgba(0,0,0,0.1); margin: 12px 0;"></div>
+
+        <!-- 뉴모픽 버튼 (별도) -->
+        <button class="neo-btn neo-btn-1">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1">
+            <rect x="4" y="4" width="6" height="6" rx="1"/>
+            <rect x="14" y="4" width="6" height="6" rx="1"/>
+            <rect x="14" y="14" width="6" height="6" rx="1"/>
+            <rect x="4" y="14" width="6" height="6" rx="1"/>
+          </svg>
+          <span>대시보드</span>
+        </button>
+        <button class="neo-btn neo-btn-2">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
+          </svg>
+          <span>북마크</span>
+        </button>
+        <button class="neo-btn neo-btn-3">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1">
+            <circle cx="18" cy="5" r="3"/>
+            <circle cx="6" cy="12" r="3"/>
+            <circle cx="18" cy="19" r="3"/>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+          </svg>
+          <span>MCP</span>
+        </button>
+        <button class="neo-btn neo-btn-4">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1">
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+            <line x1="9" y1="10" x2="15" y2="10"/>
+            <line x1="12" y1="7" x2="12" y2="13"/>
+          </svg>
+          <span>프롬프트</span>
+        </button>
+
+        <!-- 원형 추가 버튼 -->
+        <button class="circular-add-btn">
+          <span class="add-icon">+</span>
+        </button>
+      </div>
+
+      <!-- 모바일 메뉴 토글 버튼 -->
+      <button class="mobile-menu-btn" id="mobileMenuBtn">.soul</button>
+    </div>
+
+    <!-- 오른쪽 영역 래퍼 -->
+    <div class="right-area">
+      <!-- 오른쪽 카드 (상하 분할) -->
+      <div class="right-container">
+        <button class="scroll-to-bottom" id="scrollToBottom" title="맨 아래로">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="7 13 12 18 17 13"/>
+            <polyline points="7 6 12 11 17 6"/>
+          </svg>
+        </button>
+        <!-- 채팅 메시지 영역 -->
+        <div class="card right-card-top" id="chatContainer">
+          <div class="chat-messages" id="messagesArea">
+            <div class="chat-message assistant">
+              <div class="message-content">
+                <p>안녕하세요! React 컴포넌트 예제를 보여드리겠습니다:</p>
+
+                <div class="code-block">
+                  <button class="code-copy-btn" title="복사">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                    </svg>
+                  </button>
+                  <pre><code class="language-jsx">import React, { useState } from 'react';
+
+function Counter() {
+  const [count, setCount] = useState(0);
+
+  return (
+    &lt;div className="counter"&gt;
+      &lt;h1&gt;Count: {count}&lt;/h1&gt;
+      &lt;button onClick={() => setCount(count + 1)}&gt;
+        증가
+      &lt;/button&gt;
+    &lt;/div&gt;
+  );
+}
+
+export default Counter;</code></pre>
+                </div>
+
+                <p>이 컴포넌트는 간단한 카운터 기능을 구현합니다. <code>useState</code> 훅을 사용하여 상태를 관리하고 있습니다.</p>
+              </div>
+              <div class="message-actions">
+                <button class="message-action-btn" title="복사">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="좋아요">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="싫어요">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="북마크">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="재생성">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="chat-message user">
+              <div class="message-content">React로 간단한 카운터 컴포넌트를 만들어줄 수 있나요?</div>
+              <div class="user-message-footer">
+                <div class="message-time">2026.01.20 오후 2:30</div>
+                <button class="message-action-btn" title="복사">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="수정">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 20h9"/>
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="삭제">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="재시도">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="chat-message assistant">
+              <div class="message-content">
+                <p>물론입니다! 추가로 감소 버튼도 함께 만들어드릴게요:</p>
+
+                <div class="code-block">
+                  <button class="code-copy-btn" title="복사">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                    </svg>
+                  </button>
+                  <pre><code class="language-jsx">import React, { useState } from 'react';
+
+function Counter() {
+  const [count, setCount] = useState(0);
+
+  return (
+    &lt;div className="counter"&gt;
+      &lt;h1&gt;Count: {count}&lt;/h1&gt;
+      &lt;div className="buttons"&gt;
+        &lt;button onClick={() => setCount(count - 1)}&gt;
+          감소
+        &lt;/button&gt;
+        &lt;button onClick={() => setCount(0)}&gt;
+          초기화
+        &lt;/button&gt;
+        &lt;button onClick={() => setCount(count + 1)}&gt;
+          증가
+        &lt;/button&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  );
+}
+
+export default Counter;</code></pre>
+                </div>
+
+                <p>이 컴포넌트는 <code>useState</code> 훅을 사용하여 카운트 상태를 관리하며, 증가/감소/초기화 기능을 제공합니다.</p>
+              </div>
+              <div class="message-actions">
+                <button class="message-action-btn" title="복사">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="좋아요">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="싫어요">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="북마크">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="재생성">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="chat-message user">
+              <div class="message-content">CSS 스타일도 추가해주세요!</div>
+              <div class="user-message-footer">
+                <div class="message-time">2026.01.20 오후 2:32</div>
+                <button class="message-action-btn" title="복사">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="수정">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 20h9"/>
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="삭제">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="재시도">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="chat-message assistant">
+              <div class="message-content">
+                <p>카운터를 더 예쁘게 꾸며줄 CSS 스타일입니다:</p>
+
+                <div class="code-block">
+                  <button class="code-copy-btn" title="복사">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                    </svg>
+                  </button>
+                  <pre><code class="language-css">.counter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 40px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.counter h1 {
+  font-size: 48px;
+  color: white;
+  margin: 0;
+  font-weight: 700;
+}
+
+.buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.buttons button {
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  background: white;
+  color: #667eea;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.buttons button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}</code></pre>
+                </div>
+
+                <p>이 스타일은 그라데이션 배경과 호버 효과를 포함하고 있습니다.</p>
+              </div>
+              <div class="message-actions">
+                <button class="message-action-btn" title="복사">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="좋아요">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="싫어요">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="북마크">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
+                  </svg>
+                </button>
+                <button class="message-action-btn" title="재생성">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+
+        <!-- MacOS Dock 영역 -->
+        <div class="dock-test-area">
+          <div class="dock">
+            <div class="dock-item">
+              <div class="icon">
+                <img src="https://cdn.icon-icons.com/icons2/3053/PNG/256/finder_macos_bigsur_icon_190173.png" />
+              </div>
+            </div>
+            <div class="dock-item">
+              <div class="icon">
+                <img src="https://cdn.icon-icons.com/icons2/3053/PNG/256/microsoft_visual_studio_code_alt_macos_bigsur_icon_189951.png" />
+              </div>
+            </div>
+            <div class="dock-item">
+              <div class="icon">
+                <img src="https://cdn.icon-icons.com/icons2/3053/PNG/256/google_chrome_macos_bigsur_icon_190133.png" />
+              </div>
+            </div>
+            <div class="dock-item">
+              <div class="icon">
+                <img src="https://cdn.icon-icons.com/icons2/3053/PNG/256/settings_macos_bigsur_icon_189754.png" />
+              </div>
+            </div>
+            <div class="dock-item">
+              <div class="icon">
+                <img src="https://cdn.icon-icons.com/icons2/268/PNG/256/Trash_29857.png" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 채팅 입력창 -->
+        <div class="card right-card-bottom">
+          <form id="chatForm" class="chat-input-wrapper">
+            <textarea id="messageInput" class="chat-input" placeholder="Message .Soul" rows="1"></textarea>
+            <div class="chat-actions">
+              <div class="chat-actions-left">
+                <button class="attach-btn" title="추가">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                    <line x1="12" y1="4" x2="12" y2="20"/>
+                    <line x1="4" y1="12" x2="20" y2="12"/>
+                  </svg>
+                </button>
+                <button class="attach-btn" title="MCP">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <circle cx="18" cy="5" r="3"/>
+                    <circle cx="6" cy="12" r="3"/>
+                    <circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                  </svg>
+                </button>
+                <button class="attach-btn" id="toggleRightPanelBtn" title="Details">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M12 1v6m0 6v6M1 12h6m6 0h6"/>
+                    <circle cx="12" cy="12" r="10"/>
+                  </svg>
+                </button>
+                <button class="attach-btn" id="testBoxToggleBtn" title="테스트 박스">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <line x1="3" y1="9" x2="21" y2="9"/>
+                    <line x1="9" y1="21" x2="9" y2="9"/>
+                  </svg>
+                </button>
+              </div>
+              <button id="sendBtn" type="submit" class="chat-send-btn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                </svg>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- 맨 오른쪽 패널 (토글 가능) -->
+      <div class="card canvas-panel hide" id="canvasPanel">
+        <div class="canvas-resizer" id="canvasResizer"></div>
+        <div class="canvas-header">
+          <h3>Canvas</h3>
+          <button class="close-panel-btn" id="closeCanvasPanelBtn">✕</button>
+        </div>
+        <div class="canvas-content">
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <!-- 오늘의 이벤트 섹션 -->
+            <div style="background: rgba(255, 255, 255, 0.03); padding: 16px; border-radius: 12px;">
+              <h4 style="margin: 0 0 12px 0; font-size: 13px; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 0.5px;">TODAY'S EVENTS</h4>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <div style="width: 32px; height: 32px; background: rgba(255, 193, 7, 0.2); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #FFC107; font-weight: 600; font-size: 14px;">4</div>
+                  <span style="color: rgba(255, 255, 255, 0.7); font-size: 12px;">MILESTONES</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <div style="width: 32px; height: 32px; background: rgba(33, 150, 243, 0.2); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #2196F3; font-weight: 600; font-size: 14px;">12</div>
+                  <span style="color: rgba(255, 255, 255, 0.7); font-size: 12px;">TASKS</span>
+                </div>
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <div style="width: 32px; height: 32px; background: rgba(76, 175, 80, 0.2); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #4CAF50; font-weight: 600; font-size: 14px;">3</div>
+                  <span style="color: rgba(255, 255, 255, 0.7); font-size: 12px;">MEETINGS</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <div style="width: 32px; height: 32px; background: rgba(233, 30, 99, 0.2); border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #E91E63; font-weight: 600; font-size: 14px;">2</div>
+                  <span style="color: rgba(255, 255, 255, 0.7); font-size: 12px;">PROJECTS START</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 프로젝트 상태 -->
+            <div style="background: rgba(255, 255, 255, 0.03); padding: 16px; border-radius: 12px;">
+              <h4 style="margin: 0 0 12px 0; font-size: 13px; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 0.5px;">PROJECT STATUS</h4>
+              <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                    <span style="color: #e8e8e8; font-size: 13px;">Summer Campaign</span>
+                    <span style="color: rgba(255, 193, 7, 0.9); font-size: 12px;">In progress</span>
+                  </div>
+                  <div style="background: rgba(255, 255, 255, 0.1); height: 6px; border-radius: 3px; overflow: hidden;">
+                    <div style="background: linear-gradient(90deg, #FFC107, #FFD54F); width: 65%; height: 100%;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                    <span style="color: #e8e8e8; font-size: 13px;">Website Redesign</span>
+                    <span style="color: rgba(76, 175, 80, 0.9); font-size: 12px;">Completed</span>
+                  </div>
+                  <div style="background: rgba(255, 255, 255, 0.1); height: 6px; border-radius: 3px; overflow: hidden;">
+                    <div style="background: linear-gradient(90deg, #4CAF50, #81C784); width: 100%; height: 100%;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                    <span style="color: #e8e8e8; font-size: 13px;">Mobile App Beta</span>
+                    <span style="color: rgba(244, 67, 54, 0.9); font-size: 12px;">Overdue</span>
+                  </div>
+                  <div style="background: rgba(255, 255, 255, 0.1); height: 6px; border-radius: 3px; overflow: hidden;">
+                    <div style="background: linear-gradient(90deg, #F44336, #E57373); width: 40%; height: 100%;"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 팀 활동 -->
+            <div style="background: rgba(255, 255, 255, 0.03); padding: 16px; border-radius: 12px;">
+              <h4 style="margin: 0 0 12px 0; font-size: 13px; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 0.5px;">TEAM ACTIVITY</h4>
+              <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; gap: 10px; align-items: start;">
+                  <div style="width: 6px; height: 6px; background: #2196F3; border-radius: 50%; margin-top: 6px; flex-shrink: 0;"></div>
+                  <div>
+                    <div style="color: #e8e8e8; font-size: 13px; margin-bottom: 2px;">Sarah completed design review</div>
+                    <div style="color: rgba(255, 255, 255, 0.4); font-size: 11px;">2 hours ago</div>
+                  </div>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: start;">
+                  <div style="width: 6px; height: 6px; background: #4CAF50; border-radius: 50%; margin-top: 6px; flex-shrink: 0;"></div>
+                  <div>
+                    <div style="color: #e8e8e8; font-size: 13px; margin-bottom: 2px;">New milestone achieved</div>
+                    <div style="color: rgba(255, 255, 255, 0.4); font-size: 11px;">5 hours ago</div>
+                  </div>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: start;">
+                  <div style="width: 6px; height: 6px; background: #FFC107; border-radius: 50%; margin-top: 6px; flex-shrink: 0;"></div>
+                  <div>
+                    <div style="color: #e8e8e8; font-size: 13px; margin-bottom: 2px;">Meeting scheduled for tomorrow</div>
+                    <div style="color: rgba(255, 255, 255, 0.4); font-size: 11px;">1 day ago</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-  </template>
+  </div>
 
-  <!-- User Message Template (말풍선 있음) -->
-  <template id="userMessageTemplate">
-    <div class="message message-user">
-      <div class="message-bubble">
-        <div class="message-text"></div>
-      </div>
-      <div class="message-actions">
-        <button class="msg-action-btn copy-btn" aria-label="복사" title="복사">
-          <span class="icon">📋</span>
-        </button>
-        <button class="msg-action-btn edit-btn" aria-label="수정" title="수정">
-          <span class="icon">✏️</span>
-        </button>
-        <button class="msg-action-btn delete-btn" aria-label="삭제" title="삭제">
-          <span class="icon">🗑️</span>
-        </button>
-        <span class="message-timestamp"></span>
-      </div>
-    </div>
-  </template>
-
-  <!-- Assistant Message Template (말풍선 없음) -->
-  <template id="assistantMessageTemplate">
-    <div class="message message-assistant">
-      <div class="message-content">
-        <div class="message-text"></div>
-        <div class="message-actions">
-          <button class="msg-action-btn copy-btn" aria-label="복사" title="복사">
-            <span class="icon">📋</span>
-          </button>
-          <button class="msg-action-btn like-btn" aria-label="좋아요" title="좋아요">
-            <span class="icon">👍</span>
-          </button>
-          <button class="msg-action-btn dislike-btn" aria-label="싫어요" title="싫어요">
-            <span class="icon">👎</span>
-          </button>
-          <button class="msg-action-btn bookmark-btn" aria-label="북마크" title="북마크">
-            <span class="icon">🔖</span>
-          </button>
-          <button class="msg-action-btn retry-btn" aria-label="재시도" title="재시도">
-            <span class="icon">🔄</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  </template>
-
-  <script type="module" src="/src/main.js"></script>
+  <!-- Prism.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-jsx.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script type="module" src="/src/main.js?v=2"></script>
 </body>
 </html>

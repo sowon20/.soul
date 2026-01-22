@@ -15,6 +15,7 @@ const { getMemoryManager } = require('./memory-layers');
 const tokenCounter = require('./token-counter');
 const { shouldAutoCompress, compressMessages } = require('./context-compressor');
 const { detectContext } = require('./context-detector');
+const ProfileModel = require('../models/Profile');
 
 /**
  * ConversationPipeline 클래스
@@ -51,8 +52,8 @@ class ConversationPipeline {
       const messages = [];
       let totalTokens = 0;
 
-      // 1. 시스템 프롬프트 추가
-      const systemPrompt = options.systemPrompt || this.config.systemPrompt;
+      // 1. 시스템 프롬프트 추가 (프로필 요약 포함)
+      const systemPrompt = await this._buildSystemPromptWithProfile(options);
       messages.push({
         role: 'system',
         content: systemPrompt
@@ -72,6 +73,16 @@ class ConversationPipeline {
             content: memoryPrompt
           });
           totalTokens += this._estimateTokens(memoryPrompt);
+        }
+
+        // Phase P: 프로필 필드가 감지되었다면 추가
+        if (contextData && contextData.profileFields && contextData.profileFields.length > 0) {
+          const profilePrompt = this._buildProfileFieldsPrompt(contextData.profileFields);
+          messages.push({
+            role: 'system',
+            content: profilePrompt
+          });
+          totalTokens += this._estimateTokens(profilePrompt);
         }
       }
 
@@ -190,6 +201,27 @@ class ConversationPipeline {
   }
 
   /**
+   * 프로필 필드 프롬프트 구성 (Phase P)
+   */
+  _buildProfileFieldsPrompt(profileFields) {
+    if (!profileFields || profileFields.length === 0) {
+      return '';
+    }
+
+    let prompt = '\n\n=== 사용자 프로필 상세 정보 ===\n\n';
+    prompt += '현재 대화와 관련된 사용자의 개인 정보입니다:\n\n';
+
+    profileFields.forEach(field => {
+      prompt += `- ${field.label}: ${field.value}\n`;
+    });
+
+    prompt += '\n=== 프로필 정보 끝 ===\n\n';
+    prompt += '위 정보를 자연스럽게 참고하여 답변해주세요.\n';
+
+    return prompt;
+  }
+
+  /**
    * 자동 압축
    */
   async _autoCompress(messages, sessionId) {
@@ -255,21 +287,68 @@ class ConversationPipeline {
   }
 
   /**
-   * 시스템 프롬프트 동적 구성
+   * 프로필 포함 시스템 프롬프트 구성 (Phase P)
    */
-  buildSystemPrompt(options = {}) {
-    let prompt = this.config.systemPrompt;
+  async _buildSystemPromptWithProfile(options = {}) {
+    let prompt = options.systemPrompt || this.config.systemPrompt;
+
+    // 프로필 자동 포함 (Phase P)
+    try {
+      const userId = options.userId || 'sowon';
+      const profile = await ProfileModel.getOrCreateDefault(userId);
+
+      // 프로필 권한 체크
+      if (profile.permissions.autoIncludeInContext) {
+        const profileSummary = profile.generateSummary(profile.permissions.readScope);
+
+        // 프로필 정보를 시스템 프롬프트에 추가
+        prompt += '\n\n=== 사용자 프로필 ===\n';
+
+        // 기본 정보
+        if (profileSummary.basicInfo) {
+          prompt += `\n이름: ${profileSummary.basicInfo.name || '소원'}`;
+          if (profileSummary.basicInfo.nickname) {
+            prompt += ` (${profileSummary.basicInfo.nickname})`;
+          }
+          if (profileSummary.basicInfo.location) {
+            prompt += `\n위치: ${profileSummary.basicInfo.location}`;
+          }
+          if (profileSummary.basicInfo.timezone) {
+            prompt += `\n타임존: ${profileSummary.basicInfo.timezone}`;
+          }
+        }
+
+        // 커스텀 필드
+        if (profileSummary.customFields && profileSummary.customFields.length > 0) {
+          prompt += '\n\n추가 정보:';
+          profileSummary.customFields.forEach(field => {
+            if (field.value) {
+              prompt += `\n- ${field.label}: ${field.value}`;
+            }
+          });
+        }
+
+        prompt += '\n\n=== 프로필 끝 ===\n';
+        prompt += '\n위 프로필 정보를 참고하여 개인화된 대화를 진행해주세요.\n';
+
+        // 액세스 기록
+        await profile.recordAccess('soul');
+      }
+    } catch (error) {
+      console.error('Error loading profile for system prompt:', error);
+      // 프로필 로드 실패해도 대화는 계속 진행
+    }
 
     // 시간 정보 추가
     if (options.includeTime !== false) {
       const now = new Date();
-      const timeInfo = `\n\n현재 시간: ${now.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`;
+      const timeInfo = `\n현재 시간: ${now.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`;
       prompt += timeInfo;
     }
 
     // 사용자 정보 추가
     if (options.userContext) {
-      prompt += `\n\n사용자 정보:\n${JSON.stringify(options.userContext, null, 2)}`;
+      prompt += `\n\n사용자 컨텍스트:\n${JSON.stringify(options.userContext, null, 2)}`;
     }
 
     // 추가 지시사항
@@ -278,6 +357,13 @@ class ConversationPipeline {
     }
 
     return prompt;
+  }
+
+  /**
+   * 시스템 프롬프트 동적 구성 (하위 호환성)
+   */
+  buildSystemPrompt(options = {}) {
+    return this._buildSystemPromptWithProfile(options);
   }
 
   /**

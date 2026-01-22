@@ -1,5 +1,40 @@
 ## 항상 작업 전 확인 / 작업 후 업데이트할 것! : 체크 및 중요메모
 
+## 🔥 최근 작업 현황 (2026-01-22)
+
+### ✅ 설정 페이지 프레임워크 완전 리팩토링 완료
+**위치**: `/workspaces/.soul/client/src/settings/`
+
+**새로운 구조**:
+```
+settings/
+├── settings-manager.js         # 프레임워크 (라우팅, 네비게이션)
+├── components/                 # 페이지별 컴포넌트 (동적 로드)
+│   ├── profile-settings.js     # 프로필 설정 ✅
+│   ├── ai-settings.js          # AI 설정 (플레이스홀더)
+│   └── theme-settings.js       # 테마 설정 (플레이스홀더)
+└── styles/
+    └── settings.css            # 공통 스타일 (JS 모듈로 임포트)
+```
+
+**주요 변경 사항**:
+- ❌ **기존**: `profile-manager.js`에 모든 로직 집중, `index.html`에 CSS 직접 링크
+- ✅ **현재**: 컴포넌트 기반 아키텍처, 동적 모듈 로딩, CSS 모듈 임포트
+- 각 설정 페이지는 독립 컴포넌트로 분리 → 필요할 때만 `import()`로 로드
+- 탭 네비게이션 (프로필/AI/테마) 지원
+- Vite HMR로 CSS/JS 자동 핫 리로드
+
+**새로운 설정 페이지 추가하는 법**:
+1. `settings/components/new-settings.js` 생성
+2. `SettingsManager.getComponent()`에 라우팅 추가
+3. 끝! (자동으로 통합됨)
+
+**관련 파일**:
+- `/client/src/main.js` - 프로필 버튼 클릭 시 SettingsManager 로드
+- `/client/src/settings/` - 모든 설정 관련 코드
+
+---
+
 ## ⚠️ 필수 숙지 사항
 
 ### 📖 LIBRECHAT_CONTEXT_HANDOVER.md 반드시 읽기
@@ -452,6 +487,76 @@
 - [x] 컨텍스트 압축 시 메모리 유지 (이미 구현됨)
 - [ ] 메모리 설정 UI (보류)
 
+### 9.8 프론트엔드 모듈화 ✅ (2026-01-22)
+
+#### 9.8.1 디렉토리 구조 생성 ✅
+- [x] `src/styles/core/` - 변수, 리셋, 레이아웃
+- [x] `src/styles/components/` - 컴포넌트별 CSS
+- [x] `src/styles/pages/` - 페이지별 CSS
+- [x] `src/components/` - JS 컴포넌트 (chat, sidebar, canvas, shared)
+- [x] `src/pages/` - 페이지별 JS (추후 사용)
+
+#### 9.8.2 CSS 모듈 분리 ✅
+- [x] `core/variables.css` - CSS 변수, 폰트, 색상
+- [x] `core/reset.css` - 리셋, body 기본 스타일
+- [x] `core/layout.css` - container, 레이아웃 구조
+- [x] `components/card.css` - 카드 공통 스타일
+- [x] `components/sidebar.css` - 사이드바 (left-card, center-card)
+- [x] `components/chat.css` - 채팅 메시지 영역
+- [x] `components/canvas.css` - 캔버스 패널
+- [x] `components/forms.css` - 입력창, 버튼, 액션바
+- [x] `components/dock.css` - MacOS 스타일 독
+- [x] `pages/chat-page.css` - 채팅 페이지 레이아웃
+
+#### 9.8.3 JS 컴포넌트 재구조화 ✅
+**이동된 파일**:
+- [x] `utils/chat-manager.js` → `components/chat/chat-manager.js`
+- [x] `utils/menu-manager.js` → `components/sidebar/menu-manager.js`
+- [x] `utils/panel-manager.js` → `components/shared/panel-manager.js`
+
+**import 경로 수정**:
+- [x] `src/main.js` - 새로운 컴포넌트 경로로 업데이트
+- [x] `components/shared/panel-manager.js` - profile-manager 경로 수정
+- [x] `components/sidebar/menu-manager.js` - ai-service-manager 경로 수정
+
+#### 9.8.4 빌드 테스트 ✅
+- [x] `npm run build` 성공 (558ms)
+- [x] 모든 모듈 정상 로딩
+- [x] 기존 기능 유지 확인
+
+#### 9.8.5 문서화 ✅
+- [x] README.md 업데이트 - 모듈화된 구조 문서화
+- [x] 모듈 사용 가이드 작성
+- [x] 디렉토리 구조 다이어그램 추가
+
+**아키텍처 개선**:
+```
+Before (Monolithic):
+src/
+├── styles/main.css (2243 lines)
+└── utils/*.js (모든 로직 혼재)
+
+After (Modular):
+src/
+├── styles/
+│   ├── core/           # 기본 스타일
+│   ├── components/     # 컴포넌트별
+│   └── pages/          # 페이지별
+├── components/         # 기능별 JS
+│   ├── chat/
+│   ├── sidebar/
+│   ├── canvas/
+│   └── shared/
+└── utils/              # 순수 유틸리티
+```
+
+**주요 장점**:
+- ✅ 명확한 책임 분리
+- ✅ 컴포넌트 독립성 향상
+- ✅ 유지보수성 개선
+- ✅ 추후 페이지 분리 준비 완료
+- ✅ 팀 협업 용이 (파일 충돌 최소화)
+
 ---
 
 ## 🚀 Phase 10: 배포 & 최적화 (보류)
@@ -490,6 +595,170 @@
 - [ ] 내부망/외부망 감지
 - [ ] 최적 경로 선택
 - [ ] VPN/Tailscale 통합
+
+---
+
+---
+
+## 📝 Phase P 작업 완료 메모 (2026-01-22)
+
+### 주요 구현 내용
+1. **Profile 모델** (`/soul/models/Profile.js`)
+   - basicInfo: 이름, 닉네임, 위치, 타임존 등 고정 필드
+   - customFields[]: 동적 필드 (text, number, date, tag, list, url, select)
+   - permissions: 소울 접근 권한 제어 (readScope, canWrite, canDelete, autoIncludeInContext)
+   - 메서드: addField, updateField, deleteField, reorderFields, generateSummary, findFieldsByKeywords
+
+2. **API 엔드포인트** (`/soul/routes/profile.js`)
+   - 프로필 CRUD: GET/POST/PUT/DELETE /api/profile/p/*
+   - 필드 관리: POST/PUT/DELETE /api/profile/p/fields/*
+   - 권한 관리: GET/PATCH /api/profile/p/permissions
+   - 키워드 검색: GET /api/profile/p/summary?keywords=...
+
+3. **프론트엔드**
+   - ProfileManager 클래스 (`/client/src/utils/profile-manager.js`)
+   - Inline 편집, 드래그 앤 드롭 정렬
+   - 실시간 자동 저장
+   - 프로필 스타일 (`/client/src/styles/profile-manager.css`)
+   - 메뉴 통합 (menu-manager.js, panel-manager.js)
+
+4. **소울 통합**
+   - conversation-pipeline.js: 시스템 프롬프트에 프로필 요약 자동 포함
+   - context-detector.js: 개인 키워드 감지 시 상세 필드 로드
+   - _buildSystemPromptWithProfile(): 대화 시작 시 프로필 자동 주입
+   - _buildProfileFieldsPrompt(): 키워드 기반 상세 정보 주입
+
+5. **테스트**
+   - test-profile-api.sh: 8개 API 엔드포인트 테스트
+   - 권한 체크 로직 구현
+   - UI 상호작용 구현
+
+### 핵심 기능
+- ✅ 사용자 프로필 동적 관리 (필드 자유 추가/수정/삭제)
+- ✅ 소울 접근 권한 세밀 제어 (full/limited/minimal)
+- ✅ 대화 시 자동 컨텍스트 포함
+- ✅ 키워드 감지 시 관련 필드 자동 로드
+- ✅ Inline 편집 & 드래그 앤 드롭 UI
+
+### 아키텍처
+```
+사용자 대화
+    ↓
+context-detector.js (개인 키워드 감지)
+    ↓
+conversation-pipeline.js (프로필 요약 주입)
+    ↓
+Profile.generateSummary() (권한 기반 요약)
+    ↓
+시스템 프롬프트 자동 구성
+```
+
+### 생성된 파일
+- `/soul/models/Profile.js`
+- `/soul/routes/profile.js` (Phase P API 추가)
+- `/client/src/utils/profile-manager.js`
+- `/client/src/styles/profile-manager.css`
+- `/client/index.html` (CSS 추가)
+- `/scripts/test-profile-api.sh`
+
+### 수정된 파일
+- `/soul/utils/conversation-pipeline.js` (프로필 통합)
+- `/soul/utils/context-detector.js` (개인 키워드 감지)
+- `/client/src/utils/panel-manager.js` (프로필 패널 추가)
+- `/client/src/utils/menu-manager.js` (프로필 메뉴 추가)
+- `/client/src/main.js` (프로필 버튼 베이지 레이어 연결 - 2026-01-22)
+
+### 2026-01-22 추가 작업
+
+#### 설정 페이지 프레임워크 리팩토링 ✅
+- ✅ **컴포넌트 기반 아키텍처로 전면 재구성**
+  - `settings/settings-manager.js`: 메인 프레임워크 (라우팅, 네비게이션)
+  - `settings/components/`: 각 설정 페이지를 독립 컴포넌트로 분리
+    - `profile-settings.js`: 프로필 설정 컴포넌트
+    - `ai-settings.js`: AI 설정 (플레이스홀더)
+    - `theme-settings.js`: 테마 설정 (플레이스홀더)
+  - `settings/styles/settings.css`: 공통 스타일 (모듈 방식으로 임포트)
+
+- ✅ **동적 모듈 로딩**
+  - 각 설정 페이지는 필요할 때만 동적으로 로드 (`import()`)
+  - 컴포넌트 캐싱으로 재사용 효율성 증대
+  - CSS도 JavaScript 모듈로 임포트하여 Vite가 자동 핫 리로드
+
+- ✅ **탭 네비게이션**
+  - 프로필, AI 설정, 테마 설정 간 쉬운 전환
+  - 활성 상태 표시 및 부드러운 전환
+
+#### 프로필 설정 기능 ✅
+- ✅ 기본 정보 필드 (실용적인 개인정보)
+  - 이름, 닉네임, 이메일, 전화번호, 생년월일
+  - 성별, 주민번호(민감정보), 국가, 주소
+  - 타임존, 언어 (시스템용)
+- ✅ 각 필드마다 개별 공개 설정 토글
+  - 👁️/🔒: 소울에게 공개 여부
+  - 🔄/⏸️: 자동으로 컨텍스트에 포함 여부
+- ✅ 백엔드 API 연동
+  - PUT /api/profile/p/basic/:fieldKey - 값 업데이트
+  - PUT /api/profile/p/basic/:fieldKey/visibility - 공개 설정 업데이트
+- ✅ Profile 모델 스키마
+  - basicInfo 각 필드마다 { value, visibility } 구조
+  - fieldVisibilitySchema 지원
+
+---
+
+### Phase P: 프로필 시스템 ✅
+
+#### P.1 데이터 모델 ✅
+- [x] MongoDB 스키마 설계
+  - [x] basicInfo (고정 필드)
+  - [x] customFields[] (동적 필드)
+  - [x] permissions (권한 설정)
+  - [x] metadata (생성일, 수정일 등)
+- [x] 필드 타입 지원
+  - [x] text, number, date, tag, list, url, select
+- [x] 권한 모델
+  - [x] owner (소원) - read/write all
+  - [x] soul - 기본 read only (권한 설정에 쓰기,삭제 가능)
+  - [x] scope: full / limited / minimal
+
+#### P.2 백엔드 API ✅
+- [x] Profile 모델 & 스키마
+- [x] 프로필 조회 API
+  - [x] GET /api/profile/p - 전체
+  - [x] GET /api/profile/p/summary - 요약
+  - [x] GET /api/profile/p/detail/:fieldId - 상세
+- [x] 필드 CRUD API
+  - [x] POST /api/profile/p/fields - 필드 추가
+  - [x] PUT /api/profile/p/fields/:id - 필드 수정
+  - [x] DELETE /api/profile/p/fields/:id - 필드 삭제
+  - [x] PUT /api/profile/p/fields/reorder - 순서 변경
+- [x] 권한 관리 API
+  - [x] GET /api/profile/p/permissions - 권한 조회
+  - [x] PATCH /api/profile/p/permissions - 권한 수정
+- [ ] WebSocket 이벤트 (보류 - HTTP로도 충분)
+
+#### P.3 프론트엔드 UI ✅
+- [x] 프로필 패널 UI
+  - [x] 필드 목록 표시
+  - [x] Inline 편집 (클릭해서 수정)
+  - [x] 필드 추가 버튼
+  - [x] 필드 삭제 버튼 (×)
+  - [x] 필드 순서 변경 (drag)
+  - [x] 저장 버튼
+  - [x] 저장 상태 표시
+
+#### P.4 소울 통합 ✅
+- [x] 프로필 요약 Context 로드
+  - [x] 대화 시작 시 요약 자동 포함
+  - [x] 개인 얘기 감지 시 상세 필드 로드
+- [x] context-detector와 통합
+- [x] 자연스러운 참조
+- [x] 권한 검증 미들웨어
+
+#### P.5 테스트 ✅
+- [x] API 테스트 스크립트 작성
+- [x] 권한 체크 로직 구현
+- [x] UI 상호작용 구현
+- [x] test-profile-api.sh 추가
 
 ---
 
@@ -800,6 +1069,17 @@ JWT_SECRET=
 - `PUT /api/profile/user/:userId` - 프로필 업데이트
 - `GET /api/profile/user/:userId/theme` - 테마 조회
 - `PATCH /api/profile/user/:userId/theme` - 테마 저장
+
+#### 프로필 시스템 (Phase P)
+- `GET /api/profile/p` - 전체 프로필 조회
+- `GET /api/profile/p/summary` - 프로필 요약 (scope: full/limited/minimal)
+- `GET /api/profile/p/detail/:fieldId` - 특정 필드 상세
+- `POST /api/profile/p/fields` - 필드 추가
+- `PUT /api/profile/p/fields/:id` - 필드 수정
+- `DELETE /api/profile/p/fields/:id` - 필드 삭제
+- `PUT /api/profile/p/fields/reorder` - 필드 순서 변경
+- `GET /api/profile/p/permissions` - 권한 조회
+- `PATCH /api/profile/p/permissions` - 권한 수정
 
 ### 📦 주요 파일
 
