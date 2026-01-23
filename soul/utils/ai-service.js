@@ -606,28 +606,35 @@ class AIServiceFactory {
   static _cache = {}; // 서비스 인스턴스 캐시
 
   /**
-   * API 키 조회 (MongoDB 우선, Fallback: process.env)
+   * API 키 조회 (UI 설정 전용 - .env 사용 안 함)
    */
   static async getApiKey(service) {
+    // 1. AIService 모델에서 조회 (UI에서 설정한 키)
+    try {
+      const AIServiceModel = require('../models/AIService');
+      const serviceDoc = await AIServiceModel.findOne({ serviceId: service }).select('+apiKey');
+      if (serviceDoc && serviceDoc.apiKey) {
+        console.log(`[APIKey] Loaded ${service} key from UI settings`);
+        return serviceDoc.apiKey;
+      }
+    } catch (error) {
+      console.warn(`[APIKey] Failed to load from AIService model for ${service}:`, error.message);
+    }
+
+    // 2. APIKey 모델에서 조회 (레거시 지원)
     try {
       const APIKey = require('../models/APIKey');
       const key = await APIKey.getKey(service);
       if (key) {
-        console.log(`[APIKey] Loaded ${service} key from MongoDB (encrypted)`);
+        console.log(`[APIKey] Loaded ${service} key from APIKey model (legacy)`);
         return key;
       }
     } catch (error) {
-      console.warn(`[APIKey] Failed to load from MongoDB for ${service}:`, error.message);
+      // APIKey 모델이 없을 수 있음 - 무시
     }
 
-    // Fallback to environment variable
-    const envKey = `${service.toUpperCase()}_API_KEY`;
-    const envValue = process.env[envKey];
-    if (envValue) {
-      console.log(`[APIKey] Using ${service} key from environment variable`);
-      return envValue;
-    }
-
+    // .env는 사용하지 않음 - UI에서 API 키 설정 필요
+    console.warn(`[APIKey] No API key found for ${service}. Please set it in AI Settings UI.`);
     return null;
   }
 

@@ -287,6 +287,13 @@ router.get('/memory', async (req, res) => {
 router.put('/memory', async (req, res) => {
   try {
     const memoryConfig = await configManager.updateMemoryConfig(req.body);
+
+    // MemoryManager 및 ConversationPipeline 인스턴스 리셋 (설정 즉시 적용)
+    const { resetMemoryManager } = require('../utils/memory-layers');
+    const { resetConversationPipeline } = require('../utils/conversation-pipeline');
+    resetMemoryManager();
+    resetConversationPipeline();
+
     res.json(memoryConfig);
   } catch (error) {
     console.error('Error updating memory config:', error);
@@ -313,6 +320,13 @@ router.post('/memory/path', async (req, res) => {
     }
 
     const memoryConfig = await configManager.setMemoryPath(storagePath);
+
+    // MemoryManager 인스턴스 리셋 (경로 변경 적용)
+    const { resetMemoryManager } = require('../utils/memory-layers');
+    const { resetConversationPipeline } = require('../utils/conversation-pipeline');
+    resetMemoryManager();
+    resetConversationPipeline();
+
     res.json(memoryConfig);
   } catch (error) {
     console.error('Error setting memory path:', error);
@@ -350,6 +364,45 @@ router.put('/files', async (req, res) => {
     res.json(filesConfig);
   } catch (error) {
     console.error('Error updating files config:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/config/routing
+ * 스마트 라우팅 설정 조회
+ */
+router.get('/routing', async (req, res) => {
+  try {
+    const routingConfig = await configManager.getRoutingConfig();
+    res.json(routingConfig);
+  } catch (error) {
+    console.error('Error reading routing config:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * PUT /api/config/routing
+ * 스마트 라우팅 설정 업데이트
+ */
+router.put('/routing', async (req, res) => {
+  try {
+    const routingConfig = await configManager.updateRoutingConfig(req.body);
+
+    // SmartRouter 인스턴스 갱신
+    const { getSmartRouter, resetSmartRouter } = require('../utils/smart-router');
+    resetSmartRouter(routingConfig);
+
+    res.json(routingConfig);
+  } catch (error) {
+    console.error('Error updating routing config:', error);
     res.status(500).json({
       error: 'Internal Server Error',
       message: error.message

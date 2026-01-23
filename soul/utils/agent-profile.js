@@ -19,6 +19,13 @@ class AgentProfile {
     this.name = options.name || 'Soul';
     this.role = options.role || 'AI Assistant';
     this.description = options.description || '당신의 AI 동반자';
+
+    // AI 동작 설정
+    this.defaultModel = options.defaultModel || '';
+    this.temperature = options.temperature ?? 0.7;
+    this.maxTokens = options.maxTokens || 4096;
+    this.tone = options.tone || 'friendly';
+    this.customPrompt = options.customPrompt || '';
     this.personality = options.personality || {
       traits: {
         helpful: 1.0,
@@ -29,10 +36,12 @@ class AgentProfile {
         empathetic: 0.6
       },
       communication: {
-        formality: 0.7,
-        verbosity: 0.5,
-        technicality: 0.8,
-        directness: 0.8
+        formality: 0.5,    // 캐주얼 ←→ 격식
+        verbosity: 0.5,    // 간결 ←→ 상세
+        technicality: 0.5, // 일반 용어 ←→ 기술 용어
+        directness: 0.7,   // 완곡 ←→ 직접적
+        emoji: 0.3,        // 이모지 사용량
+        humor: 0.3         // 진지 ←→ 유머러스
       }
     };
     this.capabilities = options.capabilities || [
@@ -181,7 +190,13 @@ class AgentProfile {
       prompt += additionalContext + '\n\n';
     }
 
-    // 10. 마무리
+    // 10. 사용자 커스텀 프롬프트 (UI에서 설정)
+    if (this.customPrompt && this.customPrompt.trim()) {
+      prompt += `## 사용자 지정 지침\n\n`;
+      prompt += this.customPrompt.trim() + '\n\n';
+    }
+
+    // 11. 마무리
     prompt += `---\n\n`;
     prompt += `위 정보를 바탕으로 대화에 임하세요. `;
     prompt += `자신의 이름, 역할, 성격을 자연스럽게 인지하고 표현하세요.\n`;
@@ -251,6 +266,11 @@ class AgentProfile {
       name: this.name,
       role: this.role,
       description: this.description,
+      defaultModel: this.defaultModel,
+      temperature: this.temperature,
+      maxTokens: this.maxTokens,
+      tone: this.tone,
+      customPrompt: this.customPrompt,
       personality: this.personality,
       capabilities: this.capabilities,
       limitations: this.limitations,

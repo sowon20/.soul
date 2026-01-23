@@ -5,7 +5,7 @@
 
 /* 왼쪽 카드 - 베이지 */
 .left-card {
-  width: 300px;
+  width: 350px;
   min-width: 200px;
   max-width: 500px;
   flex-shrink: 0;
@@ -24,9 +24,9 @@
     left: 12px;
     top: 12px;
     bottom: 12px;
-    width: 300px;
+    width: 350px;
     min-width: 0;
-    max-width: 300px;
+    max-width: 350px;
     z-index: 101;
     flex-shrink: 0;
   }
@@ -102,14 +102,14 @@
 @media (max-width: 899px) {
   .center-group {
     position: fixed;
-    left: 324px;
+    left: 374px;
     top: 12px;
     z-index: 100;
     overflow: visible;
   }
 
   .center-group.hide {
-    transform: translateX(calc(-324px));
+    transform: translateX(calc(-374px));
     /* 토글 버튼은 계속 보이도록 opacity/visibility 제거 */
   }
 

@@ -15,7 +15,6 @@ const { getSessionContinuity } = require('../utils/session-continuity');
 const { getSmartRouter } = require('../utils/smart-router');
 const { getPersonalityCore } = require('../utils/personality-core');
 const Role = require('../models/Role');
-const { getRoleSelector } = require('../utils/role-selector');
 const { loadMCPTools, executeMCPTool } = require('../utils/mcp-tools');
 
 /**
@@ -34,121 +33,50 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // 0. 역할 감지 - LLM 기반 컨텍스트 이해
+    // 0. Soul이 직접 응답 (역할은 필요시에만 호출)
     const startTime = Date.now();
-    let detectedRole = null;
-    let selectionInfo = null;
-
-    try {
-      // MongoDB에서 활성 역할 검색
-      const activeRoles = await Role.getActiveRoles();
-
-      if (activeRoles.length > 0) {
-        // RoleSelector로 지능형 역할 선택
-        const roleSelector = getRoleSelector();
-        const selection = await roleSelector.selectRole(message, activeRoles);
-
-        if (selection && selection.confidence >= 0.5) {
-          detectedRole = selection.role;
-          selectionInfo = {
-            confidence: selection.confidence,
-            reasoning: selection.reasoning,
-            method: selection.method
-          };
-          console.log(`✅ 역할 선택: ${detectedRole.name} (확신도: ${selection.confidence}, 방법: ${selection.method})`);
-          console.log(`   이유: ${selection.reasoning}`);
-        } else if (selection === null && activeRoles.length > 0) {
-          // 적합한 역할이 없음 → 새 역할 제안
-          console.log('⚠️ 적합한 역할 없음. 새 역할 제안 중...');
-          const suggestion = await roleSelector.suggestNewRole(message);
-
-          if (suggestion.success) {
-            console.log(`💡 제안: ${suggestion.suggestion.name} 역할 생성 권장`);
-            // TODO: 자동 생성 옵션 추가 (사용자 확인 후)
-          }
-        }
-      }
-    } catch (roleDetectError) {
-      console.warn('역할 감지 실패:', roleDetectError);
-    }
-
-    if (detectedRole) {
-      // 전문 알바에게 위임
-      try {
-        const modelId = detectedRole.preferredModel;
-
-        // AI 서비스 생성
-        const serviceName = modelId.includes('claude') ? 'anthropic'
-          : modelId.includes('gpt') ? 'openai'
-          : modelId.includes('gemini') ? 'google'
-          : 'anthropic';
-
-        const { AIServiceFactory } = require('../utils/ai-service');
-        const aiService = await AIServiceFactory.createService(serviceName, modelId);
-
-        // 역할 실행
-        const roleResult = await aiService.chat(
-          [{ role: 'user', content: message }],
-          {
-            systemPrompt: detectedRole.systemPrompt,
-            maxTokens: detectedRole.maxTokens,
-            temperature: detectedRole.temperature
-          }
-        );
-
-        // 성과 기록
-        const responseTime = Date.now() - startTime;
-        const tokensUsed = roleResult.length;
-        await detectedRole.recordUsage(true, tokensUsed, responseTime);
-
-        // Soul의 목소리로 감싸기
-        const personality = getPersonalityCore();
-        const wrappedResponse = `${roleResult}`;
-
-        // 응답 저장 (메모리에 기록)
-        const pipeline = await getConversationPipeline({ model: modelId });
-        await pipeline.handleResponse(message, wrappedResponse, sessionId);
-
-        return res.json({
-          success: true,
-          sessionId,
-          message: wrappedResponse,
-          reply: wrappedResponse,
-          routing: {
-            selectedModel: detectedRole.name,
-            modelId: modelId,
-            reason: `전문 작업 감지: ${detectedRole.description}`,
-            delegatedRole: detectedRole.roleId,
-            successRate: detectedRole.getSuccessRate(),
-            selection: selectionInfo // LLM 선택 정보 추가
-          }
-        });
-      } catch (roleError) {
-        console.warn('역할 실행 실패, 일반 대화로 fallback:', roleError);
-
-        // 실패 기록
-        if (detectedRole) {
-          const responseTime = Date.now() - startTime;
-          await detectedRole.recordUsage(false, 0, responseTime);
-        }
-
-        // 실패시 아래 일반 대화 로직으로 계속 진행
-      }
-    }
 
     // 1. 스마트 라우팅 - 최적 모델 선택
-    const router = getSmartRouter();
+    const router = await getSmartRouter();
     const routingResult = await router.route(message, {
       historyTokens: options.historyTokens || 0,
       messageCount: options.messageCount || 0
     });
 
-    // 2. 인격 코어 - 시스템 프롬프트 생성
+    // 2. 인격 코어 - 시스템 프롬프트 생성 및 AI 설정 로드
     const personality = getPersonalityCore();
-    const systemPrompt = personality.generateSystemPrompt({
+    const personalityProfile = personality.getProfile();
+    let systemPrompt = personality.generateSystemPrompt({
       model: routingResult.modelId,
       context: options.context || {}
     });
+
+    // 2.1 활성화된 알바(전문가) 목록 추가 - Soul이 필요시 호출 가능
+    try {
+      const activeRoles = await Role.getActiveRoles();
+      if (activeRoles.length > 0) {
+        systemPrompt += `\n\n=== 전문가 팀 (필요시 호출 가능) ===\n`;
+        systemPrompt += `당신은 다음 전문가들의 도움을 받을 수 있습니다. 전문적인 작업이 필요할 때만 호출하세요.\n`;
+        systemPrompt += `호출 방법: 응답에 [DELEGATE:역할ID] 태그를 포함하면 해당 전문가에게 작업이 위임됩니다.\n\n`;
+
+        activeRoles.forEach(role => {
+          systemPrompt += `- @${role.roleId}: ${role.name} - ${role.description}\n`;
+          systemPrompt += `  트리거: ${role.triggers.slice(0, 3).join(', ')}\n`;
+        });
+
+        systemPrompt += `\n예시: "이 번역은 전문가에게 맡기겠습니다. [DELEGATE:translator]"\n`;
+        systemPrompt += `주의: 간단한 작업은 직접 처리하고, 복잡한 전문 작업만 위임하세요.\n`;
+      }
+    } catch (roleError) {
+      console.warn('알바 목록 로드 실패:', roleError.message);
+    }
+
+    // 프로필에서 AI 설정 가져오기 (options로 오버라이드 가능)
+    const aiSettings = {
+      temperature: options.temperature ?? personalityProfile.temperature ?? 0.7,
+      maxTokens: options.maxTokens ?? personalityProfile.maxTokens ?? 4096
+    };
+    console.log(`[Chat] AI Settings from profile: temperature=${aiSettings.temperature}, maxTokens=${aiSettings.maxTokens}`);
 
     // 3. 파이프라인 가져오기
     const pipeline = await getConversationPipeline({
@@ -166,52 +94,143 @@ router.post('/', async (req, res) => {
 
     // 5. AI 응답 생성 (실제 AI 호출)
     const { AIServiceFactory } = require('../utils/ai-service');
+    const AIServiceModel = require('../models/AIService');
 
     let aiResponse;
     try {
-      // AI 서비스 생성 (모델 ID로 자동 판단)
-      const serviceName = routingResult.modelId.includes('claude') ? 'anthropic'
-        : routingResult.modelId.includes('gpt') ? 'openai'
-        : routingResult.modelId.includes('gemini') ? 'google'
-        : 'anthropic'; // 기본값
+      // 활성화된 AI 서비스 조회 (UI에서 설정한 서비스)
+      const activeService = await AIServiceModel.findOne({ isActive: true, apiKey: { $ne: null } }).select('+apiKey');
 
-      const aiService = await AIServiceFactory.createService(serviceName, routingResult.modelId);
+      let serviceName, modelId;
+      if (activeService && activeService.models && activeService.models.length > 0) {
+        // UI에서 설정한 활성 서비스 사용
+        serviceName = activeService.serviceId;
+        modelId = activeService.models[0].id; // 첫 번째 모델 사용
+        console.log(`[Chat] Using active service: ${serviceName}, model: ${modelId}`);
+      } else {
+        // Fallback: 라우팅 결과 기반 서비스 선택
+        serviceName = routingResult.modelId.includes('claude') ? 'anthropic'
+          : routingResult.modelId.includes('gpt') ? 'openai'
+          : routingResult.modelId.includes('gemini') ? 'google'
+          : 'anthropic';
+        modelId = routingResult.modelId;
+        console.log(`[Chat] Fallback to routing: ${serviceName}, model: ${modelId}`);
+      }
+
+      const aiService = await AIServiceFactory.createService(serviceName, modelId);
 
       // system 메시지 분리
       const systemMessages = conversationData.messages.filter(m => m.role === 'system');
       const chatMessages = conversationData.messages.filter(m => m.role !== 'system');
 
       const combinedSystemPrompt = systemMessages.map(m => m.content).join('\n\n');
+      console.log(`[Chat] System messages count: ${systemMessages.length}`);
+      console.log(`[Chat] System prompt length: ${combinedSystemPrompt.length} chars`);
+      if (combinedSystemPrompt.length > 0) {
+        console.log(`[Chat] System prompt preview: ${combinedSystemPrompt.substring(0, 200)}...`);
+      }
 
       // MCP 도구 로드 (스마트홈 등)
       const mcpTools = loadMCPTools();
 
-      // AI 호출 (도구 포함)
+      // AI 호출 (도구 포함) - 프로필 설정 적용
       aiResponse = await aiService.chat(chatMessages, {
         systemPrompt: combinedSystemPrompt,
-        maxTokens: options.maxTokens || 4096,
-        temperature: options.temperature || 1.0,
+        maxTokens: aiSettings.maxTokens,
+        temperature: aiSettings.temperature,
         tools: mcpTools.length > 0 ? mcpTools : null,
         toolExecutor: mcpTools.length > 0 ? executeMCPTool : null
       });
     } catch (aiError) {
       console.error('AI 호출 실패:', aiError);
-      aiResponse = `죄송합니다. AI 응답 생성 중 오류가 발생했습니다: ${aiError.message}`;
+
+      // 오류 유형에 따른 친절한 메시지 생성
+      const errorMessage = aiError.message || '';
+      const statusMatch = errorMessage.match(/^(\d{3})/);
+      const statusCode = statusMatch ? parseInt(statusMatch[1]) : null;
+
+      if (statusCode === 401 || errorMessage.includes('authentication_error') || errorMessage.includes('invalid x-api-key')) {
+        aiResponse = '🔑 API 인증에 문제가 발생했어요. 관리자에게 API 키 설정을 확인해달라고 요청해주세요.';
+        console.error('❌ API 키 인증 오류 - .env 파일의 ANTHROPIC_API_KEY 또는 해당 서비스 API 키를 확인하세요.');
+      } else if (statusCode === 429 || errorMessage.includes('rate_limit')) {
+        aiResponse = '⏳ 요청이 너무 많아서 잠시 쉬어가야 해요. 1분 후에 다시 시도해주세요.';
+      } else if (statusCode === 500 || statusCode === 502 || statusCode === 503) {
+        aiResponse = '🔧 AI 서버에 일시적인 문제가 발생했어요. 잠시 후 다시 시도해주세요.';
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {
+        aiResponse = '⏱️ 응답 시간이 너무 오래 걸려서 중단됐어요. 다시 시도해주세요.';
+      } else if (errorMessage.includes('network') || errorMessage.includes('ECONNREFUSED')) {
+        aiResponse = '🌐 네트워크 연결에 문제가 있어요. 인터넷 연결을 확인해주세요.';
+      } else {
+        aiResponse = `😅 AI 응답 생성 중 문제가 발생했어요. 잠시 후 다시 시도해주세요.`;
+      }
     }
 
-    // 6. 응답 일관성 검증
-    const validation = personality.validateResponse(aiResponse, {
+    // 6. 알바 위임 체크 - Soul이 [DELEGATE:roleId] 태그를 사용했는지 확인
+    let delegatedRole = null;
+    let finalResponse = aiResponse;
+    const delegateMatch = aiResponse.match(/\[DELEGATE:([a-z_-]+)\]/i);
+
+    if (delegateMatch) {
+      const roleId = delegateMatch[1].toLowerCase();
+      console.log(`[Chat] Soul이 전문가 호출: @${roleId}`);
+
+      try {
+        const role = await Role.findOne({ roleId, isActive: true });
+        if (role) {
+          delegatedRole = role;
+
+          // 알바에게 작업 위임
+          const roleModelId = role.preferredModel || 'claude-3-5-sonnet-20241022';
+          const roleServiceName = roleModelId.includes('claude') ? 'anthropic'
+            : roleModelId.includes('gpt') ? 'openai'
+            : roleModelId.includes('gemini') ? 'google'
+            : 'anthropic';
+
+          const roleService = await AIServiceFactory.createService(roleServiceName, roleModelId);
+
+          console.log(`[Chat] @${roleId} 작업 시작 (model: ${roleModelId})`);
+
+          const roleResult = await roleService.chat(
+            [{ role: 'user', content: message }],
+            {
+              systemPrompt: role.systemPrompt,
+              maxTokens: role.maxTokens || 4096,
+              temperature: role.temperature || 0.7
+            }
+          );
+
+          // 위임 태그 제거하고 알바 응답으로 대체
+          const soulIntro = aiResponse.replace(/\[DELEGATE:[a-z_-]+\]/gi, '').trim();
+          finalResponse = soulIntro ? `${soulIntro}\n\n---\n\n${roleResult}` : roleResult;
+
+          // 알바 성과 기록
+          const responseTime = Date.now() - startTime;
+          await role.recordUsage(true, roleResult.length, responseTime);
+
+          console.log(`[Chat] @${roleId} 작업 완료`);
+        } else {
+          console.warn(`[Chat] 요청한 역할 @${roleId}를 찾을 수 없음`);
+          finalResponse = aiResponse.replace(/\[DELEGATE:[a-z_-]+\]/gi, '').trim();
+        }
+      } catch (delegateError) {
+        console.error(`[Chat] 알바 위임 실패:`, delegateError);
+        finalResponse = aiResponse.replace(/\[DELEGATE:[a-z_-]+\]/gi, '').trim();
+      }
+    }
+
+    // 7. 응답 일관성 검증
+    const validation = personality.validateResponse(finalResponse, {
       englishExpected: options.englishExpected || false
     });
 
-    // 7. 응답 저장
-    await pipeline.handleResponse(message, aiResponse, sessionId);
+    // 8. 응답 저장
+    await pipeline.handleResponse(message, finalResponse, sessionId);
 
     res.json({
       success: true,
       sessionId,
-      message: aiResponse,
-      reply: aiResponse, // 프론트엔드 호환성
+      message: finalResponse,
+      reply: finalResponse, // 프론트엔드 호환성
       usage: conversationData.usage,
       compressed: conversationData.compressed,
       contextData: conversationData.contextData,
@@ -220,7 +239,11 @@ router.post('/', async (req, res) => {
         modelId: routingResult.modelId,
         reason: routingResult.reason,
         confidence: routingResult.confidence,
-        estimatedCost: routingResult.estimatedCost
+        estimatedCost: routingResult.estimatedCost,
+        delegatedTo: delegatedRole ? {
+          roleId: delegatedRole.roleId,
+          name: delegatedRole.name
+        } : null
       },
       validation: {
         valid: validation.valid,
@@ -431,8 +454,8 @@ router.post('/analyze-task', async (req, res) => {
       });
     }
 
-    const router = getSmartRouter();
-    const analysis = router.analyzeTask(message, context);
+    const smartRouter = await getSmartRouter();
+    const analysis = smartRouter.analyzeTask(message, context);
 
     res.json({
       success: true,
@@ -451,10 +474,10 @@ router.post('/analyze-task', async (req, res) => {
  * GET /api/chat/routing-stats
  * 라우팅 통계
  */
-router.get('/routing-stats', (req, res) => {
+router.get('/routing-stats', async (req, res) => {
   try {
-    const router = getSmartRouter();
-    const stats = router.getStats();
+    const smartRouter = await getSmartRouter();
+    const stats = smartRouter.getStats();
 
     res.json({
       success: true,
@@ -473,10 +496,10 @@ router.get('/routing-stats', (req, res) => {
  * GET /api/chat/models
  * 사용 가능한 모델 목록
  */
-router.get('/models', (req, res) => {
+router.get('/models', async (req, res) => {
   try {
-    const router = getSmartRouter();
-    const models = router.getAllModels();
+    const smartRouter = await getSmartRouter();
+    const models = smartRouter.getAllModels();
 
     res.json({
       success: true,

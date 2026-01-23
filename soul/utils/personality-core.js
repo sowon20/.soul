@@ -9,39 +9,45 @@
  * - 컨텍스트 연속성 보장
  * - 톤/스타일 일관성
  * - 모델 전환 시 seamless transition
+ * - AgentProfile에서 동적으로 설정 로드
  */
 
+const { getAgentProfileManager } = require('./agent-profile');
+const Role = require('../models/Role');
+
 /**
- * 인격 프로필
+ * 기본 인격 프로필 (AgentProfile에서 로드 실패 시 fallback)
  */
-const PERSONALITY_PROFILE = {
+const DEFAULT_PERSONALITY_PROFILE = {
   name: 'Soul',
   role: 'AI Assistant',
 
   // 핵심 특성
   traits: {
-    helpful: 1.0,        // 도움을 주려는 의지
-    professional: 0.9,   // 전문성
-    friendly: 0.8,       // 친근함
-    precise: 0.9,        // 정확성
-    proactive: 0.7,      // 능동성
-    empathetic: 0.6      // 공감 능력
+    helpful: 1.0,
+    professional: 0.9,
+    friendly: 0.8,
+    precise: 0.9,
+    proactive: 0.7,
+    empathetic: 0.6
   },
 
   // 커뮤니케이션 스타일
   communication: {
-    formality: 0.7,      // 격식 (0 = casual, 1 = formal)
-    verbosity: 0.5,      // 말 많음 (0 = concise, 1 = detailed)
-    technicality: 0.8,   // 기술적 (0 = simple, 1 = technical)
-    directness: 0.8      // 직설적 (0 = indirect, 1 = direct)
+    formality: 0.5,
+    verbosity: 0.5,
+    technicality: 0.5,
+    directness: 0.7,
+    emoji: 0.3,
+    humor: 0.3
   },
 
   // 언어 선호
   language: {
-    primary: 'ko',       // 한국어
-    secondary: 'en',     // 영어
-    codeComments: 'en',  // 코드 주석은 영어
-    mixedOk: true        // 한영 혼용 가능
+    primary: 'ko',
+    secondary: 'en',
+    codeComments: 'en',
+    mixedOk: true
   },
 
   // 응답 패턴
@@ -55,6 +61,46 @@ const PERSONALITY_PROFILE = {
 };
 
 /**
+ * AgentProfile에서 인격 프로필 로드
+ */
+function loadProfileFromAgentProfile() {
+  try {
+    const manager = getAgentProfileManager();
+    const agentProfile = manager.getProfile('default');
+
+    if (!agentProfile) {
+      console.log('[PersonalityCore] AgentProfile not found, using default');
+      return DEFAULT_PERSONALITY_PROFILE;
+    }
+
+    // AgentProfile에서 personality 설정 변환
+    const profile = {
+      name: agentProfile.name || 'Soul',
+      role: agentProfile.role || 'AI Assistant',
+      traits: agentProfile.personality?.traits || DEFAULT_PERSONALITY_PROFILE.traits,
+      communication: agentProfile.personality?.communication || DEFAULT_PERSONALITY_PROFILE.communication,
+      language: DEFAULT_PERSONALITY_PROFILE.language,
+      responsePatterns: DEFAULT_PERSONALITY_PROFILE.responsePatterns,
+      // 추가 AI 설정
+      temperature: agentProfile.temperature ?? 0.7,
+      maxTokens: agentProfile.maxTokens || 4096,
+      defaultModel: agentProfile.defaultModel || ''
+    };
+
+    console.log('[PersonalityCore] Loaded profile from AgentProfile:', {
+      name: profile.name,
+      formality: profile.communication.formality,
+      temperature: profile.temperature
+    });
+
+    return profile;
+  } catch (error) {
+    console.warn('[PersonalityCore] Failed to load AgentProfile:', error.message);
+    return DEFAULT_PERSONALITY_PROFILE;
+  }
+}
+
+/**
  * PersonalityCore 클래스
  * 모든 모델에서 일관된 인격 제공
  */
@@ -62,10 +108,13 @@ class PersonalityCore {
   constructor(config = {}) {
     this.config = {
       enablePersonality: config.enablePersonality !== false,
-      profile: config.profile || PERSONALITY_PROFILE,
       enableContextTracking: config.enableContextTracking !== false,
       enableStyleConsistency: config.enableStyleConsistency !== false
     };
+
+    // 프로필은 동적으로 로드 (캐시됨)
+    this._cachedProfile = null;
+    this._profileLoadedAt = null;
 
     // 대화 컨텍스트 추적
     this.conversationContext = {
@@ -75,6 +124,31 @@ class PersonalityCore {
       topicHistory: [],
       userPreferences: {}
     };
+  }
+
+  /**
+   * 프로필 가져오기 (캐시 + 주기적 갱신)
+   */
+  getProfile() {
+    const now = Date.now();
+    const CACHE_TTL = 30000; // 30초 캐시
+
+    // 캐시가 없거나 만료되면 다시 로드
+    if (!this._cachedProfile || !this._profileLoadedAt || (now - this._profileLoadedAt > CACHE_TTL)) {
+      this._cachedProfile = loadProfileFromAgentProfile();
+      this._profileLoadedAt = now;
+    }
+
+    return this._cachedProfile;
+  }
+
+  /**
+   * 프로필 캐시 무효화 (설정 변경 시 호출)
+   */
+  invalidateCache() {
+    this._cachedProfile = null;
+    this._profileLoadedAt = null;
+    console.log('[PersonalityCore] Profile cache invalidated');
   }
 
   /**
@@ -88,7 +162,8 @@ class PersonalityCore {
       return 'You are a helpful AI assistant.';
     }
 
-    const profile = this.config.profile;
+    // 동적으로 프로필 로드
+    const profile = this.getProfile();
 
     let prompt = `You are ${profile.name}, an AI assistant with the following personality:\n\n`;
 
@@ -180,7 +255,7 @@ class PersonalityCore {
    */
   validateResponse(response, context = {}) {
     const issues = [];
-    const profile = this.config.profile;
+    const profile = this.getProfile();
 
     // 1. 언어 일관성 체크
     if (profile.language.primary === 'ko') {
@@ -250,7 +325,7 @@ class PersonalityCore {
   getContext() {
     return {
       ...this.conversationContext,
-      profile: this.config.profile
+      profile: this.getProfile()
     };
   }
 
@@ -348,5 +423,6 @@ function getPersonalityCore(config = {}) {
 module.exports = {
   PersonalityCore,
   getPersonalityCore,
-  PERSONALITY_PROFILE
+  DEFAULT_PERSONALITY_PROFILE,
+  loadProfileFromAgentProfile
 };

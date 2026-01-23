@@ -492,18 +492,59 @@ class SmartRouter {
 let globalRouter = null;
 
 /**
+ * 사용자 설정에서 모델 정보 업데이트
+ */
+function updateModelsFromConfig(routingConfig) {
+  if (routingConfig.light) {
+    MODELS.HAIKU.id = routingConfig.light;
+  }
+  if (routingConfig.medium) {
+    MODELS.SONNET.id = routingConfig.medium;
+  }
+  if (routingConfig.heavy) {
+    MODELS.OPUS.id = routingConfig.heavy;
+  }
+  console.log('[SmartRouter] Models updated from config:', {
+    light: MODELS.HAIKU.id,
+    medium: MODELS.SONNET.id,
+    heavy: MODELS.OPUS.id
+  });
+}
+
+/**
  * 싱글톤 인스턴스 가져오기
  */
-function getSmartRouter(config = {}) {
+async function getSmartRouter(config = {}) {
   if (!globalRouter) {
+    // 설정에서 라우팅 정보 로드
+    try {
+      const configManager = require('./config');
+      const routingConfig = await configManager.getRoutingConfig();
+      updateModelsFromConfig(routingConfig);
+    } catch (err) {
+      console.warn('[SmartRouter] Could not load routing config:', err.message);
+    }
     globalRouter = new SmartRouter(config);
   }
+  return globalRouter;
+}
+
+/**
+ * SmartRouter 인스턴스 리셋 (설정 변경 시)
+ */
+function resetSmartRouter(routingConfig = null) {
+  if (routingConfig) {
+    updateModelsFromConfig(routingConfig);
+  }
+  globalRouter = new SmartRouter();
+  console.log('[SmartRouter] Router reset with new config');
   return globalRouter;
 }
 
 module.exports = {
   SmartRouter,
   getSmartRouter,
+  resetSmartRouter,
   MODELS,
   TASK_TYPES
 };

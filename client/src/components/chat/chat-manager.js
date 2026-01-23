@@ -26,6 +26,62 @@ export class ChatManager {
 
     // Setup infinite scroll
     this.setupInfiniteScroll();
+
+    // Setup selection restriction (드래그 선택 범위 제한)
+    this.setupSelectionRestriction();
+  }
+
+  /**
+   * 선택 범위 제한 설정 (메시지 간 선택 확장 방지)
+   */
+  setupSelectionRestriction() {
+    let selectionStartMessage = null;
+    let isAdjusting = false;
+
+    // 선택 시작 시 메시지 추적
+    this.messagesArea.addEventListener('mousedown', (e) => {
+      const messageContent = e.target.closest('.message-content');
+      selectionStartMessage = messageContent ? messageContent.closest('.chat-message') : null;
+      console.log('🖱️ mousedown on message:', selectionStartMessage?.classList?.value);
+    });
+
+    // 선택 변경 시 범위 제한
+    document.addEventListener('selectionchange', () => {
+      if (!selectionStartMessage || isAdjusting) return;
+
+      const selection = document.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+
+      const range = selection.getRangeAt(0);
+      if (range.collapsed) return;
+
+      // 선택 시작/끝 위치의 메시지 확인
+      const getMessageFromNode = (node) => {
+        const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        return element?.closest?.('.chat-message');
+      };
+
+      const startMessage = getMessageFromNode(range.startContainer);
+      const endMessage = getMessageFromNode(range.endContainer);
+
+      // 메시지 콘텐츠 내에서만 선택 허용 (메시지 영역 밖으로 나가면 취소)
+      const isValidSelection = startMessage && endMessage &&
+        startMessage.closest('.chat-messages') && endMessage.closest('.chat-messages');
+
+      if (!isValidSelection) {
+        console.log('❌ Selection outside message area, clearing');
+        isAdjusting = true;
+        selection.removeAllRanges();
+        setTimeout(() => {
+          isAdjusting = false;
+        }, 0);
+      }
+    });
+
+    // 선택 끝나면 추적 해제
+    document.addEventListener('mouseup', () => {
+      selectionStartMessage = null;
+    });
   }
 
   /**
@@ -144,6 +200,10 @@ export class ChatManager {
     this.messages.push(message);
 
     const messageElement = this.createMessageElement(message);
+
+    // 애니메이션 클래스 추가
+    messageElement.classList.add('fade-in-up');
+
     this.messagesArea.appendChild(messageElement);
 
     // Scroll to bottom
@@ -158,14 +218,14 @@ export class ChatManager {
 
     if (message.role === 'user') {
       template = this.userMessageTemplate.content.cloneNode(true);
-      const messageDiv = template.querySelector('.message-user');
+      const messageDiv = template.querySelector('.chat-message.user');
 
       // Set content
-      const text = messageDiv.querySelector('.message-text');
-      text.textContent = message.content;
+      const content = messageDiv.querySelector('.message-content');
+      content.textContent = message.content;
 
       // Set timestamp
-      const timestamp = messageDiv.querySelector('.message-timestamp');
+      const timestamp = messageDiv.querySelector('.message-time');
       timestamp.textContent = this.formatDateTime(message.timestamp);
 
       // Add event listeners for action buttons
@@ -174,17 +234,63 @@ export class ChatManager {
       return messageDiv;
     } else {
       template = this.assistantMessageTemplate.content.cloneNode(true);
-      const messageDiv = template.querySelector('.message-assistant');
+      const messageDiv = template.querySelector('.chat-message.assistant');
 
       // Set content (with markdown support)
-      const text = messageDiv.querySelector('.message-text');
-      text.innerHTML = window.marked ? window.marked.parse(message.content) : this.escapeHtml(message.content);
+      const content = messageDiv.querySelector('.message-content');
+      const renderedContent = window.marked ? window.marked.parse(message.content) : this.escapeHtml(message.content);
+      content.innerHTML = renderedContent;
+
+      // Process code blocks - add copy button and syntax highlighting
+      this.processCodeBlocks(content, message.content);
 
       // Add event listeners for action buttons
       this.attachAssistantMessageActions(messageDiv, message);
 
       return messageDiv;
     }
+  }
+
+  /**
+   * 코드 블럭 처리 (복사 버튼 추가 + Prism 하이라이팅)
+   */
+  processCodeBlocks(contentDiv, rawContent) {
+    const preElements = contentDiv.querySelectorAll('pre');
+
+    preElements.forEach(pre => {
+      // Wrap pre in code-block container
+      const wrapper = document.createElement('div');
+      wrapper.className = 'code-block';
+
+      // Create copy button
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'code-copy-btn';
+      copyBtn.title = '복사';
+      copyBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+        </svg>
+      `;
+
+      // Get code content for copying
+      const codeElement = pre.querySelector('code');
+      const codeText = codeElement ? codeElement.textContent : pre.textContent;
+
+      copyBtn.addEventListener('click', () => {
+        this.copyMessage(codeText, copyBtn);
+      });
+
+      // Insert wrapper and button
+      pre.parentNode.insertBefore(wrapper, pre);
+      wrapper.appendChild(copyBtn);
+      wrapper.appendChild(pre);
+
+      // Apply Prism syntax highlighting
+      if (window.Prism && codeElement) {
+        window.Prism.highlightElement(codeElement);
+      }
+    });
   }
 
   /**
@@ -195,9 +301,18 @@ export class ChatManager {
     const editBtn = messageDiv.querySelector('.edit-btn');
     const deleteBtn = messageDiv.querySelector('.delete-btn');
 
-    copyBtn.addEventListener('click', () => this.copyMessage(message.content));
-    editBtn.addEventListener('click', () => this.editMessage(message));
-    deleteBtn.addEventListener('click', () => this.deleteMessage(messageDiv, message));
+    if (copyBtn && !copyBtn.dataset.bound) {
+      copyBtn.dataset.bound = 'true';
+      copyBtn.addEventListener('click', () => this.copyMessage(message.content, copyBtn));
+    }
+    if (editBtn && !editBtn.dataset.bound) {
+      editBtn.dataset.bound = 'true';
+      editBtn.addEventListener('click', () => this.editMessage(message));
+    }
+    if (deleteBtn && !deleteBtn.dataset.bound) {
+      deleteBtn.dataset.bound = 'true';
+      deleteBtn.addEventListener('click', () => this.deleteMessage(messageDiv, message));
+    }
   }
 
   /**
@@ -210,23 +325,228 @@ export class ChatManager {
     const bookmarkBtn = messageDiv.querySelector('.bookmark-btn');
     const retryBtn = messageDiv.querySelector('.retry-btn');
 
-    copyBtn.addEventListener('click', () => this.copyMessage(message.content));
-    likeBtn.addEventListener('click', () => this.likeMessage(message));
-    dislikeBtn.addEventListener('click', () => this.dislikeMessage(message));
-    bookmarkBtn.addEventListener('click', () => this.bookmarkMessage(message));
-    retryBtn.addEventListener('click', () => this.retryMessage(message));
+    if (copyBtn && !copyBtn.dataset.bound) {
+      copyBtn.dataset.bound = 'true';
+      copyBtn.addEventListener('click', () => this.copyMessage(message.content, copyBtn));
+    }
+    if (likeBtn && !likeBtn.dataset.bound) {
+      likeBtn.dataset.bound = 'true';
+      likeBtn.addEventListener('click', () => this.showFeedback(likeBtn, 'liked'));
+    }
+    if (dislikeBtn && !dislikeBtn.dataset.bound) {
+      dislikeBtn.dataset.bound = 'true';
+      dislikeBtn.addEventListener('click', () => this.showFeedback(dislikeBtn, 'disliked'));
+    }
+    if (bookmarkBtn && !bookmarkBtn.dataset.bound) {
+      bookmarkBtn.dataset.bound = 'true';
+      bookmarkBtn.addEventListener('click', () => this.showFeedback(bookmarkBtn, 'bookmarked'));
+    }
+    if (retryBtn && !retryBtn.dataset.bound) {
+      retryBtn.dataset.bound = 'true';
+      retryBtn.addEventListener('click', () => this.retryMessage(message));
+    }
   }
 
   /**
-   * 메시지 복사
+   * 메시지 복사 (버튼에 피드백 제공)
    */
-  async copyMessage(content) {
+  async copyMessage(content, button = null) {
+    console.log('📋 copyMessage 호출됨, content:', content?.substring(0, 50));
+
+    let success = false;
+
+    // 클립보드 API 시도
     try {
-      await navigator.clipboard.writeText(content);
-      console.log('메시지가 복사되었습니다.');
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(content);
+        success = true;
+      } else {
+        // 폴백: execCommand 사용
+        success = this.copyWithExecCommand(content);
+      }
     } catch (error) {
-      console.error('복사 실패:', error);
+      console.warn('클립보드 API 실패, 폴백 시도:', error);
+      success = this.copyWithExecCommand(content);
     }
+
+    // 버튼 피드백
+    if (button) {
+      const originalHTML = button.innerHTML;
+      if (success) {
+        button.innerHTML = `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        `;
+        button.classList.add('copied');
+        console.log('✅ 복사 성공');
+      } else {
+        button.innerHTML = `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        `;
+        button.classList.add('copy-failed');
+        console.log('❌ 복사 실패');
+      }
+      console.log('⏰ setTimeout 설정 (2초 후 복원)');
+      setTimeout(() => {
+        console.log('⏰ setTimeout 실행됨 - 원래 아이콘 복원');
+        button.innerHTML = originalHTML;
+        button.classList.remove('copied', 'copy-failed');
+      }, 2000);
+    }
+  }
+
+  /**
+   * execCommand 폴백을 사용한 복사
+   */
+  copyWithExecCommand(text) {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      textarea.style.top = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const success = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return success;
+    } catch (error) {
+      console.error('execCommand 복사 실패:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 기존 하드코딩된 메시지에 이벤트 바인딩
+   */
+  bindExistingMessages() {
+    // 기존 어시스턴트 메시지들
+    const assistantMessages = this.messagesArea.querySelectorAll('.chat-message.assistant');
+    assistantMessages.forEach(messageDiv => {
+      const content = messageDiv.querySelector('.message-content');
+      if (!content) return;
+
+      // 코드 복사 버튼
+      const codeCopyBtns = messageDiv.querySelectorAll('.code-copy-btn');
+      codeCopyBtns.forEach(btn => {
+        if (btn.dataset.bound) return;
+        btn.dataset.bound = 'true';
+        const codeBlock = btn.closest('.code-block');
+        if (codeBlock) {
+          const code = codeBlock.querySelector('code');
+          const codeText = code ? code.textContent : '';
+          btn.addEventListener('click', () => this.copyMessage(codeText, btn));
+        }
+      });
+
+      // 메시지 액션 버튼들
+      const copyBtn = messageDiv.querySelector('.message-actions .message-action-btn[title="복사"]');
+      const likeBtn = messageDiv.querySelector('.message-actions .message-action-btn[title="좋아요"]');
+      const dislikeBtn = messageDiv.querySelector('.message-actions .message-action-btn[title="싫어요"]');
+      const bookmarkBtn = messageDiv.querySelector('.message-actions .message-action-btn[title="북마크"]');
+      const retryBtn = messageDiv.querySelector('.message-actions .message-action-btn[title="재생성"]');
+
+      console.log('🔍 bindExistingMessages - assistant 메시지:', {
+        copyBtn: !!copyBtn,
+        likeBtn: !!likeBtn,
+        dislikeBtn: !!dislikeBtn,
+        bookmarkBtn: !!bookmarkBtn,
+        retryBtn: !!retryBtn
+      });
+
+      const textContent = content.textContent;
+
+      if (copyBtn && !copyBtn.dataset.bound) {
+        copyBtn.dataset.bound = 'true';
+        console.log('✅ copyBtn 바인딩됨');
+        copyBtn.addEventListener('click', (e) => {
+          console.log('🖱️ copyBtn 클릭 이벤트 발생');
+          e.stopPropagation();
+          this.copyMessage(textContent, copyBtn);
+        });
+      }
+      if (likeBtn && !likeBtn.dataset.bound) {
+        likeBtn.dataset.bound = 'true';
+        likeBtn.addEventListener('click', () => this.showFeedback(likeBtn, 'liked'));
+      }
+      if (dislikeBtn && !dislikeBtn.dataset.bound) {
+        dislikeBtn.dataset.bound = 'true';
+        dislikeBtn.addEventListener('click', () => this.showFeedback(dislikeBtn, 'disliked'));
+      }
+      if (bookmarkBtn && !bookmarkBtn.dataset.bound) {
+        bookmarkBtn.dataset.bound = 'true';
+        bookmarkBtn.addEventListener('click', () => this.showFeedback(bookmarkBtn, 'bookmarked'));
+      }
+      if (retryBtn && !retryBtn.dataset.bound) {
+        retryBtn.dataset.bound = 'true';
+        retryBtn.addEventListener('click', () => console.log('재생성 요청'));
+      }
+    });
+
+    // 기존 사용자 메시지들
+    const userMessages = this.messagesArea.querySelectorAll('.chat-message.user');
+    userMessages.forEach(messageDiv => {
+      const content = messageDiv.querySelector('.message-content');
+      if (!content) return;
+
+      const footer = messageDiv.querySelector('.user-message-footer');
+      if (!footer) return;
+
+      const copyBtn = footer.querySelector('.message-action-btn[title="복사"]');
+      const editBtn = footer.querySelector('.message-action-btn[title="수정"]');
+      const deleteBtn = footer.querySelector('.message-action-btn[title="삭제"]');
+      const retryBtn = footer.querySelector('.message-action-btn[title="재시도"]');
+
+      console.log('🔍 bindExistingMessages - user 메시지:', {
+        copyBtn: !!copyBtn,
+        editBtn: !!editBtn,
+        deleteBtn: !!deleteBtn,
+        retryBtn: !!retryBtn
+      });
+
+      const textContent = content.textContent;
+
+      if (copyBtn && !copyBtn.dataset.bound) {
+        copyBtn.dataset.bound = 'true';
+        console.log('✅ user copyBtn 바인딩됨');
+        copyBtn.addEventListener('click', (e) => {
+          console.log('🖱️ user copyBtn 클릭 이벤트 발생');
+          e.stopPropagation();
+          this.copyMessage(textContent, copyBtn);
+        });
+      }
+      if (editBtn && !editBtn.dataset.bound) {
+        editBtn.dataset.bound = 'true';
+        editBtn.addEventListener('click', () => alert('수정 기능은 준비 중입니다.'));
+      }
+      if (deleteBtn && !deleteBtn.dataset.bound) {
+        deleteBtn.dataset.bound = 'true';
+        deleteBtn.addEventListener('click', () => {
+          if (confirm('이 메시지를 삭제하시겠습니까?')) {
+            messageDiv.remove();
+          }
+        });
+      }
+      if (retryBtn && !retryBtn.dataset.bound) {
+        retryBtn.dataset.bound = 'true';
+        retryBtn.addEventListener('click', () => {
+          this.sendMessage(textContent);
+        });
+      }
+    });
+  }
+
+  /**
+   * 버튼 피드백 표시
+   */
+  showFeedback(button, action) {
+    button.classList.toggle(action);
+    console.log(`${action} 토글됨`);
   }
 
   /**
@@ -298,10 +618,12 @@ export class ChatManager {
    */
   showTypingIndicator() {
     const indicator = this.typingIndicatorTemplate.content.cloneNode(true);
-    const indicatorElement = indicator.querySelector('.message-assistant');
-    indicatorElement.id = 'activeTypingIndicator';
-    this.messagesArea.appendChild(indicatorElement);
-    this.scrollToBottom();
+    const indicatorElement = indicator.querySelector('.chat-message.assistant');
+    if (indicatorElement) {
+      indicatorElement.id = 'activeTypingIndicator';
+      this.messagesArea.appendChild(indicatorElement);
+      this.scrollToBottom();
+    }
   }
 
   /**
@@ -346,10 +668,24 @@ export class ChatManager {
       // Hide typing indicator
       this.hideTypingIndicator();
 
+      // 오류 유형에 따른 친절한 메시지
+      let errorContent;
+      const errorMsg = error.message || '';
+
+      if (errorMsg.includes('timeout') || errorMsg.includes('Request timeout')) {
+        errorContent = '⏱️ 응답 시간이 너무 오래 걸렸어요. 다시 시도해주세요.';
+      } else if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
+        errorContent = '🌐 네트워크 연결에 문제가 있어요. 인터넷 연결을 확인해주세요.';
+      } else if (errorMsg.includes('500') || errorMsg.includes('502') || errorMsg.includes('503')) {
+        errorContent = '🔧 서버에 일시적인 문제가 발생했어요. 잠시 후 다시 시도해주세요.';
+      } else {
+        errorContent = '😅 메시지 전송 중 문제가 발생했어요. 다시 시도해주세요.';
+      }
+
       // Add error message
       this.addMessage({
         role: 'assistant',
-        content: `죄송합니다. 오류가 발생했습니다: ${error.message}`,
+        content: errorContent,
         timestamp: new Date(),
       });
 
@@ -370,8 +706,10 @@ export class ChatManager {
    */
   scrollToBottom(smooth = true) {
     requestAnimationFrame(() => {
-      this.messagesArea.scrollTo({
-        top: this.messagesArea.scrollHeight,
+      // overflow가 설정된 부모 컨테이너(.right-card-top)를 스크롤
+      const scrollContainer = this.messagesArea.closest('.right-card-top') || this.messagesArea.parentElement;
+      scrollContainer.scrollTo({
+        top: scrollContainer.scrollHeight,
         behavior: smooth ? 'smooth' : 'auto',
       });
     });

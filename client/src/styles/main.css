@@ -2,6 +2,7 @@
 @import url('../settings/styles/settings.css');
 @import url('mcp.css');
 @import url('../components/mcp/google-home-manager.css');
+@import url('animations.css');
 
 /* 폰트 */
 @font-face {
@@ -89,7 +90,7 @@ body {
 
 /* 왼쪽 카드 - 베이지 */
 .left-card {
-  width: 300px;
+  width: 350px;
   min-width: 200px;
   max-width: 500px;
   flex-shrink: 0;
@@ -108,9 +109,9 @@ body {
     left: 12px;
     top: 12px;
     bottom: 12px;
-    width: 300px;
+    width: 350px;
     min-width: 0;
-    max-width: 300px;
+    max-width: 350px;
     z-index: 101;
     flex-shrink: 0;
   }
@@ -186,21 +187,27 @@ body {
 @media (max-width: 899px) {
   .center-group {
     position: fixed;
-    left: 324px;
+    left: 374px;
     top: 12px;
     z-index: 100;
     overflow: visible;
   }
 
   .center-group.hide {
-    transform: translateX(calc(-324px));
+    transform: translateX(calc(-374px));
     /* 토글 버튼은 계속 보이도록 opacity/visibility 제거 */
+    pointer-events: none; /* 숨겨진 영역이 메시지 버튼을 덮지 않도록 */
   }
 
   .center-group.hide .center-card {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
+  }
+
+  /* 토글 버튼은 클릭 가능하게 유지 */
+  .center-group.hide .mobile-menu-btn {
+    pointer-events: auto;
   }
 
   .center-card {
@@ -1129,6 +1136,8 @@ body {
   padding-bottom: 40px;
   opacity: 0;
   transition: opacity 0.15s ease-out;
+  user-select: none; /* 메시지 영역 외부 선택 방지 */
+  overflow-x: hidden; /* 가로 넘침 방지 */
 }
 
 .chat-messages.loaded {
@@ -1148,6 +1157,27 @@ body {
   flex-direction: column;
   gap: 6px;
   position: relative;
+  animation: messageSlideIn 0.3s ease-out;
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 메시지 컨텐츠만 선택 가능 */
+.chat-message .message-content {
+  user-select: text;
+  -webkit-user-select: text;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
 }
 
 /* AI 메시지 (왼쪽, 말풍선 없음) */
@@ -1189,6 +1219,7 @@ body {
   display: flex;
   gap: 6px;
   margin-top: 4px;
+  user-select: none; /* 버튼 영역 선택 불가 */
 }
 
 .message-action-btn {
@@ -1213,6 +1244,52 @@ body {
 .message-action-btn svg {
   width: 16px;
   height: 16px;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* 복사 버튼 피드백 애니메이션 */
+.message-action-btn.copied {
+  color: #4ade80;
+}
+
+.message-action-btn.copied svg {
+  animation: copySuccess 0.3s ease;
+}
+
+.message-action-btn.copy-failed {
+  color: #f87171;
+}
+
+.message-action-btn.copy-failed svg {
+  animation: copyFail 0.3s ease;
+}
+
+@keyframes copySuccess {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes copyFail {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* 사용자 메시지 하단 영역 */
@@ -1223,6 +1300,7 @@ body {
   opacity: 0;
   transition: opacity 0.2s;
   margin-top: -2px;
+  user-select: none; /* 버튼 영역 선택 불가 */
 }
 
 .chat-message.user:hover .user-message-footer {

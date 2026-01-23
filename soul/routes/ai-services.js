@@ -26,6 +26,7 @@ router.get('/', async (req, res) => {
       isBuiltIn: service.isBuiltIn,
       hasApiKey: !!service.apiKey,
       modelCount: service.models?.length || 0,
+      models: service.models || [],  // 모델 목록 포함
       lastRefresh: service.lastRefresh
     }));
 

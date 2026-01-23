@@ -14,6 +14,7 @@ export class AISettings {
       medium: 'claude-3-5-sonnet-20241022',
       heavy: 'claude-3-opus-20240229'
     };
+    this.routingStats = null;
     this.memoryConfig = {
       autoSave: true,
       autoInject: true,
@@ -24,6 +25,10 @@ export class AISettings {
       memoryPath: './memory',
       filesPath: './files'
     };
+    this.agentChains = [];
+    this.availableRoles = [];  // 알바(Role) 목록
+    this.expandedRoleId = null;  // 확장된 알바 ID
+    this.abortController = null;  // 이벤트 리스너 중복 방지용
   }
 
   /**
@@ -51,6 +56,15 @@ export class AISettings {
       // 스토리지 경로 설정 로드
       await this.loadStorageConfig();
 
+      // 라우팅 통계 로드
+      await this.loadRoutingStats();
+
+      // 알바(Role) 목록 로드
+      await this.loadAvailableRoles();
+
+      // 에이전트 체인 설정 로드
+      await this.loadAgentChains();
+
       // UI 렌더링
       container.innerHTML = `
         <div class="ai-settings-panel">
@@ -68,6 +82,20 @@ export class AISettings {
             <h3 class="settings-section-title">스마트 라우팅 설정</h3>
             <p class="settings-section-desc">작업 복잡도에 따라 자동으로 최적 모델을 선택합니다.</p>
             ${this.renderSmartRoutingSettings()}
+          </section>
+
+          <!-- 라우팅 통계 -->
+          <section class="settings-section">
+            <h3 class="settings-section-title">라우팅 통계</h3>
+            <p class="settings-section-desc">모델별 사용 현황과 비용을 확인합니다.</p>
+            ${this.renderRoutingStats()}
+          </section>
+
+          <!-- 알바 설정 -->
+          <section class="settings-section">
+            <h3 class="settings-section-title">알바</h3>
+            <p class="settings-section-desc">전문 AI 알바들이 각자의 역할에 맞게 작업을 수행합니다.</p>
+            ${this.renderAgentChainSettings()}
           </section>
 
           <!-- 메모리 설정 -->
@@ -119,12 +147,14 @@ export class AISettings {
 
   /**
    * 사용 가능한 모델 목록 수집
+   * API 키가 설정되어 있고 활성화된 서비스의 모델만 수집
    */
   collectAvailableModels() {
     this.availableModels = [];
 
     this.services.forEach(service => {
-      if (service.models && service.models.length > 0) {
+      // API 키가 있고 활성화된 서비스만 모델 수집
+      if (service.hasApiKey && service.isActive && service.models && service.models.length > 0) {
         service.models.forEach(model => {
           this.availableModels.push({
             id: model.id,
@@ -136,21 +166,16 @@ export class AISettings {
       }
     });
 
-    // 기본 모델들 추가 (서비스에 없어도)
-    const defaultModels = [
-      { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', service: 'Anthropic', type: 'anthropic' },
-      { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', service: 'Anthropic', type: 'anthropic' },
-      { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', service: 'Anthropic', type: 'anthropic' },
-      { id: 'gpt-4o', name: 'GPT-4o', service: 'OpenAI', type: 'openai' },
-      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', service: 'OpenAI', type: 'openai' },
-      { id: 'gemini-pro', name: 'Gemini Pro', service: 'Google', type: 'google' }
-    ];
-
-    defaultModels.forEach(model => {
-      if (!this.availableModels.find(m => m.id === model.id)) {
-        this.availableModels.push(model);
-      }
-    });
+    // 사용 가능한 모델이 없는 경우 안내 메시지용 플레이스홀더
+    if (this.availableModels.length === 0) {
+      this.availableModels.push({
+        id: '',
+        name: '(API 키를 설정하고 모델 새로고침을 해주세요)',
+        service: '-',
+        type: 'none',
+        disabled: true
+      });
+    }
   }
 
   /**
@@ -227,6 +252,89 @@ export class AISettings {
   }
 
   /**
+   * 라우팅 통계 로드
+   */
+  async loadRoutingStats() {
+    try {
+      const response = await this.apiClient.get('/chat/routing-stats');
+      if (response.success) {
+        this.routingStats = response.stats;
+      }
+    } catch (error) {
+      console.error('Failed to load routing stats:', error);
+      this.routingStats = null;
+    }
+  }
+
+  /**
+   * 알바(Role) 목록 로드
+   */
+  async loadAvailableRoles() {
+    try {
+      // 설정 페이지에서는 모든 알바 표시 (비활성 포함)
+      const response = await this.apiClient.get('/roles');
+      if (response.success) {
+        this.availableRoles = response.roles || [];
+      }
+    } catch (error) {
+      console.error('Failed to load roles:', error);
+      this.availableRoles = [];
+    }
+  }
+
+  /**
+   * 에이전트 체인 설정 로드
+   */
+  async loadAgentChains() {
+    try {
+      const saved = localStorage.getItem('agentChains');
+      if (saved) {
+        this.agentChains = JSON.parse(saved);
+      } else {
+        // 기본 체인 설정 (Role 기반)
+        this.agentChains = [
+          {
+            id: 'code-review-chain',
+            name: '코드 리뷰 체인',
+            description: '코드 생성 후 검토를 수행합니다',
+            type: 'sequential',
+            enabled: false,
+            steps: [
+              { roleId: 'coder', customModel: '' },
+              { roleId: 'reviewer', customModel: '' }
+            ]
+          },
+          {
+            id: 'research-summary-chain',
+            name: '연구 요약 체인',
+            description: '조사 후 요약을 생성합니다',
+            type: 'sequential',
+            enabled: false,
+            steps: [
+              { roleId: 'researcher', customModel: '' },
+              { roleId: 'summarizer', customModel: '' }
+            ]
+          },
+          {
+            id: 'parallel-analysis',
+            name: '병렬 분석',
+            description: '여러 관점에서 동시에 분석합니다',
+            type: 'parallel',
+            enabled: false,
+            steps: [
+              { roleId: 'analyzer', customModel: '' },
+              { roleId: 'coder', customModel: '' }
+            ]
+          }
+        ];
+      }
+    } catch (error) {
+      console.error('Failed to load agent chains:', error);
+      this.agentChains = [];
+    }
+  }
+
+  /**
    * 스마트 라우팅 설정 렌더링
    */
   renderSmartRoutingSettings() {
@@ -237,12 +345,8 @@ export class AISettings {
             <span class="label-text">경량 작업 (1-2)</span>
             <span class="label-hint">간단한 질문, 번역, 요약</span>
           </label>
-          <select class="routing-select" id="routingLight">
-            ${this.availableModels.map(model => `
-              <option value="${model.id}" ${model.id === this.routingConfig.light ? 'selected' : ''}>
-                ${model.name} (${model.service})
-              </option>
-            `).join('')}
+          <select class="routing-select" id="routingLight" ${this.availableModels.length === 1 && this.availableModels[0].disabled ? 'disabled' : ''}>
+            ${this.renderModelOptions(this.routingConfig.light)}
           </select>
         </div>
 
@@ -251,12 +355,8 @@ export class AISettings {
             <span class="label-text">중간 작업 (4-6)</span>
             <span class="label-hint">코드 생성, 리뷰, 분석, 문제 해결</span>
           </label>
-          <select class="routing-select" id="routingMedium">
-            ${this.availableModels.map(model => `
-              <option value="${model.id}" ${model.id === this.routingConfig.medium ? 'selected' : ''}>
-                ${model.name} (${model.service})
-              </option>
-            `).join('')}
+          <select class="routing-select" id="routingMedium" ${this.availableModels.length === 1 && this.availableModels[0].disabled ? 'disabled' : ''}>
+            ${this.renderModelOptions(this.routingConfig.medium)}
           </select>
         </div>
 
@@ -265,12 +365,8 @@ export class AISettings {
             <span class="label-text">고성능 작업 (7-9)</span>
             <span class="label-hint">아키텍처 설계, 복잡한 디버깅, 연구</span>
           </label>
-          <select class="routing-select" id="routingHeavy">
-            ${this.availableModels.map(model => `
-              <option value="${model.id}" ${model.id === this.routingConfig.heavy ? 'selected' : ''}>
-                ${model.name} (${model.service})
-              </option>
-            `).join('')}
+          <select class="routing-select" id="routingHeavy" ${this.availableModels.length === 1 && this.availableModels[0].disabled ? 'disabled' : ''}>
+            ${this.renderModelOptions(this.routingConfig.heavy)}
           </select>
         </div>
 
@@ -284,6 +380,340 @@ export class AISettings {
         </div>
       </div>
     `;
+  }
+
+  /**
+   * 라우팅 통계 렌더링
+   */
+  renderRoutingStats() {
+    if (!this.routingStats) {
+      return `
+        <div class="stats-container">
+          <p class="stats-empty">통계 데이터가 없습니다. 대화를 시작하면 통계가 수집됩니다.</p>
+          <button class="settings-btn settings-btn-outline" id="refreshStatsBtn">
+            통계 새로고침
+          </button>
+        </div>
+      `;
+    }
+
+    const stats = this.routingStats;
+    return `
+      <div class="stats-container">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value">${stats.totalRequests || 0}</div>
+            <div class="stat-label">총 요청</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${stats.distribution?.haiku || '0%'}</div>
+            <div class="stat-label">경량 (Haiku)</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${stats.distribution?.sonnet || '0%'}</div>
+            <div class="stat-label">중간 (Sonnet)</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${stats.distribution?.opus || '0%'}</div>
+            <div class="stat-label">고성능 (Opus)</div>
+          </div>
+        </div>
+
+        <div class="stats-details">
+          <div class="stats-row">
+            <span class="stats-label">예상 비용</span>
+            <span class="stats-value">$${(stats.totalCost || 0).toFixed(4)}</span>
+          </div>
+          <div class="stats-row">
+            <span class="stats-label">평균 응답 시간</span>
+            <span class="stats-value">${stats.averageLatency ? stats.averageLatency.toFixed(0) + 'ms' : '-'}</span>
+          </div>
+        </div>
+
+        <div class="stats-actions">
+          <button class="settings-btn settings-btn-outline" id="refreshStatsBtn">
+            통계 새로고침
+          </button>
+          <button class="settings-btn settings-btn-secondary" id="resetStatsBtn">
+            통계 초기화
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * 알바 설정 렌더링 (간소화)
+   */
+  renderAgentChainSettings() {
+    const hasRoles = this.availableRoles.length > 0;
+
+    return `
+      <div class="alba-container">
+        ${!hasRoles ? `
+          <div class="alba-empty">
+            <p>등록된 알바가 없습니다.</p>
+            <button class="settings-btn settings-btn-primary" id="initRolesBtn">
+              기본 알바 초기화
+            </button>
+          </div>
+        ` : `
+          <div class="alba-list">
+            ${this.availableRoles.map(role => this.renderAlbaItem(role)).join('')}
+          </div>
+        `}
+
+        <div class="alba-add">
+          <button class="settings-btn settings-btn-primary" id="addAlbaBtn">
+            + 알바 추가
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * 알바 아이템 렌더링
+   */
+  renderAlbaItem(role) {
+    const isExpanded = this.expandedRoleId === role.roleId;
+
+    return `
+      <div class="alba-item ${role.active ? '' : 'inactive'}" data-role-id="${role.roleId}">
+        <div class="alba-header" data-role-id="${role.roleId}" data-action="toggle-expand">
+          <div class="alba-info">
+            <span class="alba-icon">${this.getRoleIcon(role.category)}</span>
+            <div class="alba-text">
+              <span class="alba-name">${role.name}</span>
+              <span class="alba-desc">${role.description}</span>
+            </div>
+          </div>
+          <div class="alba-status">
+            <span class="alba-mode-badge">${this.getModeLabel(role.mode || 'single')}</span>
+            <label class="toggle-switch toggle-switch-sm" onclick="event.stopPropagation()">
+              <input type="checkbox"
+                     data-role-id="${role.roleId}"
+                     data-action="toggle-active"
+                     ${role.active ? 'checked' : ''}>
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="alba-expand-icon">${isExpanded ? '▼' : '▶'}</span>
+          </div>
+        </div>
+
+        <div class="alba-detail ${isExpanded ? 'expanded' : ''}">
+          <div class="alba-detail-row">
+            <label class="alba-label">작동 방식</label>
+            <select class="alba-mode-select" data-role-id="${role.roleId}">
+              <option value="single" ${(role.mode || 'single') === 'single' ? 'selected' : ''}>일반 (단일 모델)</option>
+              <option value="chain" ${role.mode === 'chain' ? 'selected' : ''}>체인 (순차 실행)</option>
+              <option value="parallel" ${role.mode === 'parallel' ? 'selected' : ''}>병렬 (동시 실행)</option>
+            </select>
+          </div>
+
+          ${this.renderModeConfig(role)}
+
+          <div class="alba-detail-row alba-prompt-row">
+            <label class="alba-label">시스템 프롬프트</label>
+            <textarea class="alba-prompt-textarea"
+                      data-role-id="${role.roleId}"
+                      placeholder="이 알바의 역할과 성격을 정의하세요..."
+                      rows="4">${role.systemPrompt || ''}</textarea>
+            <button class="settings-btn settings-btn-sm settings-btn-primary alba-save-prompt"
+                    data-role-id="${role.roleId}">
+              프롬프트 저장
+            </button>
+          </div>
+
+          <div class="alba-detail-row">
+            <label class="alba-label">카테고리</label>
+            <select class="alba-category-select" data-role-id="${role.roleId}">
+              <option value="content" ${role.category === 'content' ? 'selected' : ''}>✍️ 콘텐츠</option>
+              <option value="code" ${role.category === 'code' ? 'selected' : ''}>💻 코드</option>
+              <option value="data" ${role.category === 'data' ? 'selected' : ''}>📊 데이터</option>
+              <option value="creative" ${role.category === 'creative' ? 'selected' : ''}>🎨 크리에이티브</option>
+              <option value="technical" ${role.category === 'technical' ? 'selected' : ''}>🔧 기술</option>
+              <option value="other" ${role.category === 'other' ? 'selected' : ''}>🤖 기타</option>
+            </select>
+          </div>
+
+          <div class="alba-detail-row alba-triggers-row">
+            <label class="alba-label">트리거 키워드</label>
+            <div class="alba-triggers-container">
+              <div class="alba-triggers-list">
+                ${(role.triggers || []).map((trigger, idx) => `
+                  <span class="alba-trigger-tag">
+                    ${trigger}
+                    <button class="trigger-remove" data-role-id="${role.roleId}" data-trigger-index="${idx}">×</button>
+                  </span>
+                `).join('')}
+              </div>
+              <div class="alba-trigger-input-wrap">
+                <input type="text" class="alba-trigger-input"
+                       data-role-id="${role.roleId}"
+                       placeholder="키워드 입력 후 Enter">
+                <button class="settings-btn settings-btn-sm settings-btn-outline alba-add-trigger"
+                        data-role-id="${role.roleId}">추가</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="alba-detail-row alba-ai-settings">
+            <div class="alba-ai-setting">
+              <label class="alba-label">Temperature</label>
+              <input type="range" class="alba-temperature-range"
+                     data-role-id="${role.roleId}"
+                     min="0" max="2" step="0.1"
+                     value="${role.temperature ?? 0.7}">
+              <span class="alba-range-value">${role.temperature ?? 0.7}</span>
+            </div>
+            <div class="alba-ai-setting">
+              <label class="alba-label">Max Tokens</label>
+              <input type="number" class="alba-maxTokens-input"
+                     data-role-id="${role.roleId}"
+                     min="100" max="32000" step="100"
+                     value="${role.maxTokens || 4096}">
+            </div>
+          </div>
+
+          <div class="alba-detail-row">
+            <label class="alba-label">폴백 모델</label>
+            <select class="alba-fallback-select" data-role-id="${role.roleId}">
+              <option value="">없음</option>
+              ${this.renderModelOptions(role.fallbackModel)}
+            </select>
+          </div>
+
+          <div class="alba-detail-row alba-tags-row">
+            <label class="alba-label">태그</label>
+            <div class="alba-tags-container">
+              <div class="alba-tags-list">
+                ${(role.tags || []).map((tag, idx) => `
+                  <span class="alba-tag">
+                    #${tag}
+                    <button class="tag-remove" data-role-id="${role.roleId}" data-tag-index="${idx}">×</button>
+                  </span>
+                `).join('')}
+              </div>
+              <div class="alba-tag-input-wrap">
+                <input type="text" class="alba-tag-input"
+                       data-role-id="${role.roleId}"
+                       placeholder="태그 입력 후 Enter">
+                <button class="settings-btn settings-btn-sm settings-btn-outline alba-add-tag"
+                        data-role-id="${role.roleId}">추가</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="alba-detail-row alba-actions-row">
+            <div class="alba-btns">
+              <button class="settings-btn settings-btn-sm settings-btn-outline"
+                      data-role-id="${role.roleId}"
+                      data-action="edit-alba">
+                수정
+              </button>
+              <button class="settings-btn settings-btn-sm settings-btn-secondary"
+                      data-role-id="${role.roleId}"
+                      data-action="delete-alba">
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * 작동 방식에 따른 설정 폼 렌더링
+   */
+  renderModeConfig(role) {
+    const mode = role.mode || 'single';
+
+    if (mode === 'single') {
+      return `
+        <div class="alba-detail-row">
+          <label class="alba-label">사용 모델</label>
+          <select class="alba-model-select" data-role-id="${role.roleId}">
+            <option value="">자동 선택</option>
+            ${this.renderModelOptions(role.preferredModel)}
+          </select>
+        </div>
+      `;
+    }
+
+    if (mode === 'chain') {
+      const chainSteps = role.chainSteps || [];
+      return `
+        <div class="alba-detail-row alba-chain-config">
+          <label class="alba-label">체인 순서</label>
+          <div class="alba-chain-steps">
+            ${chainSteps.map((step, idx) => `
+              <div class="alba-chain-step">
+                <span class="step-num">${idx + 1}</span>
+                <select class="chain-step-select" data-role-id="${role.roleId}" data-step-index="${idx}">
+                  <option value="">선택...</option>
+                  ${this.availableRoles.filter(r => r.roleId !== role.roleId).map(r => `
+                    <option value="${r.roleId}" ${step === r.roleId ? 'selected' : ''}>${r.name}</option>
+                  `).join('')}
+                </select>
+                <button class="step-remove" data-role-id="${role.roleId}" data-step-index="${idx}">×</button>
+              </div>
+            `).join('<span class="chain-arrow-sm">→</span>')}
+            <button class="settings-btn settings-btn-sm settings-btn-outline add-chain-step" data-role-id="${role.roleId}">+</button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (mode === 'parallel') {
+      const parallelRoles = role.parallelRoles || [];
+      return `
+        <div class="alba-detail-row alba-parallel-config">
+          <label class="alba-label">동시 실행 알바</label>
+          <div class="alba-parallel-list">
+            ${this.availableRoles.filter(r => r.roleId !== role.roleId).map(r => `
+              <label class="alba-parallel-item">
+                <input type="checkbox"
+                       data-role-id="${role.roleId}"
+                       data-target-role="${r.roleId}"
+                       ${parallelRoles.includes(r.roleId) ? 'checked' : ''}>
+                <span>${r.name}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    return '';
+  }
+
+  /**
+   * 모드 라벨
+   */
+  getModeLabel(mode) {
+    const labels = {
+      'single': '일반',
+      'chain': '체인',
+      'parallel': '병렬'
+    };
+    return labels[mode] || '일반';
+  }
+
+  /**
+   * Role 카테고리별 아이콘
+   */
+  getRoleIcon(category) {
+    const icons = {
+      'content': '✍️',
+      'code': '💻',
+      'data': '📊',
+      'creative': '🎨',
+      'technical': '🔧',
+      'other': '🤖'
+    };
+    return icons[category] || icons.other;
   }
 
   /**
@@ -460,6 +890,142 @@ export class AISettings {
                     placeholder="예: 항상 코드 예시를 포함하세요. 답변은 친절하고 상세하게 작성하세요.">${this.agentProfile.customPrompt || ''}</textarea>
         </div>
 
+        <div class="prompt-divider">
+          <span>AI 동작 설정</span>
+        </div>
+
+        <div class="prompt-field">
+          <label class="prompt-label">
+            <span class="label-text">기본 모델</span>
+            <span class="label-hint">대화에 사용할 기본 AI 모델</span>
+          </label>
+          <select class="prompt-select" id="defaultModel">
+            <option value="">자동 선택 (스마트 라우팅)</option>
+            ${this.renderModelOptions(this.agentProfile.defaultModel)}
+          </select>
+        </div>
+
+        <div class="prompt-field-row">
+          <div class="prompt-field prompt-field-half">
+            <label class="prompt-label">
+              <span class="label-text">창의성 (Temperature)</span>
+              <span class="label-hint">낮을수록 일관적, 높을수록 창의적</span>
+            </label>
+            <div class="prompt-range-wrap">
+              <input type="range"
+                     class="prompt-range"
+                     id="soulTemperature"
+                     min="0" max="2" step="0.1"
+                     value="${this.agentProfile.temperature ?? 0.7}">
+              <span class="prompt-range-value" id="soulTempValue">${this.agentProfile.temperature ?? 0.7}</span>
+            </div>
+            <div class="prompt-range-labels">
+              <span>정확함</span>
+              <span>창의적</span>
+            </div>
+          </div>
+
+          <div class="prompt-field prompt-field-half">
+            <label class="prompt-label">
+              <span class="label-text">응답 길이 (Max Tokens)</span>
+              <span class="label-hint">최대 응답 토큰 수</span>
+            </label>
+            <input type="number"
+                   class="prompt-input prompt-input-number"
+                   id="soulMaxTokens"
+                   min="256" max="32000" step="256"
+                   value="${this.agentProfile.maxTokens || 4096}">
+          </div>
+        </div>
+
+        <div class="prompt-field">
+          <label class="prompt-label">
+            <span class="label-text">대화 스타일</span>
+            <span class="label-hint">각 항목을 슬라이더로 세밀하게 조절하세요</span>
+          </label>
+          <div class="personality-sliders">
+            <div class="personality-slider-item">
+              <div class="slider-header">
+                <span class="slider-label-left">🎉 캐주얼</span>
+                <span class="slider-label-right">🎩 격식</span>
+              </div>
+              <input type="range" class="personality-range" id="personalityFormality"
+                     min="0" max="1" step="0.1"
+                     value="${this.agentProfile.personality?.communication?.formality ?? 0.5}">
+            </div>
+
+            <div class="personality-slider-item">
+              <div class="slider-header">
+                <span class="slider-label-left">⚡ 간결</span>
+                <span class="slider-label-right">📚 상세</span>
+              </div>
+              <input type="range" class="personality-range" id="personalityVerbosity"
+                     min="0" max="1" step="0.1"
+                     value="${this.agentProfile.personality?.communication?.verbosity ?? 0.5}">
+            </div>
+
+            <div class="personality-slider-item">
+              <div class="slider-header">
+                <span class="slider-label-left">🌸 완곡</span>
+                <span class="slider-label-right">🎯 직접적</span>
+              </div>
+              <input type="range" class="personality-range" id="personalityDirectness"
+                     min="0" max="1" step="0.1"
+                     value="${this.agentProfile.personality?.communication?.directness ?? 0.7}">
+            </div>
+
+            <div class="personality-slider-item">
+              <div class="slider-header">
+                <span class="slider-label-left">📝 일반 용어</span>
+                <span class="slider-label-right">🔧 기술 용어</span>
+              </div>
+              <input type="range" class="personality-range" id="personalityTechnicality"
+                     min="0" max="1" step="0.1"
+                     value="${this.agentProfile.personality?.communication?.technicality ?? 0.5}">
+            </div>
+
+            <div class="personality-slider-item">
+              <div class="slider-header">
+                <span class="slider-label-left">😐 이모지 없음</span>
+                <span class="slider-label-right">😊 이모지 많이</span>
+              </div>
+              <input type="range" class="personality-range" id="personalityEmoji"
+                     min="0" max="1" step="0.1"
+                     value="${this.agentProfile.personality?.communication?.emoji ?? 0.3}">
+            </div>
+
+            <div class="personality-slider-item">
+              <div class="slider-header">
+                <span class="slider-label-left">🧐 진지</span>
+                <span class="slider-label-right">😄 유머러스</span>
+              </div>
+              <input type="range" class="personality-range" id="personalityHumor"
+                     min="0" max="1" step="0.1"
+                     value="${this.agentProfile.personality?.communication?.humor ?? 0.3}">
+            </div>
+
+            <div class="personality-slider-item">
+              <div class="slider-header">
+                <span class="slider-label-left">🤖 기계적</span>
+                <span class="slider-label-right">💕 공감적</span>
+              </div>
+              <input type="range" class="personality-range" id="personalityEmpathy"
+                     min="0" max="1" step="0.1"
+                     value="${this.agentProfile.personality?.traits?.empathetic ?? 0.6}">
+            </div>
+
+            <div class="personality-slider-item">
+              <div class="slider-header">
+                <span class="slider-label-left">🐢 수동적</span>
+                <span class="slider-label-right">🚀 적극적</span>
+              </div>
+              <input type="range" class="personality-range" id="personalityProactive"
+                     min="0" max="1" step="0.1"
+                     value="${this.agentProfile.personality?.traits?.proactive ?? 0.7}">
+            </div>
+          </div>
+        </div>
+
         <div class="prompt-actions">
           <button class="settings-btn settings-btn-primary"
                   id="savePromptBtn">
@@ -544,6 +1110,19 @@ export class AISettings {
   }
 
   /**
+   * 모델 옵션 렌더링 헬퍼
+   */
+  renderModelOptions(selectedValue) {
+    return this.availableModels.map(model => `
+      <option value="${model.id}"
+              ${model.id === selectedValue ? 'selected' : ''}
+              ${model.disabled ? 'disabled' : ''}>
+        ${model.name}${model.service && model.service !== '-' ? ` (${model.service})` : ''}
+      </option>
+    `).join('');
+  }
+
+  /**
    * 서비스 타입별 아이콘
    */
   getServiceIcon(type) {
@@ -581,14 +1160,24 @@ export class AISettings {
    * 이벤트 리스너 등록
    */
   attachEventListeners(container) {
-    // 토글 스위치는 change 이벤트 사용
+    // 이전 이벤트 리스너 정리 (중복 방지)
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    this.abortController = new AbortController();
+    const { signal } = this.abortController;
+
+    // 토글 스위치는 change 이벤트 사용 (AI 서비스 토글)
     container.addEventListener('change', async (e) => {
       if (e.target.dataset.action === 'toggle-active') {
         e.stopPropagation();
         const serviceId = e.target.dataset.serviceId;
-        await this.toggleServiceActive(serviceId, e.target.checked);
+        // serviceId가 있을 때만 서비스 토글 (알바 토글은 role-id만 있음)
+        if (serviceId) {
+          await this.toggleServiceActive(serviceId, e.target.checked);
+        }
       }
-    });
+    }, { signal });
 
     // 버튼 클릭은 click 이벤트 사용
     container.addEventListener('click', async (e) => {
@@ -610,7 +1199,7 @@ export class AISettings {
           await this.refreshModels(serviceId, button);
           break;
       }
-    });
+    }, { signal });
 
     // 라우팅 설정 버튼
     const saveRoutingBtn = container.querySelector('#saveRoutingBtn');
@@ -658,6 +1247,16 @@ export class AISettings {
       resetPromptBtn.addEventListener('click', () => this.resetPromptSettings());
     }
 
+    // Soul temperature 슬라이더
+    const soulTempSlider = container.querySelector('#soulTemperature');
+    if (soulTempSlider) {
+      soulTempSlider.addEventListener('input', (e) => {
+        const valueDisplay = container.querySelector('#soulTempValue');
+        if (valueDisplay) valueDisplay.textContent = e.target.value;
+      });
+    }
+
+
     // 스토리지 설정 버튼
     const saveStorageBtn = container.querySelector('#saveStorageBtn');
     const resetStorageBtn = container.querySelector('#resetStorageBtn');
@@ -669,6 +1268,276 @@ export class AISettings {
     if (resetStorageBtn) {
       resetStorageBtn.addEventListener('click', () => this.resetStorageSettings());
     }
+
+    // 라우팅 통계 버튼
+    const refreshStatsBtn = container.querySelector('#refreshStatsBtn');
+    const resetStatsBtn = container.querySelector('#resetStatsBtn');
+
+    if (refreshStatsBtn) {
+      refreshStatsBtn.addEventListener('click', () => this.refreshRoutingStats());
+    }
+
+    if (resetStatsBtn) {
+      resetStatsBtn.addEventListener('click', () => this.resetRoutingStats());
+    }
+
+    // 에이전트 체인 버튼
+    const addChainBtn = container.querySelector('#addChainBtn');
+
+    if (addChainBtn) {
+      addChainBtn.addEventListener('click', () => this.addNewChain());
+    }
+
+    // 알바 초기화 버튼
+    const initRolesBtn = container.querySelector('#initRolesBtn');
+    if (initRolesBtn) {
+      initRolesBtn.addEventListener('click', () => this.initializeRoles());
+    }
+
+    // 알바 추가 버튼
+    const addAlbaBtn = container.querySelector('#addAlbaBtn');
+    if (addAlbaBtn) {
+      addAlbaBtn.addEventListener('click', () => this.addAlba());
+    }
+
+    // 알바 헤더 클릭 (확장/축소)
+    container.querySelectorAll('.alba-header').forEach(header => {
+      header.addEventListener('click', (e) => {
+        if (e.target.closest('.toggle-switch') || e.target.closest('button')) return;
+        const roleId = header.dataset.roleId;
+        this.toggleAlbaExpand(roleId);
+      });
+    });
+
+    // 알바 모드 변경
+    container.querySelectorAll('.alba-mode-select').forEach(select => {
+      select.addEventListener('change', (e) => {
+        const roleId = e.target.dataset.roleId;
+        this.updateAlbaMode(roleId, e.target.value);
+      });
+    });
+
+    // 알바 모델 변경
+    container.querySelectorAll('.alba-model-select').forEach(select => {
+      select.addEventListener('change', (e) => {
+        const roleId = e.target.dataset.roleId;
+        this.updateAlbaModel(roleId, e.target.value);
+      });
+    });
+
+    // 알바 카테고리 변경
+    container.querySelectorAll('.alba-category-select').forEach(select => {
+      select.addEventListener('change', (e) => {
+        const roleId = e.target.dataset.roleId;
+        this.updateAlbaField(roleId, 'category', e.target.value);
+      });
+    });
+
+    // 알바 폴백 모델 변경
+    container.querySelectorAll('.alba-fallback-select').forEach(select => {
+      select.addEventListener('change', (e) => {
+        const roleId = e.target.dataset.roleId;
+        this.updateAlbaField(roleId, 'fallbackModel', e.target.value);
+      });
+    });
+
+    // 알바 Temperature 변경
+    container.querySelectorAll('.alba-temperature-range').forEach(input => {
+      input.addEventListener('input', (e) => {
+        const value = parseFloat(e.target.value);
+        e.target.nextElementSibling.textContent = value;
+      });
+      input.addEventListener('change', (e) => {
+        const roleId = e.target.dataset.roleId;
+        this.updateAlbaField(roleId, 'temperature', parseFloat(e.target.value));
+      });
+    });
+
+    // 알바 MaxTokens 변경
+    container.querySelectorAll('.alba-maxTokens-input').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const roleId = e.target.dataset.roleId;
+        this.updateAlbaField(roleId, 'maxTokens', parseInt(e.target.value));
+      });
+    });
+
+    // 트리거 추가 버튼
+    container.querySelectorAll('.alba-add-trigger').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const roleId = btn.dataset.roleId;
+        const input = container.querySelector(`.alba-trigger-input[data-role-id="${roleId}"]`);
+        if (input && input.value.trim()) {
+          this.addAlbaTrigger(roleId, input.value.trim());
+          input.value = '';
+        }
+      });
+    });
+
+    // 트리거 입력 엔터키
+    container.querySelectorAll('.alba-trigger-input').forEach(input => {
+      input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && input.value.trim()) {
+          const roleId = input.dataset.roleId;
+          this.addAlbaTrigger(roleId, input.value.trim());
+          input.value = '';
+        }
+      });
+    });
+
+    // 트리거 삭제
+    container.querySelectorAll('.trigger-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const roleId = btn.dataset.roleId;
+        const idx = parseInt(btn.dataset.triggerIndex);
+        this.removeAlbaTrigger(roleId, idx);
+      });
+    });
+
+    // 태그 추가 버튼
+    container.querySelectorAll('.alba-add-tag').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const roleId = btn.dataset.roleId;
+        const input = container.querySelector(`.alba-tag-input[data-role-id="${roleId}"]`);
+        if (input && input.value.trim()) {
+          this.addAlbaTag(roleId, input.value.trim());
+          input.value = '';
+        }
+      });
+    });
+
+    // 태그 입력 엔터키
+    container.querySelectorAll('.alba-tag-input').forEach(input => {
+      input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && input.value.trim()) {
+          const roleId = input.dataset.roleId;
+          this.addAlbaTag(roleId, input.value.trim());
+          input.value = '';
+        }
+      });
+    });
+
+    // 태그 삭제
+    container.querySelectorAll('.tag-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const roleId = btn.dataset.roleId;
+        const idx = parseInt(btn.dataset.tagIndex);
+        this.removeAlbaTag(roleId, idx);
+      });
+    });
+
+    // 알바 활성화 토글
+    container.querySelectorAll('[data-action="toggle-active"][data-role-id]').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        const roleId = e.target.dataset.roleId;
+        this.toggleAlbaActive(roleId, e.target.checked);
+      });
+    });
+
+    // 알바 편집/삭제 버튼
+    container.querySelectorAll('[data-action="edit-alba"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.editAlba(btn.dataset.roleId);
+      });
+    });
+
+    container.querySelectorAll('[data-action="delete-alba"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.deleteAlba(btn.dataset.roleId);
+      });
+    });
+
+    // 체인 단계 추가
+    container.querySelectorAll('.add-chain-step').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const roleId = btn.dataset.roleId;
+        this.addAlbaChainStep(roleId);
+      });
+    });
+
+    // 체인 단계 제거
+    container.querySelectorAll('.step-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const roleId = btn.dataset.roleId;
+        const stepIndex = parseInt(btn.dataset.stepIndex);
+        this.removeAlbaChainStep(roleId, stepIndex);
+      });
+    });
+
+    // 체인 단계 선택 변경
+    container.querySelectorAll('.chain-step-select').forEach(select => {
+      select.addEventListener('change', (e) => {
+        const roleId = e.target.dataset.roleId;
+        const stepIndex = parseInt(e.target.dataset.stepIndex);
+        this.updateAlbaChainStep(roleId, stepIndex, e.target.value);
+      });
+    });
+
+    // 병렬 실행 알바 선택
+    container.querySelectorAll('.alba-parallel-config input[type="checkbox"]').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        const roleId = e.target.dataset.roleId;
+        const targetRole = e.target.dataset.targetRole;
+        this.toggleAlbaParallelRole(roleId, targetRole, e.target.checked);
+      });
+    });
+
+    // 알바 프롬프트 저장
+    container.querySelectorAll('.alba-save-prompt').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const roleId = btn.dataset.roleId;
+        const textarea = container.querySelector(`.alba-prompt-textarea[data-role-id="${roleId}"]`);
+        if (textarea) {
+          await this.saveAlbaPrompt(roleId, textarea.value);
+        }
+      });
+    });
+
+    // 체인 관련 이벤트
+    container.addEventListener('change', async (e) => {
+      if (e.target.dataset.action === 'toggle-chain') {
+        const chainId = e.target.dataset.chainId;
+        await this.toggleChain(chainId, e.target.checked);
+      }
+
+      // 알바(Role) 선택
+      if (e.target.classList.contains('role-select')) {
+        const chainId = e.target.dataset.chainId;
+        const stepIndex = parseInt(e.target.dataset.stepIndex);
+        await this.updateStepRole(chainId, stepIndex, e.target.value);
+      }
+
+      // 모델 오버라이드 선택
+      if (e.target.classList.contains('model-override-select')) {
+        const chainId = e.target.dataset.chainId;
+        const stepIndex = parseInt(e.target.dataset.stepIndex);
+        await this.updateStepModel(chainId, stepIndex, e.target.value);
+      }
+    }, { signal });
+
+    // 체인 편집/삭제 버튼
+    container.addEventListener('click', async (e) => {
+      const button = e.target.closest('button[data-action]');
+      if (!button) return;
+
+      const action = button.dataset.action;
+      const chainId = button.dataset.chainId;
+      const stepIndex = button.dataset.stepIndex ? parseInt(button.dataset.stepIndex) : null;
+
+      switch (action) {
+        case 'edit-chain':
+          await this.editChain(chainId);
+          break;
+        case 'delete-chain':
+          await this.deleteChain(chainId);
+          break;
+        case 'add-step':
+          await this.addChainStep(chainId);
+          break;
+        case 'remove-step':
+          await this.removeChainStep(chainId, stepIndex);
+          break;
+      }
+    }, { signal });
   }
 
   /**
@@ -903,22 +1772,51 @@ export class AISettings {
       const description = document.getElementById('agentDescription')?.value || '';
       const customPrompt = document.getElementById('customPrompt')?.value || '';
 
+      // AI 동작 설정
+      const defaultModel = document.getElementById('defaultModel')?.value || '';
+      const temperature = parseFloat(document.getElementById('soulTemperature')?.value) || 0.7;
+      const maxTokens = parseInt(document.getElementById('soulMaxTokens')?.value) || 4096;
+
+      // 대화 스타일 (personality)
+      const personality = {
+        traits: {
+          helpful: 1.0,
+          professional: 0.9,
+          friendly: 0.8,
+          precise: 0.9,
+          proactive: parseFloat(document.getElementById('personalityProactive')?.value) || 0.7,
+          empathetic: parseFloat(document.getElementById('personalityEmpathy')?.value) || 0.6
+        },
+        communication: {
+          formality: parseFloat(document.getElementById('personalityFormality')?.value) || 0.5,
+          verbosity: parseFloat(document.getElementById('personalityVerbosity')?.value) || 0.5,
+          technicality: parseFloat(document.getElementById('personalityTechnicality')?.value) || 0.5,
+          directness: parseFloat(document.getElementById('personalityDirectness')?.value) || 0.7,
+          emoji: parseFloat(document.getElementById('personalityEmoji')?.value) || 0.3,
+          humor: parseFloat(document.getElementById('personalityHumor')?.value) || 0.3
+        }
+      };
+
       const profileId = this.agentProfile?.id || 'default';
 
       await this.apiClient.put(`/profile/agent/${profileId}`, {
         name,
         role,
         description,
-        customPrompt
+        customPrompt,
+        defaultModel,
+        temperature,
+        maxTokens,
+        personality
       });
 
-      this.showSaveStatus('프롬프트 설정이 저장되었습니다.', 'success');
+      this.showSaveStatus('설정이 저장되었습니다.', 'success');
 
       // 프로필 새로고침
       await this.loadAgentProfile();
     } catch (error) {
       console.error('Failed to save prompt settings:', error);
-      this.showSaveStatus('프롬프트 저장에 실패했습니다.', 'error');
+      this.showSaveStatus('설정 저장에 실패했습니다.', 'error');
     }
   }
 
@@ -937,10 +1835,31 @@ export class AISettings {
         name: 'Soul',
         role: 'AI Assistant',
         description: '당신의 AI 동반자',
-        customPrompt: ''
+        customPrompt: '',
+        defaultModel: '',
+        temperature: 0.7,
+        maxTokens: 4096,
+        personality: {
+          traits: {
+            helpful: 1.0,
+            professional: 0.9,
+            friendly: 0.8,
+            precise: 0.9,
+            proactive: 0.7,
+            empathetic: 0.6
+          },
+          communication: {
+            formality: 0.5,
+            verbosity: 0.5,
+            technicality: 0.5,
+            directness: 0.7,
+            emoji: 0.3,
+            humor: 0.3
+          }
+        }
       });
 
-      this.showSaveStatus('프롬프트 설정이 초기화되었습니다.', 'success');
+      this.showSaveStatus('설정이 초기화되었습니다.', 'success');
 
       // UI 새로고침
       await this.loadAgentProfile();
@@ -1015,6 +1934,583 @@ export class AISettings {
     } catch (error) {
       console.error('Failed to reset storage settings:', error);
       this.showSaveStatus('저장소 경로 설정 초기화에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 라우팅 통계 새로고침
+   */
+  async refreshRoutingStats() {
+    try {
+      await this.loadRoutingStats();
+      const container = document.querySelector('.ai-settings-panel').parentElement;
+      await this.render(container, this.apiClient);
+      this.showSaveStatus('통계가 갱신되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to refresh routing stats:', error);
+      this.showSaveStatus('통계 갱신에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 라우팅 통계 초기화
+   */
+  async resetRoutingStats() {
+    if (!confirm('라우팅 통계를 초기화하시겠습니까?')) {
+      return;
+    }
+
+    try {
+      // 서버에 통계 초기화 요청 (API가 있는 경우)
+      // await this.apiClient.post('/chat/routing-stats/reset');
+
+      this.routingStats = null;
+      const container = document.querySelector('.ai-settings-panel').parentElement;
+      await this.render(container, this.apiClient);
+      this.showSaveStatus('통계가 초기화되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to reset routing stats:', error);
+      this.showSaveStatus('통계 초기화에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 체인 활성화/비활성화 토글
+   */
+  async toggleChain(chainId, enabled) {
+    try {
+      const chain = this.agentChains.find(c => c.id === chainId);
+      if (chain) {
+        chain.enabled = enabled;
+        localStorage.setItem('agentChains', JSON.stringify(this.agentChains));
+        this.showSaveStatus(`체인이 ${enabled ? '활성화' : '비활성화'}되었습니다.`, 'success');
+      }
+    } catch (error) {
+      console.error('Failed to toggle chain:', error);
+      this.showSaveStatus('체인 상태 변경에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 알바 초기화
+   */
+  async initializeRoles() {
+    try {
+      const response = await this.apiClient.post('/roles/initialize');
+      if (response.success) {
+        await this.loadAvailableRoles();
+        const container = document.querySelector('.ai-settings-panel').parentElement;
+        await this.render(container, this.apiClient);
+        this.showSaveStatus(`기본 알바 ${response.count}명이 초기화되었습니다.`, 'success');
+      }
+    } catch (error) {
+      console.error('Failed to initialize roles:', error);
+      this.showSaveStatus('알바 초기화에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 단계의 알바(Role) 업데이트
+   */
+  async updateStepRole(chainId, stepIndex, roleId) {
+    try {
+      const chain = this.agentChains.find(c => c.id === chainId);
+      if (chain && chain.steps[stepIndex]) {
+        chain.steps[stepIndex].roleId = roleId;
+        localStorage.setItem('agentChains', JSON.stringify(this.agentChains));
+
+        // UI 새로고침 (알바 정보 표시 업데이트)
+        const container = document.querySelector('.ai-settings-panel').parentElement;
+        await this.render(container, this.apiClient);
+        this.showSaveStatus('알바가 배정되었습니다.', 'success');
+      }
+    } catch (error) {
+      console.error('Failed to update step role:', error);
+      this.showSaveStatus('알바 배정에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 단계의 모델 오버라이드 업데이트
+   */
+  async updateStepModel(chainId, stepIndex, model) {
+    try {
+      const chain = this.agentChains.find(c => c.id === chainId);
+      if (chain && chain.steps[stepIndex]) {
+        chain.steps[stepIndex].customModel = model;
+        localStorage.setItem('agentChains', JSON.stringify(this.agentChains));
+        this.showSaveStatus('모델이 저장되었습니다.', 'success');
+      }
+    } catch (error) {
+      console.error('Failed to update step model:', error);
+      this.showSaveStatus('모델 저장에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 체인에 단계 추가
+   */
+  async addChainStep(chainId) {
+    try {
+      const chain = this.agentChains.find(c => c.id === chainId);
+      if (chain) {
+        chain.steps.push({ roleId: '', customModel: '' });
+        localStorage.setItem('agentChains', JSON.stringify(this.agentChains));
+
+        const container = document.querySelector('.ai-settings-panel').parentElement;
+        await this.render(container, this.apiClient);
+        this.showSaveStatus('단계가 추가되었습니다.', 'success');
+      }
+    } catch (error) {
+      console.error('Failed to add chain step:', error);
+      this.showSaveStatus('단계 추가에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 체인에서 단계 제거
+   */
+  async removeChainStep(chainId, stepIndex) {
+    try {
+      const chain = this.agentChains.find(c => c.id === chainId);
+      if (chain && chain.steps.length > 1) {
+        chain.steps.splice(stepIndex, 1);
+        localStorage.setItem('agentChains', JSON.stringify(this.agentChains));
+
+        const container = document.querySelector('.ai-settings-panel').parentElement;
+        await this.render(container, this.apiClient);
+        this.showSaveStatus('단계가 제거되었습니다.', 'success');
+      } else if (chain && chain.steps.length <= 1) {
+        this.showSaveStatus('최소 1개의 단계가 필요합니다.', 'error');
+      }
+    } catch (error) {
+      console.error('Failed to remove chain step:', error);
+      this.showSaveStatus('단계 제거에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 새 체인 추가
+   */
+  async addNewChain() {
+    if (this.availableRoles.length === 0) {
+      this.showSaveStatus('먼저 알바를 초기화해주세요.', 'error');
+      return;
+    }
+
+    const name = prompt('새 체인 이름을 입력하세요:');
+    if (!name) return;
+
+    const description = prompt('체인 설명을 입력하세요 (선택사항):') || '';
+
+    const type = confirm('순차 실행 체인을 만드시겠습니까?\n(취소를 누르면 병렬 실행 체인이 생성됩니다)') ? 'sequential' : 'parallel';
+
+    const newChain = {
+      id: `chain-${Date.now()}`,
+      name,
+      description,
+      type,
+      enabled: false,
+      steps: [
+        { roleId: '', customModel: '' },
+        { roleId: '', customModel: '' }
+      ]
+    };
+
+    this.agentChains.push(newChain);
+    localStorage.setItem('agentChains', JSON.stringify(this.agentChains));
+
+    const container = document.querySelector('.ai-settings-panel').parentElement;
+    await this.render(container, this.apiClient);
+    this.showSaveStatus('새 체인이 추가되었습니다. 알바를 배정해주세요.', 'success');
+  }
+
+  /**
+   * 체인 편집
+   */
+  async editChain(chainId) {
+    const chain = this.agentChains.find(c => c.id === chainId);
+    if (!chain) return;
+
+    const newName = prompt('체인 이름:', chain.name);
+    if (newName === null) return;
+
+    chain.name = newName;
+    localStorage.setItem('agentChains', JSON.stringify(this.agentChains));
+
+    const container = document.querySelector('.ai-settings-panel').parentElement;
+    await this.render(container, this.apiClient);
+    this.showSaveStatus('체인이 수정되었습니다.', 'success');
+  }
+
+  /**
+   * 체인 삭제
+   */
+  async deleteChain(chainId) {
+    if (!confirm('이 체인을 삭제하시겠습니까?')) {
+      return;
+    }
+
+    this.agentChains = this.agentChains.filter(c => c.id !== chainId);
+    localStorage.setItem('agentChains', JSON.stringify(this.agentChains));
+
+    const container = document.querySelector('.ai-settings-panel').parentElement;
+    await this.render(container, this.apiClient);
+    this.showSaveStatus('체인이 삭제되었습니다.', 'success');
+  }
+
+  /**
+   * 알바 확장/축소 토글
+   */
+  async toggleAlbaExpand(roleId) {
+    this.expandedRoleId = this.expandedRoleId === roleId ? null : roleId;
+    const container = document.querySelector('.ai-settings-panel').parentElement;
+    await this.render(container, this.apiClient);
+  }
+
+  /**
+   * 알바 활성화 토글
+   */
+  async toggleAlbaActive(roleId, active) {
+    try {
+      await this.apiClient.patch(`/roles/${roleId}`, { active });
+      await this.loadAvailableRoles();
+      this.showSaveStatus(`알바가 ${active ? '활성화' : '비활성화'}되었습니다.`, 'success');
+    } catch (error) {
+      console.error('Failed to toggle alba:', error);
+      this.showSaveStatus('상태 변경에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 알바 모드 변경
+   */
+  async updateAlbaMode(roleId, mode) {
+    try {
+      const role = this.availableRoles.find(r => r.roleId === roleId);
+      if (!role) return;
+
+      // 모드에 따른 기본값 설정
+      const updates = { mode };
+      if (mode === 'chain' && !role.chainSteps) {
+        updates.chainSteps = [];
+      }
+      if (mode === 'parallel' && !role.parallelRoles) {
+        updates.parallelRoles = [];
+      }
+
+      await this.apiClient.patch(`/roles/${roleId}`, updates);
+      await this.loadAvailableRoles();
+
+      // UI 새로고침 (확장 상태 유지)
+      this.expandedRoleId = roleId;
+      const container = document.querySelector('.ai-settings-panel').parentElement;
+      await this.render(container, this.apiClient);
+      this.showSaveStatus('작동 방식이 변경되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to update alba mode:', error);
+      this.showSaveStatus('방식 변경에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 알바 모델 변경
+   */
+  async updateAlbaModel(roleId, model) {
+    try {
+      await this.apiClient.patch(`/roles/${roleId}`, { preferredModel: model });
+      await this.loadAvailableRoles();
+      this.showSaveStatus('모델이 변경되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to update alba model:', error);
+      this.showSaveStatus('모델 변경에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 알바 프롬프트 저장
+   */
+  async saveAlbaPrompt(roleId, systemPrompt) {
+    try {
+      await this.apiClient.patch(`/roles/${roleId}`, { systemPrompt });
+      await this.loadAvailableRoles();
+      this.showSaveStatus('프롬프트가 저장되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to save alba prompt:', error);
+      this.showSaveStatus('프롬프트 저장에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 알바 필드 업데이트 (범용)
+   */
+  async updateAlbaField(roleId, field, value) {
+    try {
+      await this.apiClient.patch(`/roles/${roleId}`, { [field]: value });
+      await this.loadAvailableRoles();
+      this.showSaveStatus('설정이 저장되었습니다.', 'success');
+    } catch (error) {
+      console.error(`Failed to update alba ${field}:`, error);
+      this.showSaveStatus('저장에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 트리거 추가
+   */
+  async addAlbaTrigger(roleId, trigger) {
+    try {
+      const role = this.availableRoles.find(r => r.roleId === roleId);
+      if (!role) return;
+
+      const triggers = [...(role.triggers || []), trigger];
+      await this.apiClient.patch(`/roles/${roleId}`, { triggers });
+      await this.loadAvailableRoles();
+
+      this.expandedRoleId = roleId;
+      const container = document.querySelector('.ai-settings-panel').parentElement;
+      await this.render(container, this.apiClient);
+      this.showSaveStatus('트리거가 추가되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to add trigger:', error);
+      this.showSaveStatus('트리거 추가에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 트리거 삭제
+   */
+  async removeAlbaTrigger(roleId, index) {
+    try {
+      const role = this.availableRoles.find(r => r.roleId === roleId);
+      if (!role || !role.triggers) return;
+
+      const triggers = role.triggers.filter((_, i) => i !== index);
+      await this.apiClient.patch(`/roles/${roleId}`, { triggers });
+      await this.loadAvailableRoles();
+
+      this.expandedRoleId = roleId;
+      const container = document.querySelector('.ai-settings-panel').parentElement;
+      await this.render(container, this.apiClient);
+      this.showSaveStatus('트리거가 삭제되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to remove trigger:', error);
+      this.showSaveStatus('트리거 삭제에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 태그 추가
+   */
+  async addAlbaTag(roleId, tag) {
+    try {
+      const role = this.availableRoles.find(r => r.roleId === roleId);
+      if (!role) return;
+
+      const tags = [...(role.tags || []), tag];
+      await this.apiClient.patch(`/roles/${roleId}`, { tags });
+      await this.loadAvailableRoles();
+
+      this.expandedRoleId = roleId;
+      const container = document.querySelector('.ai-settings-panel').parentElement;
+      await this.render(container, this.apiClient);
+      this.showSaveStatus('태그가 추가되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to add tag:', error);
+      this.showSaveStatus('태그 추가에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 태그 삭제
+   */
+  async removeAlbaTag(roleId, index) {
+    try {
+      const role = this.availableRoles.find(r => r.roleId === roleId);
+      if (!role || !role.tags) return;
+
+      const tags = role.tags.filter((_, i) => i !== index);
+      await this.apiClient.patch(`/roles/${roleId}`, { tags });
+      await this.loadAvailableRoles();
+
+      this.expandedRoleId = roleId;
+      const container = document.querySelector('.ai-settings-panel').parentElement;
+      await this.render(container, this.apiClient);
+      this.showSaveStatus('태그가 삭제되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to remove tag:', error);
+      this.showSaveStatus('태그 삭제에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 알바 편집
+   */
+  async editAlba(roleId) {
+    const role = this.availableRoles.find(r => r.roleId === roleId);
+    if (!role) return;
+
+    const name = prompt('알바 이름:', role.name);
+    if (name === null) return;
+
+    const description = prompt('설명:', role.description);
+    if (description === null) return;
+
+    try {
+      await this.apiClient.patch(`/roles/${roleId}`, { name, description });
+      await this.loadAvailableRoles();
+      const container = document.querySelector('.ai-settings-panel').parentElement;
+      await this.render(container, this.apiClient);
+      this.showSaveStatus('알바 정보가 수정되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to edit alba:', error);
+      this.showSaveStatus('수정에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 알바 삭제
+   */
+  async deleteAlba(roleId) {
+    const role = this.availableRoles.find(r => r.roleId === roleId);
+    if (!role) return;
+
+    if (!confirm(`"${role.name}" 알바를 삭제하시겠습니까?`)) {
+      return;
+    }
+
+    try {
+      await this.apiClient.delete(`/roles/${roleId}`);
+      await this.loadAvailableRoles();
+      const container = document.querySelector('.ai-settings-panel').parentElement;
+      await this.render(container, this.apiClient);
+      this.showSaveStatus('알바가 삭제되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to delete alba:', error);
+      this.showSaveStatus('삭제에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 알바 추가
+   */
+  async addAlba() {
+    const name = prompt('새 알바 이름을 입력하세요:');
+    if (!name) return;
+
+    const description = prompt('알바 설명을 입력하세요:');
+    if (description === null) return;
+
+    const roleId = `custom-${Date.now()}`;
+
+    try {
+      await this.apiClient.post('/roles', {
+        roleId,
+        name,
+        description,
+        systemPrompt: `당신은 ${name}입니다.\n${description}`,
+        triggers: [name.toLowerCase()],
+        createdBy: 'user',
+        category: 'other'
+      });
+
+      await this.loadAvailableRoles();
+      const container = document.querySelector('.ai-settings-panel').parentElement;
+      await this.render(container, this.apiClient);
+      this.showSaveStatus('새 알바가 추가되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to add alba:', error);
+      this.showSaveStatus('알바 추가에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 체인 단계 추가
+   */
+  async addAlbaChainStep(roleId) {
+    try {
+      const role = this.availableRoles.find(r => r.roleId === roleId);
+      if (!role) return;
+
+      const chainSteps = role.chainSteps || [];
+      chainSteps.push('');
+
+      await this.apiClient.patch(`/roles/${roleId}`, { chainSteps });
+      await this.loadAvailableRoles();
+
+      this.expandedRoleId = roleId;
+      const container = document.querySelector('.ai-settings-panel').parentElement;
+      await this.render(container, this.apiClient);
+    } catch (error) {
+      console.error('Failed to add chain step:', error);
+      this.showSaveStatus('단계 추가에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 체인 단계 제거
+   */
+  async removeAlbaChainStep(roleId, stepIndex) {
+    try {
+      const role = this.availableRoles.find(r => r.roleId === roleId);
+      if (!role || !role.chainSteps) return;
+
+      role.chainSteps.splice(stepIndex, 1);
+      await this.apiClient.patch(`/roles/${roleId}`, { chainSteps: role.chainSteps });
+      await this.loadAvailableRoles();
+
+      this.expandedRoleId = roleId;
+      const container = document.querySelector('.ai-settings-panel').parentElement;
+      await this.render(container, this.apiClient);
+    } catch (error) {
+      console.error('Failed to remove chain step:', error);
+      this.showSaveStatus('단계 제거에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 체인 단계 업데이트
+   */
+  async updateAlbaChainStep(roleId, stepIndex, targetRoleId) {
+    try {
+      const role = this.availableRoles.find(r => r.roleId === roleId);
+      if (!role) return;
+
+      const chainSteps = role.chainSteps || [];
+      chainSteps[stepIndex] = targetRoleId;
+
+      await this.apiClient.patch(`/roles/${roleId}`, { chainSteps });
+      await this.loadAvailableRoles();
+      this.showSaveStatus('체인 단계가 저장되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to update chain step:', error);
+      this.showSaveStatus('단계 저장에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 병렬 실행 알바 토글
+   */
+  async toggleAlbaParallelRole(roleId, targetRoleId, checked) {
+    try {
+      const role = this.availableRoles.find(r => r.roleId === roleId);
+      if (!role) return;
+
+      const parallelRoles = role.parallelRoles || [];
+
+      if (checked && !parallelRoles.includes(targetRoleId)) {
+        parallelRoles.push(targetRoleId);
+      } else if (!checked) {
+        const idx = parallelRoles.indexOf(targetRoleId);
+        if (idx > -1) parallelRoles.splice(idx, 1);
+      }
+
+      await this.apiClient.patch(`/roles/${roleId}`, { parallelRoles });
+      await this.loadAvailableRoles();
+      this.showSaveStatus('병렬 실행 설정이 저장되었습니다.', 'success');
+    } catch (error) {
+      console.error('Failed to toggle parallel role:', error);
+      this.showSaveStatus('설정 저장에 실패했습니다.', 'error');
     }
   }
 

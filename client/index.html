@@ -4,9 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Soul</title>
-  <link rel="stylesheet" href="/src/styles/main.css">
+  <link rel="stylesheet" href="/src/styles/main.css?v=11">
   <!-- Prism.js CSS - VSCode Dark Theme -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+  <!-- Marked.js for Markdown rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
   <!-- Google Fonts for Neomorphic Title -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -441,29 +443,39 @@ export default Counter;</code></pre>
         <!-- MacOS Dock 영역 -->
         <div class="dock-test-area">
           <div class="dock">
-            <div class="dock-item">
+            <div class="dock-item" data-name="Soul">
               <div class="icon">
-                <img src="https://cdn.icon-icons.com/icons2/3053/PNG/256/finder_macos_bigsur_icon_190173.png" />
+                <img src="./src/assets/soul-icon.webp" alt="Soul" />
               </div>
             </div>
-            <div class="dock-item">
+            <div class="dock-item" data-name="MCP">
               <div class="icon">
-                <img src="https://cdn.icon-icons.com/icons2/3053/PNG/256/microsoft_visual_studio_code_alt_macos_bigsur_icon_189951.png" />
+                <img src="./src/assets/mcp-icon.webp" alt="MCP" />
               </div>
             </div>
-            <div class="dock-item">
+            <div class="dock-item" data-name="스마트홈">
               <div class="icon">
-                <img src="https://cdn.icon-icons.com/icons2/3053/PNG/256/google_chrome_macos_bigsur_icon_190133.png" />
+                <img src="./src/assets/smarthome-icon.webp" alt="스마트홈" />
               </div>
             </div>
-            <div class="dock-item">
+            <div class="dock-item" data-name="폴더">
               <div class="icon">
-                <img src="https://cdn.icon-icons.com/icons2/3053/PNG/256/settings_macos_bigsur_icon_189754.png" />
+                <img src="./src/assets/folder-icon.webp" alt="폴더" />
               </div>
             </div>
-            <div class="dock-item">
+            <div class="dock-item" data-name="체크리스트">
               <div class="icon">
-                <img src="https://cdn.icon-icons.com/icons2/268/PNG/256/Trash_29857.png" />
+                <img src="./src/assets/checklist-icon.webp" alt="체크리스트" />
+              </div>
+            </div>
+            <div class="dock-item" data-name="고양이">
+              <div class="icon">
+                <img src="./src/assets/cat-icon.webp" alt="고양이" />
+              </div>
+            </div>
+            <div class="dock-item" data-name="사용자">
+              <div class="icon">
+                <img src="./src/assets/user-icon.webp" alt="사용자" />
               </div>
             </div>
           </div>
@@ -616,12 +628,90 @@ export default Counter;</code></pre>
     </div>
   </div>
 
+  <!-- 메시지 템플릿 -->
+  <!-- 사용자 메시지 템플릿 -->
+  <template id="userMessageTemplate">
+    <div class="chat-message user">
+      <div class="message-content"></div>
+      <div class="user-message-footer">
+        <div class="message-time"></div>
+        <button class="message-action-btn copy-btn" title="복사">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+          </svg>
+        </button>
+        <button class="message-action-btn edit-btn" title="수정">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 20h9"/>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+        </button>
+        <button class="message-action-btn delete-btn" title="삭제">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </template>
+
+  <!-- AI 메시지 템플릿 -->
+  <template id="assistantMessageTemplate">
+    <div class="chat-message assistant">
+      <div class="message-content"></div>
+      <div class="message-actions">
+        <button class="message-action-btn copy-btn" title="복사">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+          </svg>
+        </button>
+        <button class="message-action-btn like-btn" title="좋아요">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/>
+          </svg>
+        </button>
+        <button class="message-action-btn dislike-btn" title="싫어요">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/>
+          </svg>
+        </button>
+        <button class="message-action-btn bookmark-btn" title="북마크">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
+          </svg>
+        </button>
+        <button class="message-action-btn retry-btn" title="재생성">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </template>
+
+  <!-- 타이핑 인디케이터 템플릿 -->
+  <template id="typingIndicatorTemplate">
+    <div class="chat-message assistant typing-indicator">
+      <div class="message-content">
+        <div class="typing-dots">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </div>
+    </div>
+  </template>
+
   <!-- Prism.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-jsx.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
-  <script type="module" src="/src/main.js?v=2"></script>
+  <script type="module" src="/src/main.js?v=12"></script>
 </body>
 </html>

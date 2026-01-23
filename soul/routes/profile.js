@@ -14,6 +14,7 @@ const express = require('express');
 const router = express.Router();
 const { getAgentProfileManager } = require('../utils/agent-profile');
 const { getUserProfileManager } = require('../utils/user-profile');
+const { getPersonalityCore } = require('../utils/personality-core');
 const UserProfileModel = require('../models/UserProfile');
 const ProfileModel = require('../models/Profile'); // Phase P
 
@@ -117,6 +118,11 @@ router.put('/agent/:profileId', (req, res) => {
 
     const manager = getAgentProfileManager();
     const profile = manager.updateProfile(profileId, updates);
+
+    // PersonalityCore 캐시 무효화 (설정이 즉시 반영되도록)
+    const personalityCore = getPersonalityCore();
+    personalityCore.invalidateCache();
+    console.log(`[Profile] Updated agent profile: ${profileId}, cache invalidated`);
 
     res.json({
       success: true,

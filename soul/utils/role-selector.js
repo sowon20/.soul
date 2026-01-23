@@ -199,10 +199,19 @@ ${rolesDescription}
    */
   async suggestNewRole(message) {
     try {
-      const aiService = await AIServiceFactory.createService(
-        'anthropic',
-        'claude-3-5-haiku-20241022'
-      );
+      // 활성화된 AI 서비스 사용
+      const AIServiceModel = require('../models/AIService');
+      const activeService = await AIServiceModel.findOne({ isActive: true, apiKey: { $ne: null } }).select('+apiKey');
+
+      let serviceName = 'anthropic';
+      let modelId = 'claude-3-5-haiku-20241022';
+
+      if (activeService && activeService.models && activeService.models.length > 0) {
+        serviceName = activeService.serviceId;
+        modelId = activeService.models[0].id;
+      }
+
+      const aiService = await AIServiceFactory.createService(serviceName, modelId);
 
       const systemPrompt = `당신은 HR 전문가입니다.
 사용자의 요청을 분석해서 새로운 전문가 역할을 제안하세요.

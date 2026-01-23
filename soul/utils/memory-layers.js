@@ -716,13 +716,41 @@ let globalMemoryManager = null;
 
 /**
  * 싱글톤 인스턴스 가져오기
+ * 사용자 메모리 설정을 자동으로 로드
  */
 async function getMemoryManager(config = {}) {
   if (!globalMemoryManager) {
-    globalMemoryManager = new MemoryManager(config);
+    // configManager에서 메모리 설정 로드
+    let memoryConfig = {};
+    try {
+      const configManager = require('./config');
+      memoryConfig = await configManager.getMemoryConfig();
+      console.log('[MemoryManager] Loaded memory config:', memoryConfig);
+    } catch (err) {
+      console.warn('[MemoryManager] Could not load memory config:', err.message);
+    }
+
+    // 사용자 설정과 기본값 병합
+    const mergedConfig = {
+      maxShortTerm: memoryConfig.shortTermSize || config.maxShortTerm || 50,
+      memoryPath: memoryConfig.storagePath || config.memoryPath,
+      autoArchive: memoryConfig.autoArchive ?? config.autoArchive ?? true,
+      archiveThreshold: config.archiveThreshold || 100,
+      sessionSummaryInterval: config.sessionSummaryInterval || 50
+    };
+
+    globalMemoryManager = new MemoryManager(mergedConfig);
     await globalMemoryManager.initialize();
   }
   return globalMemoryManager;
+}
+
+/**
+ * MemoryManager 인스턴스 리셋 (설정 변경 시)
+ */
+function resetMemoryManager() {
+  globalMemoryManager = null;
+  console.log('[MemoryManager] Manager reset');
 }
 
 module.exports = {
@@ -730,5 +758,6 @@ module.exports = {
   MiddleTermMemory,
   LongTermMemory,
   MemoryManager,
-  getMemoryManager
+  getMemoryManager,
+  resetMemoryManager
 };
