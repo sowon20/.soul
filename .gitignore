@@ -52,3 +52,4 @@ mcp/google-home/appletv-credentials.json
 
 # IDE settings
 .vscode/
+memory/mongodb/
