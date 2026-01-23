@@ -98,6 +98,23 @@ const roleSchema = new mongoose.Schema({
   },
   tags: [{
     type: String
+  }],
+
+  // 작동 방식 설정
+  mode: {
+    type: String,
+    enum: ['single', 'chain', 'parallel'],
+    default: 'single'
+  },
+
+  // 체인 모드 설정 (순차 실행할 다른 알바들의 roleId)
+  chainSteps: [{
+    type: String
+  }],
+
+  // 병렬 모드 설정 (동시 실행할 다른 알바들의 roleId)
+  parallelRoles: [{
+    type: String
   }]
 }, {
   timestamps: true

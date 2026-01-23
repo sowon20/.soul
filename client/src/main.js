@@ -4,7 +4,7 @@
  */
 
 import { ThemeManager } from './utils/theme-manager.js';
-import { ChatManager } from './components/chat/chat-manager.js';
+import { ChatManager } from './components/chat/chat-manager.js?v=10';
 import { PanelManager } from './components/shared/panel-manager.js';
 import { MenuManager } from './components/sidebar/menu-manager.js';
 import { APIClient } from './utils/api-client.js';
@@ -79,6 +79,9 @@ class SoulApp {
 
     // Load recent messages (마지막 대화 위치)
     await this.chatManager.loadRecentMessages();
+
+    // Bind events to existing hardcoded messages (for demo/fallback)
+    this.chatManager.bindExistingMessages();
 
     // Scroll to bottom after messages are loaded
     this.scrollToBottom();

@@ -96,13 +96,14 @@ const aiServiceSchema = new mongoose.Schema({
  * 기본 서비스 초기화
  */
 aiServiceSchema.statics.initializeBuiltInServices = async function() {
+  // API 키는 UI에서 설정 (env 사용 안 함)
   const builtInServices = [
     {
       serviceId: 'anthropic',
       name: 'Anthropic Claude',
       type: 'anthropic',
       baseUrl: 'https://api.anthropic.com/v1',
-      apiKey: process.env.ANTHROPIC_API_KEY || null,
+      apiKey: null,  // UI에서 설정
       isBuiltIn: true,
       isActive: true
     },
@@ -111,7 +112,7 @@ aiServiceSchema.statics.initializeBuiltInServices = async function() {
       name: 'OpenAI GPT',
       type: 'openai',
       baseUrl: 'https://api.openai.com/v1',
-      apiKey: (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_key_here') ? process.env.OPENAI_API_KEY : null,
+      apiKey: null,  // UI에서 설정
       isBuiltIn: true,
       isActive: false
     },
@@ -120,7 +121,7 @@ aiServiceSchema.statics.initializeBuiltInServices = async function() {
       name: 'Google Gemini',
       type: 'google',
       baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-      apiKey: (process.env.GOOGLE_API_KEY && process.env.GOOGLE_API_KEY !== 'your_google_key_here') ? process.env.GOOGLE_API_KEY : null,
+      apiKey: null,  // UI에서 설정
       isBuiltIn: true,
       isActive: false
     },
@@ -129,7 +130,7 @@ aiServiceSchema.statics.initializeBuiltInServices = async function() {
       name: 'xAI Grok',
       type: 'openai-compatible',
       baseUrl: 'https://api.x.ai/v1',
-      apiKey: null,
+      apiKey: null,  // UI에서 설정
       isBuiltIn: true,
       isActive: false
     },
@@ -138,7 +139,7 @@ aiServiceSchema.statics.initializeBuiltInServices = async function() {
       name: 'Ollama (Local)',
       type: 'ollama',
       baseUrl: 'http://localhost:11434',
-      apiKey: null,
+      apiKey: null,  // 필요 없음
       isBuiltIn: true,
       isActive: true
     }
@@ -163,12 +164,23 @@ aiServiceSchema.statics.getActiveServices = async function() {
 };
 
 /**
- * 모델 목록 업데이트
+ * 모델 목록 업데이트 (버전 충돌 방지를 위해 findByIdAndUpdate 사용)
  */
 aiServiceSchema.methods.updateModels = async function(models) {
+  const AIService = mongoose.model('AIService');
+  await AIService.findByIdAndUpdate(
+    this._id,
+    {
+      $set: {
+        models: models,
+        lastRefresh: new Date()
+      }
+    },
+    { new: true }
+  );
+  // 현재 인스턴스도 업데이트
   this.models = models;
   this.lastRefresh = new Date();
-  await this.save();
 };
 
 /**

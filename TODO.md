@@ -1,6 +1,43 @@
 ## 항상 작업 전 확인 / 작업 후 업데이트할 것! : 체크 및 중요메모
 
-## 🔥 최근 작업 현황 (2026-01-22)
+## 🔥 최근 작업 현황 (2026-01-23)
+
+### ✅ 토큰 낭비 방지 - 역할 시스템 리팩토링 완료
+**문제**: 채팅 1회당 최대 3번의 AI API 호출 발생
+- LLM 역할 선택 (selectRole) - 후보가 2개 이상이면 호출
+- LLM 역할 제안 (suggestNewRole) - 적합한 역할 없으면 호출
+- 실제 채팅 응답
+
+**해결**: Soul 중심 아키텍처로 변경
+```
+Before: 메시지 → LLM역할선택 → LLM역할제안 → LLM응답 (최대 3회)
+After:  메시지 → Soul응답 → (필요시만) 알바호출 (기본 1회)
+```
+
+**변경 파일**:
+- `/soul/routes/chat.js`
+  - [x] 사전 역할 선택 로직 제거 (약 100줄 삭제)
+  - [x] `getRoleSelector` import 제거
+  - [x] 활성 알바 목록을 시스템 프롬프트에 추가
+  - [x] `[DELEGATE:역할ID]` 태그 감지 및 처리 로직 추가
+  - [x] Soul이 필요시에만 알바 호출하는 구조
+
+- `/soul/utils/personality-core.js`
+  - [x] Role 모델 import 추가
+
+**새로운 동작 방식**:
+1. Soul이 모든 메시지를 먼저 받음
+2. 시스템 프롬프트에서 사용 가능한 알바 목록 인지
+3. 복잡한 전문 작업 필요시 `[DELEGATE:역할ID]` 태그로 알바 호출
+4. 간단한 작업은 Soul이 직접 처리
+
+**미래 확장 계획**:
+- Mac Mini 서버 구축 후 로컬 LLM이 사소한 작업 처리
+- 로컬 LLM → Soul(API) → 알바(API) 계층 구조
+
+---
+
+## 🔥 이전 작업 현황 (2026-01-22)
 
 ### ✅ 설정 페이지 프레임워크 완전 리팩토링 완료
 **위치**: `/workspaces/.soul/client/src/settings/`
@@ -819,15 +856,15 @@ Profile.generateSummary() (권한 기반 요약)
 
 ---
 
-## ⏰ Phase T: 시간 인지 (보류)
+## ⏰ Phase T: 시간 인지 ✅
 
-- [ ] 대화 이력 DB
-- [ ] 현재 시간 정보
-- [ ] 패턴 분석 (빈도, 시간대)
-- [ ] 맥락 연속성
-- [ ] 시간 기반 응답
-- [ ] 안부 시스템
-- [ ] 시스템 프롬프트 주입
+- [x] 대화 이력 DB - memory-layers.js (MongoDB)
+- [x] 현재 시간 정보 - conversation-pipeline.js (프로필 타임존 반영)
+- [x] 패턴 분석 (빈도, 시간대) - pattern-analysis.js
+- [x] 맥락 연속성 - session-continuity.js
+- [x] 시간 기반 응답 - greeting-system.js
+- [x] 안부 시스템 - greeting-system.js (notifications 연동)
+- [x] 시스템 프롬프트 주입 - conversation-pipeline.js
 
 ---
 

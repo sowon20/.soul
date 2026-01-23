@@ -33,10 +33,20 @@ class ConfigManager {
       },
       memory: {
         storagePath: process.env.MEMORY_PATH || './memory',
-        autoArchive: true
+        autoArchive: true,
+        autoSave: true,
+        autoInject: true,
+        shortTermSize: 50,
+        compressionThreshold: 80
       },
       files: {
         storagePath: process.env.FILES_PATH || './files'
+      },
+      routing: {
+        enabled: true,
+        light: 'claude-3-5-haiku-20241022',
+        medium: 'claude-sonnet-4-20250514',
+        heavy: 'claude-3-opus-20240229'
       }
     };
   }
@@ -176,6 +186,27 @@ class ConfigManager {
     };
     await this.writeConfig(config);
     return config.files;
+  }
+
+  /**
+   * 라우팅 설정 가져오기
+   */
+  async getRoutingConfig() {
+    const config = await this.readConfig();
+    return config.routing || this.defaultConfig.routing;
+  }
+
+  /**
+   * 라우팅 설정 업데이트
+   */
+  async updateRoutingConfig(routingConfig) {
+    const config = await this.readConfig();
+    config.routing = {
+      ...config.routing,
+      ...routingConfig
+    };
+    await this.writeConfig(config);
+    return config.routing;
   }
 }
 

@@ -14,8 +14,9 @@
 const { getMemoryManager } = require('./memory-layers');
 const tokenCounter = require('./token-counter');
 const { shouldAutoCompress, compressMessages } = require('./context-compressor');
-const { detectContext } = require('./context-detector');
+const contextDetector = require('./context-detector');
 const ProfileModel = require('../models/Profile');
+const { getAgentProfileManager } = require('./agent-profile');
 
 /**
  * ConversationPipeline 클래스
@@ -156,10 +157,13 @@ class ConversationPipeline {
    */
   async _detectAndInjectContext(userMessage, sessionId) {
     try {
-      // 컨텍스트 감지
-      const contextResult = await detectContext(userMessage, []);
+      // 컨텍스트 감지 및 관련 메모리 검색
+      const contextResult = await contextDetector.detectAndRetrieve(userMessage, {
+        sessionId,
+        includeMemories: true
+      });
 
-      if (!contextResult.activated) {
+      if (!contextResult || !contextResult.activated) {
         return null;
       }
 
@@ -291,6 +295,7 @@ class ConversationPipeline {
    */
   async _buildSystemPromptWithProfile(options = {}) {
     let prompt = options.systemPrompt || this.config.systemPrompt;
+    let userTimezone = 'Asia/Seoul'; // 기본 타임존
 
     // 프로필 자동 포함 (Phase P)
     try {
@@ -314,7 +319,12 @@ class ConversationPipeline {
             prompt += `\n위치: ${profileSummary.basicInfo.location}`;
           }
           if (profileSummary.basicInfo.timezone) {
-            prompt += `\n타임존: ${profileSummary.basicInfo.timezone}`;
+            // timezone이 객체인 경우 value 추출, 문자열인 경우 그대로 사용
+            const tz = typeof profileSummary.basicInfo.timezone === 'string'
+              ? profileSummary.basicInfo.timezone
+              : (profileSummary.basicInfo.timezone?.value || 'Asia/Seoul');
+            prompt += `\n타임존: ${tz}`;
+            userTimezone = tz; // 프로필 타임존 사용
           }
         }
 
@@ -339,10 +349,10 @@ class ConversationPipeline {
       // 프로필 로드 실패해도 대화는 계속 진행
     }
 
-    // 시간 정보 추가
+    // 시간 정보 추가 (프로필 타임존 반영)
     if (options.includeTime !== false) {
       const now = new Date();
-      const timeInfo = `\n현재 시간: ${now.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`;
+      const timeInfo = `\n현재 시간: ${now.toLocaleString('ko-KR', { timeZone: userTimezone })}`;
       prompt += timeInfo;
     }
 
@@ -354,6 +364,20 @@ class ConversationPipeline {
     // 추가 지시사항
     if (options.additionalInstructions) {
       prompt += `\n\n추가 지시사항:\n${options.additionalInstructions}`;
+    }
+
+    // 사용자 커스텀 프롬프트 (UI에서 설정한 시스템 프롬프트)
+    try {
+      const agentManager = getAgentProfileManager();
+      const agentProfile = agentManager.getProfile('default');
+      if (agentProfile && agentProfile.customPrompt && agentProfile.customPrompt.trim()) {
+        prompt += `\n\n=== 사용자 지정 지침 ===\n`;
+        prompt += agentProfile.customPrompt.trim();
+        prompt += `\n=== 지침 끝 ===\n`;
+        console.log(`[Pipeline] Custom prompt added: ${agentProfile.customPrompt.substring(0, 50)}...`);
+      }
+    } catch (error) {
+      console.warn('[Pipeline] Failed to load custom prompt:', error.message);
     }
 
     return prompt;
@@ -433,16 +457,43 @@ let globalPipeline = null;
 
 /**
  * 싱글톤 인스턴스 가져오기
+ * 사용자 메모리 설정을 자동으로 로드
  */
 async function getConversationPipeline(config = {}) {
   if (!globalPipeline) {
-    globalPipeline = new ConversationPipeline(config);
+    // configManager에서 메모리 설정 로드
+    let memoryConfig = {};
+    try {
+      const configManager = require('./config');
+      memoryConfig = await configManager.getMemoryConfig();
+      console.log('[ConversationPipeline] Loaded memory config:', memoryConfig);
+    } catch (err) {
+      console.warn('[ConversationPipeline] Could not load memory config:', err.message);
+    }
+
+    // 사용자 설정과 기본값 병합
+    const mergedConfig = {
+      ...config,
+      compressionThreshold: (memoryConfig.compressionThreshold || 80) / 100, // 80 -> 0.8
+      autoMemoryInjection: memoryConfig.autoInject ?? config.autoMemoryInjection ?? true
+    };
+
+    globalPipeline = new ConversationPipeline(mergedConfig);
     await globalPipeline.initialize();
   }
   return globalPipeline;
 }
 
+/**
+ * ConversationPipeline 인스턴스 리셋 (설정 변경 시)
+ */
+function resetConversationPipeline() {
+  globalPipeline = null;
+  console.log('[ConversationPipeline] Pipeline reset');
+}
+
 module.exports = {
   ConversationPipeline,
-  getConversationPipeline
+  getConversationPipeline,
+  resetConversationPipeline
 };

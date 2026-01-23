@@ -78,6 +78,13 @@ export class APIClient {
     return this.request(endpoint, { method: 'DELETE' });
   }
 
+  async put(endpoint, data) {
+    return this.request(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
   /* ===================================
      Chat APIs
      =================================== */

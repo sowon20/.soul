@@ -202,8 +202,16 @@ router.get('/', async (req, res) => {
       description: role.description,
       category: role.category,
       preferredModel: role.preferredModel,
+      fallbackModel: role.fallbackModel,
+      systemPrompt: role.systemPrompt,
+      maxTokens: role.maxTokens,
+      temperature: role.temperature,
       triggers: role.triggers,
+      tags: role.tags || [],
       active: role.active,
+      mode: role.mode || 'single',
+      chainSteps: role.chainSteps || [],
+      parallelRoles: role.parallelRoles || [],
       stats: {
         usageCount: role.stats.usageCount,
         successRate: role.getSuccessRate(),
@@ -349,6 +357,58 @@ router.post('/', async (req, res) => {
 
   } catch (error) {
     console.error('Error creating role:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * PATCH /api/roles/:roleId
+ * 역할 부분 수정 (모드, 상태 등 부분 업데이트)
+ */
+router.patch('/:roleId', async (req, res) => {
+  try {
+    const { roleId } = req.params;
+    const updates = req.body;
+
+    // 변경 불가 필드 제거
+    delete updates.roleId;
+    delete updates.stats;
+    delete updates.createdBy;
+
+    const role = await Role.findOneAndUpdate(
+      { roleId },
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+
+    if (!role) {
+      return res.status(404).json({
+        success: false,
+        error: `Role not found: ${roleId}`
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `알바 정보 업데이트 완료: ${role.name}`,
+      role: {
+        roleId: role.roleId,
+        name: role.name,
+        description: role.description,
+        category: role.category,
+        active: role.active,
+        mode: role.mode,
+        chainSteps: role.chainSteps,
+        parallelRoles: role.parallelRoles,
+        systemPrompt: role.systemPrompt
+      }
+    });
+
+  } catch (error) {
+    console.error('Error patching role:', error);
     res.status(500).json({
       success: false,
       error: error.message
