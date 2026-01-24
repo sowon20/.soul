@@ -90,9 +90,9 @@ class SmartRouter {
     this.stats = {
       totalRequests: 0,
       routingDecisions: {
-        haiku: 0,
-        sonnet: 0,
-        opus: 0
+        light: 0,
+        medium: 0,
+        heavy: 0
       },
       totalCost: 0,
       averageLatency: 0
@@ -108,8 +108,11 @@ class SmartRouter {
 
     // 1. 강제 모델 지정 시
     if (this.config.forceModel) {
+      // 강제 모델도 통계에 포함
+      this._updateStatsByModelId(this.config.forceModel);
       return {
         modelId: this.config.forceModel,
+        serviceId: this.config.forceServiceId || null,
         reason: 'Forced model selection',
         confidence: 1.0
       };
@@ -117,8 +120,11 @@ class SmartRouter {
 
     // 2. 자동 라우팅 비활성화 시
     if (!this.config.enableAutoRouting) {
+      // 기본 모델도 통계에 포함
+      this._updateStatsByModelId(this.config.defaultModel);
       return {
         modelId: this.config.defaultModel,
+        serviceId: this.config.defaultServiceId || null,
         reason: 'Auto-routing disabled',
         confidence: 1.0
       };
@@ -135,6 +141,8 @@ class SmartRouter {
 
     return {
       modelId: selectedModel.id,
+      serviceId: selectedModel.serviceId || null,
+      thinking: selectedModel.thinking || false,
       modelName: selectedModel.name,
       reason: this._buildReason(analysis, selectedModel),
       confidence: analysis.confidence,
@@ -428,11 +436,32 @@ class SmartRouter {
    */
   _updateStats(model) {
     if (model.tier === 'fast') {
-      this.stats.routingDecisions.haiku++;
+      this.stats.routingDecisions.light++;
     } else if (model.tier === 'balanced') {
-      this.stats.routingDecisions.sonnet++;
+      this.stats.routingDecisions.medium++;
     } else if (model.tier === 'premium') {
-      this.stats.routingDecisions.opus++;
+      this.stats.routingDecisions.heavy++;
+    }
+  }
+
+  /**
+   * 모델 ID로 통계 업데이트 (강제/기본 모델용)
+   */
+  _updateStatsByModelId(modelId) {
+    if (!modelId) return;
+
+    const id = modelId.toLowerCase();
+    // 경량 모델 패턴
+    if (id.includes('haiku') || id.includes('flash') || id.includes('mini') || id.includes('grok-3-mini')) {
+      this.stats.routingDecisions.light++;
+    }
+    // 고성능 모델 패턴
+    else if (id.includes('opus') || id.includes('pro') || id.includes('grok-3') && !id.includes('mini')) {
+      this.stats.routingDecisions.heavy++;
+    }
+    // 중간 모델 (기본)
+    else {
+      this.stats.routingDecisions.medium++;
     }
   }
 
@@ -446,9 +475,9 @@ class SmartRouter {
       totalRequests: total,
       routingDecisions: this.stats.routingDecisions,
       distribution: {
-        haiku: total > 0 ? ((this.stats.routingDecisions.haiku / total) * 100).toFixed(1) + '%' : '0%',
-        sonnet: total > 0 ? ((this.stats.routingDecisions.sonnet / total) * 100).toFixed(1) + '%' : '0%',
-        opus: total > 0 ? ((this.stats.routingDecisions.opus / total) * 100).toFixed(1) + '%' : '0%'
+        light: total > 0 ? ((this.stats.routingDecisions.light / total) * 100).toFixed(1) + '%' : '0%',
+        medium: total > 0 ? ((this.stats.routingDecisions.medium / total) * 100).toFixed(1) + '%' : '0%',
+        heavy: total > 0 ? ((this.stats.routingDecisions.heavy / total) * 100).toFixed(1) + '%' : '0%'
       },
       totalCost: this.stats.totalCost,
       averageLatency: this.stats.averageLatency
@@ -462,9 +491,9 @@ class SmartRouter {
     this.stats = {
       totalRequests: 0,
       routingDecisions: {
-        haiku: 0,
-        sonnet: 0,
-        opus: 0
+        light: 0,
+        medium: 0,
+        heavy: 0
       },
       totalCost: 0,
       averageLatency: 0
@@ -493,21 +522,41 @@ let globalRouter = null;
 
 /**
  * 사용자 설정에서 모델 정보 업데이트
+ * 새 형식: { modelId: '...', serviceId: '...' } 또는 이전 형식: 'modelId'
  */
 function updateModelsFromConfig(routingConfig) {
   if (routingConfig.light) {
-    MODELS.HAIKU.id = routingConfig.light;
+    // 새 형식 또는 이전 형식 모두 지원
+    if (typeof routingConfig.light === 'object') {
+      MODELS.HAIKU.id = routingConfig.light.modelId;
+      MODELS.HAIKU.serviceId = routingConfig.light.serviceId;
+      MODELS.HAIKU.thinking = routingConfig.light.thinking || false;
+    } else {
+      MODELS.HAIKU.id = routingConfig.light;
+    }
   }
   if (routingConfig.medium) {
-    MODELS.SONNET.id = routingConfig.medium;
+    if (typeof routingConfig.medium === 'object') {
+      MODELS.SONNET.id = routingConfig.medium.modelId;
+      MODELS.SONNET.serviceId = routingConfig.medium.serviceId;
+      MODELS.SONNET.thinking = routingConfig.medium.thinking || false;
+    } else {
+      MODELS.SONNET.id = routingConfig.medium;
+    }
   }
   if (routingConfig.heavy) {
-    MODELS.OPUS.id = routingConfig.heavy;
+    if (typeof routingConfig.heavy === 'object') {
+      MODELS.OPUS.id = routingConfig.heavy.modelId;
+      MODELS.OPUS.serviceId = routingConfig.heavy.serviceId;
+      MODELS.OPUS.thinking = routingConfig.heavy.thinking || false;
+    } else {
+      MODELS.OPUS.id = routingConfig.heavy;
+    }
   }
   console.log('[SmartRouter] Models updated from config:', {
-    light: MODELS.HAIKU.id,
-    medium: MODELS.SONNET.id,
-    heavy: MODELS.OPUS.id
+    light: { modelId: MODELS.HAIKU.id, serviceId: MODELS.HAIKU.serviceId, thinking: MODELS.HAIKU.thinking },
+    medium: { modelId: MODELS.SONNET.id, serviceId: MODELS.SONNET.serviceId, thinking: MODELS.SONNET.thinking },
+    heavy: { modelId: MODELS.OPUS.id, serviceId: MODELS.OPUS.serviceId, thinking: MODELS.OPUS.thinking }
   });
 }
 

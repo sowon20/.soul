@@ -17,17 +17,42 @@ const fs = require('fs').promises;
  * 단기 메모리 (Short-Term Memory)
  * - 최근 50개 메시지 유지
  * - 즉시 참조 가능
- * - 인메모리 저장
+ * - MongoDB 영속 저장 + 인메모리 캐시
  */
 class ShortTermMemory {
   constructor(maxMessages = 50) {
     this.maxMessages = maxMessages;
     this.messages = []; // { role, content, timestamp, tokens }
     this.totalTokens = 0;
+    this.sessionId = 'main-conversation';
+    this.initialized = false;
   }
 
   /**
-   * 메시지 추가
+   * MongoDB에서 메시지 로드 (초기화)
+   */
+  async initialize(sessionId = 'main-conversation') {
+    this.sessionId = sessionId;
+    try {
+      const Message = require('../models/Message');
+      const messages = await Message.getRecentMessages(sessionId, this.maxMessages);
+      this.messages = messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+        tokens: m.tokens || this._estimateTokens(m.content)
+      }));
+      this.totalTokens = this.messages.reduce((sum, m) => sum + (m.tokens || 0), 0);
+      this.initialized = true;
+      console.log(`[ShortTermMemory] Loaded ${this.messages.length} messages from DB`);
+    } catch (error) {
+      console.error('[ShortTermMemory] Failed to load from DB:', error.message);
+      this.initialized = true;
+    }
+  }
+
+  /**
+   * 메시지 추가 (MongoDB에도 저장)
    */
   add(message) {
     const messageWithMeta = {
@@ -39,6 +64,11 @@ class ShortTermMemory {
     this.messages.push(messageWithMeta);
     this.totalTokens += messageWithMeta.tokens;
 
+    // MongoDB에 비동기 저장
+    this._saveToDb(messageWithMeta).catch(err => {
+      console.error('[ShortTermMemory] Failed to save to DB:', err.message);
+    });
+
     // 최대 개수 초과 시 오래된 메시지 제거
     if (this.messages.length > this.maxMessages) {
       const removed = this.messages.shift();
@@ -46,6 +76,18 @@ class ShortTermMemory {
     }
 
     return messageWithMeta;
+  }
+
+  /**
+   * MongoDB에 메시지 저장
+   */
+  async _saveToDb(message) {
+    try {
+      const Message = require('../models/Message');
+      await Message.addMessage(this.sessionId, message);
+    } catch (error) {
+      throw error;
+    }
   }
 
   /**
@@ -90,11 +132,20 @@ class ShortTermMemory {
   }
 
   /**
-   * 메모리 클리어
+   * 메모리 클리어 (MongoDB도 삭제)
    */
-  clear() {
+  async clear() {
     this.messages = [];
     this.totalTokens = 0;
+
+    // MongoDB에서도 삭제
+    try {
+      const Message = require('../models/Message');
+      await Message.clearSession(this.sessionId);
+      console.log(`[ShortTermMemory] Cleared messages from DB for session: ${this.sessionId}`);
+    } catch (error) {
+      console.error('[ShortTermMemory] Failed to clear DB:', error.message);
+    }
   }
 
   /**
@@ -442,9 +493,10 @@ class MemoryManager {
   }
 
   /**
-   * 초기화
+   * 초기화 (MongoDB에서 메시지 로드 포함)
    */
-  async initialize() {
+  async initialize(sessionId = 'main-conversation') {
+    await this.shortTerm.initialize(sessionId);
     await this.middleTerm.initialize();
     await this.longTerm.initialize();
   }

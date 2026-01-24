@@ -65,7 +65,7 @@
   --font-size-base: 0.9375rem;  /* 15px */
   --font-size-lg: 1rem;         /* 16px */
   --font-size-xl: 1.125rem;     /* 18px */
-  --font-size-message: 1rem;    /* 메시지 텍스트 */
+  --font-size-message: 0.875rem;    /* 메시지 텍스트 - 14px */
   --font-size-heading: 1.5rem;  /* 제목 */
 
   /* Glass Effect */

@@ -12,7 +12,10 @@ export class AISettings {
     this.routingConfig = {
       light: 'claude-3-5-haiku-20241022',
       medium: 'claude-3-5-sonnet-20241022',
-      heavy: 'claude-3-opus-20240229'
+      heavy: 'claude-3-opus-20240229',
+      lightThinking: false,
+      mediumThinking: false,
+      heavyThinking: true
     };
     this.routingStats = null;
     this.memoryConfig = {
@@ -204,16 +207,35 @@ export class AISettings {
   }
 
   /**
-   * 라우팅 설정 로드
+   * 라우팅 설정 로드 (서버에서)
    */
   async loadRoutingConfig() {
     try {
-      const saved = localStorage.getItem('smartRoutingConfig');
-      if (saved) {
-        this.routingConfig = JSON.parse(saved);
+      // 서버에서 라우팅 설정 로드
+      const response = await this.apiClient.get('/config/routing');
+      if (response && response.light) {
+        // 새 형식 (serviceId 포함) 또는 이전 형식 (modelId만)
+        this.routingConfig = {
+          light: response.light?.modelId || response.light,
+          medium: response.medium?.modelId || response.medium,
+          heavy: response.heavy?.modelId || response.heavy,
+          // serviceId 정보도 저장
+          lightService: response.light?.serviceId || null,
+          mediumService: response.medium?.serviceId || null,
+          heavyService: response.heavy?.serviceId || null
+        };
       }
     } catch (error) {
-      console.error('Failed to load routing config:', error);
+      console.error('Failed to load routing config from server:', error);
+      // 폴백: localStorage에서 로드
+      try {
+        const saved = localStorage.getItem('smartRoutingConfig');
+        if (saved) {
+          this.routingConfig = JSON.parse(saved);
+        }
+      } catch (e) {
+        console.error('Failed to load routing config from localStorage:', e);
+      }
     }
   }
 
@@ -335,6 +357,28 @@ export class AISettings {
   }
 
   /**
+   * 모델이 생각(thinking) 기능을 지원하는지 확인
+   */
+  /**
+   * 생각 토글 렌더링
+   * 모든 모델에 표시, 지원 모델에서만 동작
+   */
+  renderThinkingToggle(tier, modelId, isEnabled) {
+    return `
+      <div class="thinking-toggle-wrapper">
+        <label class="thinking-toggle">
+          <input type="checkbox"
+                 id="thinking${tier}"
+                 ${isEnabled ? 'checked' : ''}>
+          <span class="thinking-toggle-slider"></span>
+          <span class="thinking-toggle-label">생각</span>
+        </label>
+        <span class="thinking-hint">지원 모델에서 생각 과정 표시</span>
+      </div>
+    `;
+  }
+
+  /**
    * 스마트 라우팅 설정 렌더링
    */
   renderSmartRoutingSettings() {
@@ -345,9 +389,12 @@ export class AISettings {
             <span class="label-text">경량 작업 (1-2)</span>
             <span class="label-hint">간단한 질문, 번역, 요약</span>
           </label>
-          <select class="routing-select" id="routingLight" ${this.availableModels.length === 1 && this.availableModels[0].disabled ? 'disabled' : ''}>
-            ${this.renderModelOptions(this.routingConfig.light)}
-          </select>
+          <div class="routing-field-row">
+            <select class="routing-select" id="routingLight" ${this.availableModels.length === 1 && this.availableModels[0].disabled ? 'disabled' : ''}>
+              ${this.renderModelOptions(this.routingConfig.light)}
+            </select>
+            ${this.renderThinkingToggle('Light', this.routingConfig.light, this.routingConfig.lightThinking)}
+          </div>
         </div>
 
         <div class="routing-field">
@@ -355,9 +402,12 @@ export class AISettings {
             <span class="label-text">중간 작업 (4-6)</span>
             <span class="label-hint">코드 생성, 리뷰, 분석, 문제 해결</span>
           </label>
-          <select class="routing-select" id="routingMedium" ${this.availableModels.length === 1 && this.availableModels[0].disabled ? 'disabled' : ''}>
-            ${this.renderModelOptions(this.routingConfig.medium)}
-          </select>
+          <div class="routing-field-row">
+            <select class="routing-select" id="routingMedium" ${this.availableModels.length === 1 && this.availableModels[0].disabled ? 'disabled' : ''}>
+              ${this.renderModelOptions(this.routingConfig.medium)}
+            </select>
+            ${this.renderThinkingToggle('Medium', this.routingConfig.medium, this.routingConfig.mediumThinking)}
+          </div>
         </div>
 
         <div class="routing-field">
@@ -365,9 +415,12 @@ export class AISettings {
             <span class="label-text">고성능 작업 (7-9)</span>
             <span class="label-hint">아키텍처 설계, 복잡한 디버깅, 연구</span>
           </label>
-          <select class="routing-select" id="routingHeavy" ${this.availableModels.length === 1 && this.availableModels[0].disabled ? 'disabled' : ''}>
-            ${this.renderModelOptions(this.routingConfig.heavy)}
-          </select>
+          <div class="routing-field-row">
+            <select class="routing-select" id="routingHeavy" ${this.availableModels.length === 1 && this.availableModels[0].disabled ? 'disabled' : ''}>
+              ${this.renderModelOptions(this.routingConfig.heavy)}
+            </select>
+            ${this.renderThinkingToggle('Heavy', this.routingConfig.heavy, this.routingConfig.heavyThinking)}
+          </div>
         </div>
 
         <div class="routing-actions">
@@ -383,9 +436,27 @@ export class AISettings {
   }
 
   /**
+   * 모델 ID로 표시 이름 가져오기
+   */
+  getModelDisplayName(modelId) {
+    if (!modelId) return '미설정';
+    const model = this.availableModels.find(m => m.id === modelId);
+    if (model) {
+      return model.name || modelId;
+    }
+    // 모델 ID에서 간단한 이름 추출
+    return modelId.split('-').slice(0, 2).join(' ');
+  }
+
+  /**
    * 라우팅 통계 렌더링
    */
   renderRoutingStats() {
+    // 현재 설정된 모델 이름 가져오기
+    const lightModel = this.getModelDisplayName(this.routingConfig.light);
+    const mediumModel = this.getModelDisplayName(this.routingConfig.medium);
+    const heavyModel = this.getModelDisplayName(this.routingConfig.heavy);
+
     if (!this.routingStats) {
       return `
         <div class="stats-container">
@@ -406,16 +477,16 @@ export class AISettings {
             <div class="stat-label">총 요청</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">${stats.distribution?.haiku || '0%'}</div>
-            <div class="stat-label">경량 (Haiku)</div>
+            <div class="stat-value">${stats.distribution?.light || stats.distribution?.haiku || '0%'}</div>
+            <div class="stat-label" title="${lightModel}">경량</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">${stats.distribution?.sonnet || '0%'}</div>
-            <div class="stat-label">중간 (Sonnet)</div>
+            <div class="stat-value">${stats.distribution?.medium || stats.distribution?.sonnet || '0%'}</div>
+            <div class="stat-label" title="${mediumModel}">중간</div>
           </div>
           <div class="stat-card">
-            <div class="stat-value">${stats.distribution?.opus || '0%'}</div>
-            <div class="stat-label">고성능 (Opus)</div>
+            <div class="stat-value">${stats.distribution?.heavy || stats.distribution?.opus || '0%'}</div>
+            <div class="stat-label" title="${heavyModel}">고성능</div>
           </div>
         </div>
 
@@ -1213,6 +1284,7 @@ export class AISettings {
       resetRoutingBtn.addEventListener('click', () => this.resetRoutingSettings());
     }
 
+
     // 메모리 설정 버튼
     const saveMemoryBtn = container.querySelector('#saveMemoryBtn');
     const resetMemoryBtn = container.querySelector('#resetMemoryBtn');
@@ -1658,7 +1730,16 @@ export class AISettings {
   }
 
   /**
-   * 라우팅 설정 저장
+   * 모델 ID로 서비스 정보 찾기
+   */
+  findServiceByModelId(modelId) {
+    const model = this.availableModels.find(m => m.id === modelId);
+    return model ? { serviceId: model.type, serviceName: model.service } : null;
+  }
+
+
+  /**
+   * 라우팅 설정 저장 (서버로)
    */
   async saveRoutingSettings() {
     try {
@@ -1666,9 +1747,37 @@ export class AISettings {
       const medium = document.getElementById('routingMedium')?.value;
       const heavy = document.getElementById('routingHeavy')?.value;
 
-      this.routingConfig = { light, medium, heavy };
+      // 생각 토글 상태 가져오기
+      const lightThinking = document.getElementById('thinkingLight')?.checked || false;
+      const mediumThinking = document.getElementById('thinkingMedium')?.checked || false;
+      const heavyThinking = document.getElementById('thinkingHeavy')?.checked || false;
 
-      // localStorage에 저장
+      // 각 모델의 서비스 정보 찾기
+      const lightService = this.findServiceByModelId(light);
+      const mediumService = this.findServiceByModelId(medium);
+      const heavyService = this.findServiceByModelId(heavy);
+
+      // 서버에 저장할 데이터 (modelId + serviceId + thinking 형식)
+      const routingData = {
+        enabled: true,
+        light: { modelId: light, serviceId: lightService?.serviceId || null, thinking: lightThinking },
+        medium: { modelId: medium, serviceId: mediumService?.serviceId || null, thinking: mediumThinking },
+        heavy: { modelId: heavy, serviceId: heavyService?.serviceId || null, thinking: heavyThinking }
+      };
+
+      // 서버 API로 저장
+      await this.apiClient.put('/config/routing', routingData);
+
+      // 로컬 상태 업데이트
+      this.routingConfig = {
+        light, medium, heavy,
+        lightThinking, mediumThinking, heavyThinking,
+        lightService: lightService?.serviceId,
+        mediumService: mediumService?.serviceId,
+        heavyService: heavyService?.serviceId
+      };
+
+      // localStorage에도 백업 저장
       localStorage.setItem('smartRoutingConfig', JSON.stringify(this.routingConfig));
 
       this.showSaveStatus('스마트 라우팅 설정이 저장되었습니다.', 'success');
@@ -1687,10 +1796,33 @@ export class AISettings {
     }
 
     try {
+      // 사용 가능한 모델 중에서 기본값 선택
+      const defaultLight = this.availableModels.find(m => m.id.includes('haiku') || m.id.includes('fast'))?.id || this.availableModels[0]?.id;
+      const defaultMedium = this.availableModels.find(m => m.id.includes('sonnet') || m.id.includes('4o') || m.id.includes('flash'))?.id || this.availableModels[0]?.id;
+      const defaultHeavy = this.availableModels.find(m => m.id.includes('opus') || m.id.includes('pro'))?.id || this.availableModels[0]?.id;
+
+      // 서비스 정보 찾기
+      const lightService = this.findServiceByModelId(defaultLight);
+      const mediumService = this.findServiceByModelId(defaultMedium);
+      const heavyService = this.findServiceByModelId(defaultHeavy);
+
+      const routingData = {
+        enabled: true,
+        light: { modelId: defaultLight, serviceId: lightService?.serviceId || null },
+        medium: { modelId: defaultMedium, serviceId: mediumService?.serviceId || null },
+        heavy: { modelId: defaultHeavy, serviceId: heavyService?.serviceId || null }
+      };
+
+      // 서버 API로 저장
+      await this.apiClient.put('/config/routing', routingData);
+
       this.routingConfig = {
-        light: 'claude-3-5-haiku-20241022',
-        medium: 'claude-3-5-sonnet-20241022',
-        heavy: 'claude-3-opus-20240229'
+        light: defaultLight,
+        medium: defaultMedium,
+        heavy: defaultHeavy,
+        lightService: lightService?.serviceId,
+        mediumService: mediumService?.serviceId,
+        heavyService: heavyService?.serviceId
       };
 
       localStorage.setItem('smartRoutingConfig', JSON.stringify(this.routingConfig));

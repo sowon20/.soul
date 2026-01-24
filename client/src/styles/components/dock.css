@@ -12,6 +12,8 @@
   margin: 0;
   width: 100%;
   height: var(--dock-height);
+  position: relative;
+  z-index: 10;
 }
 
 .dock {

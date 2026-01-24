@@ -374,9 +374,9 @@
   }
 }
 
-.message-user .message-text {
+.message-user .message-content {
   font-size: var(--font-size-message);
-  line-height: 1.6;
+  line-height: 1.5;
   white-space: pre-wrap;
   opacity: 0.95;
 }
@@ -422,9 +422,9 @@
   padding: 0;
 }
 
-.message-assistant .message-text {
+.message-assistant .message-content {
   font-size: var(--font-size-message);
-  line-height: 1.7;
+  line-height: 1.5;
   color: var(--foreground);
   margin-bottom: 0.75rem;
   opacity: 0.95;
@@ -470,19 +470,19 @@
 }
 
 /* Markdown 스타일링 */
-.message-text p {
+.message-content p {
   margin: 0.5rem 0;
 }
 
-.message-text p:first-child {
+.message-content p:first-child {
   margin-top: 0;
 }
 
-.message-text p:last-child {
+.message-content p:last-child {
   margin-bottom: 0;
 }
 
-.message-text code {
+.message-content code {
   padding: 0.125rem 0.375rem;
   background: var(--muted);
   border-radius: 0.25rem;
@@ -490,7 +490,7 @@
   font-size: 0.875em;
 }
 
-.message-text pre {
+.message-content pre {
   margin: 0.75rem 0;
   padding: 1rem;
   background: var(--muted);
@@ -498,9 +498,60 @@
   overflow-x: auto;
 }
 
-.message-text pre code {
+.message-content pre code {
   background: none;
   padding: 0;
+}
+
+/* 링크 스타일 - Style 4 하이라이트 효과 */
+.message-content a {
+  background: linear-gradient(to bottom, rgba(228, 218, 167, 0.5) 70%, rgba(227, 212, 141, 0.5) 70%) 0 0.75em / 4px 0.35em repeat-x;
+  color: #a6ffef;
+  padding: 1px 2px 2px 2px;
+  text-decoration: none !important;
+  transition: all 0.25s ease-in-out;
+  border-radius: 2px;
+}
+
+.message-content a:hover,
+.message-content a:focus {
+  background: linear-gradient(to bottom, rgba(255, 245, 196, 0.6) 70%, rgba(255, 242, 177, 0.6) 70%) 0 0.75em / 4px 0.4em repeat-x;
+  transition: all 0.25s ease-in-out;
+}
+
+/* 리스트 스타일 */
+.message-content ul,
+.message-content ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.message-content li {
+  margin: 0.125rem 0;
+  padding-left: 0.25rem;
+}
+
+.message-content ul li {
+  list-style-type: disc;
+}
+
+.message-content ol li {
+  list-style-type: decimal;
+}
+
+.message-content li > ul,
+.message-content li > ol {
+  margin: 0.25rem 0;
+}
+
+/* 인용문 스타일 */
+.message-content blockquote {
+  margin: 0.75rem 0;
+  padding: 0.5rem 1rem;
+  border-left: 3px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 0 4px 4px 0;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 /* ===================================
@@ -519,7 +570,7 @@
   height: 8px;
   background: var(--muted-foreground);
   border-radius: 50%;
-  animation: bounce 1.4s infinite ease-in-out;
+  animation: bounce 1.0s infinite ease-in-out;
 }
 
 .typing-indicator span:nth-child(1) {
@@ -573,7 +624,7 @@
   background: transparent;
   padding: 1.5rem 1.25rem;
   padding-bottom: 4rem;
-  font-size: 1rem !important;
+  font-size: var(--font-size-message) !important;
   color: var(--foreground);
   outline: none;
   resize: none;
@@ -801,43 +852,175 @@
 }
 
 /* ===================================
-   Typing Dots Animation
+   Her OS1 Style Loading Animation
+   빛이 무한대(∞) 경로를 따라 이동
    =================================== */
 
 .typing-dots {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 12px 0;
+  min-height: 40px;
+}
+
+/* 기존 span 숨김 */
+.typing-dots span {
+  display: none !important;
+}
+
+/* 끈적끈적 글로우 점 로더 (Gooey Effect) */
+.os1-loader {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.5rem 0;
+  gap: 5px;
+  filter: url(#gooey);
+  margin-left: 8px;
 }
 
-.typing-dots span {
-  width: 8px;
-  height: 8px;
-  background: var(--muted-foreground, #888);
+.os1-loader .dot {
+  width: 11px;
+  height: 11px;
+  background: #38bdf8;
   border-radius: 50%;
-  animation: typingBounce 1.4s infinite ease-in-out;
+  animation: dotGooey 2s ease-in-out infinite;
 }
 
-.typing-dots span:nth-child(1) {
-  animation-delay: -0.32s;
-}
+.os1-loader .dot:nth-child(1) { animation-delay: 0s; }
+.os1-loader .dot:nth-child(2) { animation-delay: 0.5s; }
+.os1-loader .dot:nth-child(3) { animation-delay: 1s; }
+.os1-loader .dot:nth-child(4) { animation-delay: 1.5s; }
 
-.typing-dots span:nth-child(2) {
-  animation-delay: -0.16s;
-}
-
-.typing-dots span:nth-child(3) {
-  animation-delay: 0s;
-}
-
-@keyframes typingBounce {
-  0%, 80%, 100% {
-    transform: scale(0.6);
-    opacity: 0.5;
-  }
-  40% {
+@keyframes dotGooey {
+  0%, 100% {
+    background: #38bdf8;
     transform: scale(1);
-    opacity: 1;
   }
+  30% {
+    background: #67e8f9;
+    transform: scale(1.4);
+  }
+}
+
+/* 타이핑 인디케이터 컨테이너 */
+.chat-message.typing-indicator {
+  min-height: 50px !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.chat-message.typing-indicator .message-content {
+  min-height: 40px;
+  padding: 8px 0 !important;
+}
+
+/* ===================================
+   External Link Modal
+   =================================== */
+
+.external-link-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.external-link-modal.show {
+  display: flex;
+}
+
+.external-link-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.external-link-dialog {
+  position: relative;
+  background: #2a2a2a;
+  border-radius: 16px;
+  padding: 1.5rem;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  animation: modalSlideIn 0.2s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.external-link-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.external-link-desc {
+  margin: 0 0 1rem 0;
+  font-size: 0.9rem;
+  color: #a3a3a3;
+}
+
+.external-link-url {
+  background: #1a1a1a;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem;
+  color: #e5e5e5;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.external-link-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.external-link-btn {
+  padding: 0.625rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+}
+
+.external-link-btn.cancel {
+  background: transparent;
+  color: var(--foreground);
+  border: 1px solid var(--border);
+}
+
+.external-link-btn.cancel:hover {
+  background: var(--muted);
+}
+
+.external-link-btn.confirm {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.external-link-btn.confirm:hover {
+  opacity: 0.9;
 }

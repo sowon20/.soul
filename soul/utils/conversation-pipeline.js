@@ -265,18 +265,20 @@ class ConversationPipeline {
         await this.initialize();
       }
 
-      // 1. 사용자 메시지 저장
+      // 1. 사용자 메시지 저장 (명시적 타임스탬프)
+      const userTimestamp = new Date();
       await this.memoryManager.addMessage({
         role: 'user',
         content: userMessage,
-        timestamp: new Date()
+        timestamp: userTimestamp
       }, sessionId);
 
-      // 2. 어시스턴트 응답 저장
+      // 2. 어시스턴트 응답 저장 (사용자 메시지보다 최소 1ms 뒤)
+      const assistantTimestamp = new Date(userTimestamp.getTime() + 1);
       await this.memoryManager.addMessage({
         role: 'assistant',
         content: assistantResponse,
-        timestamp: new Date(),
+        timestamp: assistantTimestamp,
         ...metadata
       }, sessionId);
 

@@ -1,0 +1,56 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2026-01-24T08:02:15.652Z",
+  "conversations": [
+    {
+      "id": "test-conv-2",
+      "date": "2026-01-24T08:02:15.638Z",
+      "participants": [
+        "user",
+        "soul"
+      ],
+      "messageCount": 2,
+      "topics": [
+        "Python",
+        "웹 크롤링",
+        "BeautifulSoup"
+      ],
+      "tags": [
+        "개발",
+        "자동화",
+        "데이터수집"
+      ],
+      "category": "기술",
+      "importance": 3,
+      "filename": "2026-01-24_080215_Python.md",
+      "path": "raw/2026-01-24_080215_Python.md",
+      "fileSize": 440,
+      "lastModified": "2026-01-24T08:02:15.642Z"
+    },
+    {
+      "id": "test-conv-1",
+      "date": "2026-01-24T08:02:01.972Z",
+      "participants": [
+        "user",
+        "soul"
+      ],
+      "messageCount": 2,
+      "topics": [
+        "React",
+        "프론트엔드",
+        "컴포넌트"
+      ],
+      "tags": [
+        "개발",
+        "프로그래밍",
+        "웹"
+      ],
+      "category": "기술",
+      "importance": 4,
+      "filename": "2026-01-24_080201_React.md",
+      "path": "raw/2026-01-24_080201_React.md",
+      "fileSize": 439,
+      "lastModified": "2026-01-24T08:02:01.975Z"
+    }
+  ]
+}

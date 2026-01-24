@@ -80,7 +80,7 @@ router.get('/agent/:profileId', (req, res) => {
  * POST /api/profile/agent
  * 에이전트 프로필 생성
  */
-router.post('/agent', (req, res) => {
+router.post('/agent', async (req, res) => {
   try {
     const profileData = req.body;
 
@@ -92,7 +92,7 @@ router.post('/agent', (req, res) => {
     }
 
     const manager = getAgentProfileManager();
-    const profile = manager.createProfile(profileData);
+    const profile = await manager.createProfile(profileData);
 
     res.json({
       success: true,
@@ -111,13 +111,13 @@ router.post('/agent', (req, res) => {
  * PUT /api/profile/agent/:profileId
  * 에이전트 프로필 업데이트
  */
-router.put('/agent/:profileId', (req, res) => {
+router.put('/agent/:profileId', async (req, res) => {
   try {
     const { profileId } = req.params;
     const updates = req.body;
 
     const manager = getAgentProfileManager();
-    const profile = manager.updateProfile(profileId, updates);
+    const profile = await manager.updateProfile(profileId, updates);
 
     // PersonalityCore 캐시 무효화 (설정이 즉시 반영되도록)
     const personalityCore = getPersonalityCore();
@@ -141,12 +141,12 @@ router.put('/agent/:profileId', (req, res) => {
  * DELETE /api/profile/agent/:profileId
  * 에이전트 프로필 삭제
  */
-router.delete('/agent/:profileId', (req, res) => {
+router.delete('/agent/:profileId', async (req, res) => {
   try {
     const { profileId } = req.params;
 
     const manager = getAgentProfileManager();
-    const deleted = manager.deleteProfile(profileId);
+    const deleted = await manager.deleteProfile(profileId);
 
     if (!deleted) {
       return res.status(404).json({
@@ -927,6 +927,102 @@ router.patch('/p/permissions', async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating permissions:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/profile/p/image
+ * 프로필 사진 조회
+ */
+router.get('/p/image', async (req, res) => {
+  try {
+    const userId = req.query.userId || 'sowon';
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+
+    res.json({
+      success: true,
+      profileImage: profile.profileImage
+    });
+  } catch (error) {
+    console.error('Error getting profile image:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * PUT /api/profile/p/image
+ * 프로필 사진 업로드 (Base64)
+ */
+router.put('/p/image', async (req, res) => {
+  try {
+    const userId = req.body.userId || 'sowon';
+    const { imageData } = req.body;
+
+    if (!imageData) {
+      return res.status(400).json({
+        success: false,
+        error: 'imageData is required'
+      });
+    }
+
+    // Base64 데이터 크기 제한 (약 5MB)
+    const sizeInBytes = Buffer.from(imageData.split(',')[1] || imageData, 'base64').length;
+    if (sizeInBytes > 5 * 1024 * 1024) {
+      return res.status(400).json({
+        success: false,
+        error: '이미지 크기는 5MB 이하여야 합니다.'
+      });
+    }
+
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+    profile.profileImage = imageData;
+    profile.metadata.updatedAt = new Date();
+    await profile.save();
+
+    console.log(`💾 프로필 사진 저장 완료 (${userId})`);
+
+    res.json({
+      success: true,
+      message: '프로필 사진이 저장되었습니다.',
+      profileImage: profile.profileImage
+    });
+  } catch (error) {
+    console.error('Error uploading profile image:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * DELETE /api/profile/p/image
+ * 프로필 사진 삭제
+ */
+router.delete('/p/image', async (req, res) => {
+  try {
+    const userId = req.query.userId || 'sowon';
+
+    const profile = await ProfileModel.getOrCreateDefault(userId);
+    profile.profileImage = null;
+    profile.metadata.updatedAt = new Date();
+    await profile.save();
+
+    console.log(`🗑️ 프로필 사진 삭제 완료 (${userId})`);
+
+    res.json({
+      success: true,
+      message: '프로필 사진이 삭제되었습니다.'
+    });
+  } catch (error) {
+    console.error('Error deleting profile image:', error);
     res.status(500).json({
       success: false,
       error: error.message

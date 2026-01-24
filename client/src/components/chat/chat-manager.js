@@ -3,6 +3,8 @@
  * 채팅 메시지 관리 및 렌더링 (Claude Style)
  */
 
+import dashboardManager from '../../utils/dashboard-manager.js';
+
 export class ChatManager {
   constructor(apiClient) {
     this.apiClient = apiClient;
@@ -244,6 +246,9 @@ export class ChatManager {
       // Process code blocks - add copy button and syntax highlighting
       this.processCodeBlocks(content, message.content);
 
+      // Process external links - add popup handler
+      this.processExternalLinks(content);
+
       // Add event listeners for action buttons
       this.attachAssistantMessageActions(messageDiv, message);
 
@@ -291,6 +296,75 @@ export class ChatManager {
         window.Prism.highlightElement(codeElement);
       }
     });
+  }
+
+  /**
+   * 외부 링크 처리 (팝업으로 확인 후 이동)
+   */
+  processExternalLinks(contentDiv) {
+    const links = contentDiv.querySelectorAll('a');
+
+    links.forEach(link => {
+      const href = link.getAttribute('href');
+      if (!href) return;
+
+      // 외부 링크인지 확인 (http/https로 시작하거나 절대 경로)
+      const isExternal = href.startsWith('http://') || href.startsWith('https://');
+
+      if (isExternal) {
+        link.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.showExternalLinkModal(href);
+        });
+      }
+    });
+  }
+
+  /**
+   * 외부 링크 모달 표시
+   */
+  showExternalLinkModal(url) {
+    const modal = document.getElementById('externalLinkModal');
+    const urlDisplay = document.getElementById('externalLinkUrl');
+    const cancelBtn = document.getElementById('externalLinkCancel');
+    const confirmBtn = document.getElementById('externalLinkConfirm');
+    const backdrop = modal.querySelector('.external-link-backdrop');
+
+    if (!modal || !urlDisplay) return;
+
+    // URL 표시
+    urlDisplay.textContent = url;
+
+    // 모달 표시
+    modal.classList.add('show');
+
+    // 이벤트 핸들러 (중복 방지를 위해 새로 생성)
+    const closeModal = () => {
+      modal.classList.remove('show');
+      // 이벤트 리스너 정리
+      cancelBtn.removeEventListener('click', closeModal);
+      confirmBtn.removeEventListener('click', openLink);
+      backdrop.removeEventListener('click', closeModal);
+    };
+
+    const openLink = () => {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      closeModal();
+    };
+
+    // 이벤트 연결
+    cancelBtn.addEventListener('click', closeModal);
+    confirmBtn.addEventListener('click', openLink);
+    backdrop.addEventListener('click', closeModal);
+
+    // ESC 키로 닫기
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') {
+        closeModal();
+        document.removeEventListener('keydown', handleEsc);
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
   }
 
   /**
@@ -443,6 +517,9 @@ export class ChatManager {
           btn.addEventListener('click', () => this.copyMessage(codeText, btn));
         }
       });
+
+      // 외부 링크 처리
+      this.processExternalLinks(content);
 
       // 메시지 액션 버튼들
       const copyBtn = messageDiv.querySelector('.message-actions .message-action-btn[title="복사"]');
@@ -617,12 +694,25 @@ export class ChatManager {
    * 타이핑 인디케이터 표시
    */
   showTypingIndicator() {
+    console.log('[Chat] showTypingIndicator called at', Date.now());
+    console.log('[Chat] typingIndicatorTemplate:', this.typingIndicatorTemplate);
+
+    if (!this.typingIndicatorTemplate) {
+      console.error('[Chat] typingIndicatorTemplate not found!');
+      return;
+    }
+
     const indicator = this.typingIndicatorTemplate.content.cloneNode(true);
     const indicatorElement = indicator.querySelector('.chat-message.assistant');
+    console.log('[Chat] indicatorElement:', indicatorElement);
+
     if (indicatorElement) {
       indicatorElement.id = 'activeTypingIndicator';
       this.messagesArea.appendChild(indicatorElement);
       this.scrollToBottom();
+      console.log('[Chat] Typing indicator added to DOM');
+    } else {
+      console.error('[Chat] Could not find .chat-message.assistant in template');
     }
   }
 
@@ -630,9 +720,12 @@ export class ChatManager {
    * 타이핑 인디케이터 제거
    */
   hideTypingIndicator() {
+    console.log('[Chat] hideTypingIndicator called at', Date.now());
     const indicator = document.getElementById('activeTypingIndicator');
+    console.log('[Chat] indicator to remove:', indicator);
     if (indicator) {
       indicator.remove();
+      console.log('[Chat] Typing indicator removed');
     }
   }
 
@@ -654,16 +747,22 @@ export class ChatManager {
     try {
       // Call API
       const response = await this.apiClient.sendMessage(text);
+      console.log('[Chat] API response:', response);
 
       // Hide typing indicator
       this.hideTypingIndicator();
 
       // Add assistant response
+      const content = response.reply || response.message || '응답을 받지 못했습니다.';
+      console.log('[Chat] Adding assistant message:', content);
       this.addMessage({
         role: 'assistant',
-        content: response.reply || response.message || '응답을 받지 못했습니다.',
+        content: content,
         timestamp: new Date(response.timestamp || Date.now()),
       });
+
+      // 대시보드 통계 갱신
+      dashboardManager.refresh();
     } catch (error) {
       // Hide typing indicator
       this.hideTypingIndicator();

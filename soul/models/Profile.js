@@ -107,6 +107,11 @@ const profileSchema = new mongoose.Schema({
     unique: true,
     default: 'sowon'
   },
+  // 프로필 사진 (Base64 또는 URL)
+  profileImage: {
+    type: String,
+    default: null
+  },
   // 고정 기본 정보 (각 필드마다 공개 설정 가능)
   basicInfo: {
     // 이름
