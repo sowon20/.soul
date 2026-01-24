@@ -18,7 +18,7 @@
   border: none;
   outline: none;
   color: #ffffff;
-  font-size: 14px;
+  font-size: var(--font-size-message);
   font-family: inherit;
   resize: none;
   min-height: 42px;

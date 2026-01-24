@@ -29,6 +29,43 @@ export class ProfileManager {
       // UI 렌더링
       container.innerHTML = `
         <div class="profile-panel">
+          <!-- 프로필 사진 -->
+          <div class="profile-section profile-image-section">
+            <div class="profile-image-container">
+              <div class="profile-image-wrapper" id="profileImageWrapper">
+                ${this.profile.profileImage
+                  ? `<img src="${this.profile.profileImage}" alt="프로필 사진" class="profile-image-preview">`
+                  : `<div class="profile-image-placeholder">
+                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                         <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                         <circle cx="12" cy="7" r="4"/>
+                       </svg>
+                     </div>`
+                }
+                <div class="profile-image-overlay">
+                  <label for="profileImageInput" class="profile-image-upload-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+                      <circle cx="12" cy="13" r="4"/>
+                    </svg>
+                  </label>
+                  ${this.profile.profileImage ? `
+                    <button class="profile-image-delete-btn" id="deleteProfileImageBtn" title="사진 삭제">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                      </svg>
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+              <input type="file" id="profileImageInput" accept="image/*" style="display: none;">
+              <div class="profile-image-info">
+                <span class="profile-image-name">${this.profile.basicInfo.name?.value || '소원'}</span>
+              </div>
+            </div>
+          </div>
+
           <!-- 기본 정보 -->
           <div class="profile-section">
             <h3 class="profile-section-title">기본 정보</h3>
@@ -264,6 +301,18 @@ export class ProfileManager {
    * 이벤트 리스너 등록
    */
   attachEventListeners(container) {
+    // 프로필 사진 업로드
+    const profileImageInput = container.querySelector('#profileImageInput');
+    if (profileImageInput) {
+      profileImageInput.addEventListener('change', (e) => this.handleProfileImageUpload(e, container));
+    }
+
+    // 프로필 사진 삭제
+    const deleteImageBtn = container.querySelector('#deleteProfileImageBtn');
+    if (deleteImageBtn) {
+      deleteImageBtn.addEventListener('click', () => this.deleteProfileImage(container));
+    }
+
     // 기본 정보 값 변경 자동 저장
     container.querySelectorAll('.profile-input[data-basic-field]').forEach(input => {
       input.addEventListener('change', (e) => this.saveBasicInfoValue(e.target));
@@ -287,6 +336,159 @@ export class ProfileManager {
     const savePermissionsBtn = container.querySelector('#savePermissionsBtn');
     if (savePermissionsBtn) {
       savePermissionsBtn.addEventListener('click', () => this.savePermissions(container));
+    }
+  }
+
+  /**
+   * 프로필 사진 업로드 처리
+   */
+  async handleProfileImageUpload(e, container) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // 파일 타입 검증
+    if (!file.type.startsWith('image/')) {
+      this.showSaveStatus('❌ 이미지 파일만 업로드 가능합니다.', 'error');
+      return;
+    }
+
+    // 파일 크기 검증 (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      this.showSaveStatus('❌ 이미지 크기는 5MB 이하여야 합니다.', 'error');
+      return;
+    }
+
+    try {
+      this.showSaveStatus('업로드 중...', 'info');
+
+      // 이미지 리사이즈 및 Base64 변환
+      const imageData = await this.resizeAndConvertToBase64(file, 400, 400);
+
+      // API 호출
+      const response = await fetch('/api/profile/p/image', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: this.userId,
+          imageData
+        })
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || '업로드 실패');
+      }
+
+      // 로컬 상태 업데이트
+      this.profile.profileImage = imageData;
+
+      // UI 새로고침
+      await this.renderProfilePanel(container);
+      this.showSaveStatus('✓ 프로필 사진 저장됨', 'success');
+
+      // 메인 화면 아바타도 업데이트
+      this.updateMainAvatar(imageData);
+
+    } catch (error) {
+      console.error('프로필 사진 업로드 실패:', error);
+      this.showSaveStatus('❌ 업로드 실패', 'error');
+    }
+  }
+
+  /**
+   * 이미지 리사이즈 및 Base64 변환
+   */
+  resizeAndConvertToBase64(file, maxWidth, maxHeight) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let { width, height } = img;
+
+          // 비율 유지하며 리사이즈
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // JPEG로 변환 (품질 0.8)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          resolve(dataUrl);
+        };
+        img.onerror = reject;
+        img.src = e.target.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /**
+   * 프로필 사진 삭제
+   */
+  async deleteProfileImage(container) {
+    if (!confirm('프로필 사진을 삭제하시겠습니까?')) {
+      return;
+    }
+
+    try {
+      this.showSaveStatus('삭제 중...', 'info');
+
+      const response = await fetch(`/api/profile/p/image?userId=${this.userId}`, {
+        method: 'DELETE'
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || '삭제 실패');
+      }
+
+      // 로컬 상태 업데이트
+      this.profile.profileImage = null;
+
+      // UI 새로고침
+      await this.renderProfilePanel(container);
+      this.showSaveStatus('✓ 프로필 사진 삭제됨', 'success');
+
+      // 메인 화면 아바타도 초기화
+      this.updateMainAvatar(null);
+
+    } catch (error) {
+      console.error('프로필 사진 삭제 실패:', error);
+      this.showSaveStatus('❌ 삭제 실패', 'error');
+    }
+  }
+
+  /**
+   * 메인 화면 아바타 업데이트
+   */
+  updateMainAvatar(imageData) {
+    const avatar = document.querySelector('.profile-section .avatar');
+    if (avatar) {
+      if (imageData) {
+        avatar.style.backgroundImage = `url(${imageData})`;
+        avatar.style.backgroundSize = 'cover';
+        avatar.style.backgroundPosition = 'center';
+      } else {
+        avatar.style.backgroundImage = '';
+      }
     }
   }
 

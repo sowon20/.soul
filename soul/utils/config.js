@@ -44,9 +44,9 @@ class ConfigManager {
       },
       routing: {
         enabled: true,
-        light: 'claude-3-5-haiku-20241022',
-        medium: 'claude-sonnet-4-20250514',
-        heavy: 'claude-3-opus-20240229'
+        light: { modelId: 'claude-3-5-haiku-20241022', serviceId: 'anthropic' },
+        medium: { modelId: 'claude-sonnet-4-20250514', serviceId: 'anthropic' },
+        heavy: { modelId: 'claude-3-opus-20240229', serviceId: 'anthropic' }
       }
     };
   }

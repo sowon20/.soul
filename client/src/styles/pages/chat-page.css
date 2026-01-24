@@ -72,7 +72,7 @@
   transition: all 0.3s;
   opacity: 0;
   pointer-events: none;
-  z-index: 100;
+  z-index: 1;
 }
 
 /* 독이 표시될 때 버튼 위치 조정 */

@@ -8,7 +8,10 @@
  * - 에이전트 자아 정보 관리 (이름, 역할, 설명)
  * - 시스템 프롬프트에 자아 정보 자동 주입
  * - 다중 에이전트 프로필 지원
+ * - MongoDB 영속화 (서버 재시작해도 유지)
  */
+
+const AgentProfileModel = require('../models/AgentProfile');
 
 /**
  * AgentProfile 클래스
@@ -283,18 +286,73 @@ class AgentProfile {
 
 /**
  * AgentProfileManager 클래스
+ * MongoDB와 메모리 캐시를 함께 사용
  */
 class AgentProfileManager {
   constructor() {
     this.profiles = new Map();
     this.defaultProfileId = 'default';
-
-    // 기본 프로필 생성
-    this._createDefaultProfile();
+    this.initialized = false;
   }
 
   /**
-   * 기본 프로필 생성
+   * MongoDB에서 프로필 로드 (서버 시작 시 호출)
+   */
+  async initialize() {
+    if (this.initialized) return;
+
+    try {
+      // DB에서 모든 프로필 로드
+      const dbProfiles = await AgentProfileModel.find();
+
+      if (dbProfiles.length === 0) {
+        // DB에 없으면 기본 프로필 생성
+        const defaultDoc = await AgentProfileModel.getOrCreateDefault('default');
+        const profile = this._docToProfile(defaultDoc);
+        this.profiles.set('default', profile);
+      } else {
+        // DB에서 로드
+        for (const doc of dbProfiles) {
+          const profile = this._docToProfile(doc);
+          this.profiles.set(doc.profileId, profile);
+        }
+      }
+
+      this.initialized = true;
+      console.log(`✅ Agent profiles loaded from DB (${this.profiles.size} profiles)`);
+    } catch (error) {
+      console.error('❌ Agent profile initialization error:', error.message);
+      // DB 실패 시 메모리에 기본 프로필 생성
+      this._createDefaultProfile();
+      this.initialized = true;
+    }
+  }
+
+  /**
+   * MongoDB 문서를 AgentProfile 인스턴스로 변환
+   */
+  _docToProfile(doc) {
+    return new AgentProfile({
+      id: doc.profileId,
+      name: doc.name,
+      role: doc.role,
+      description: doc.description,
+      defaultModel: doc.defaultModel,
+      temperature: doc.temperature,
+      maxTokens: doc.maxTokens,
+      tone: doc.tone,
+      customPrompt: doc.customPrompt,
+      personality: doc.personality,
+      capabilities: doc.capabilities,
+      limitations: doc.limitations,
+      guidelines: doc.guidelines,
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt
+    });
+  }
+
+  /**
+   * 기본 프로필 생성 (fallback)
    */
   _createDefaultProfile() {
     const defaultProfile = new AgentProfile({
@@ -328,7 +386,7 @@ class AgentProfileManager {
         '자연어 명령 처리'
       ],
       limitations: [
-        '실시간 인터넷 접근 불가 (학습 데이터 기준: 2025년 1월)',
+        '실시간 인터넷 접근 불가',
         '외부 API 직접 호출 불가',
         '파일 시스템 직접 접근 제한'
       ],
@@ -347,9 +405,17 @@ class AgentProfileManager {
   /**
    * 프로필 생성
    */
-  createProfile(options) {
+  async createProfile(options) {
     const profile = new AgentProfile(options);
     this.profiles.set(profile.id, profile);
+
+    // DB에도 저장
+    try {
+      await AgentProfileModel.updateProfile(profile.id, profile.toJSON());
+    } catch (error) {
+      console.error('Profile DB save error:', error.message);
+    }
+
     return profile;
   }
 
@@ -362,9 +428,9 @@ class AgentProfileManager {
   }
 
   /**
-   * 프로필 업데이트
+   * 프로필 업데이트 (DB에도 저장)
    */
-  updateProfile(profileId, updates) {
+  async updateProfile(profileId, updates) {
     const profile = this.profiles.get(profileId);
 
     if (!profile) {
@@ -372,18 +438,39 @@ class AgentProfileManager {
     }
 
     profile.update(updates);
+
+    // DB에도 저장
+    try {
+      await AgentProfileModel.updateProfile(profileId, {
+        ...updates,
+        updatedAt: new Date()
+      });
+      console.log(`✅ Profile "${profileId}" saved to DB`);
+    } catch (error) {
+      console.error('Profile DB update error:', error.message);
+    }
+
     return profile;
   }
 
   /**
    * 프로필 삭제
    */
-  deleteProfile(profileId) {
+  async deleteProfile(profileId) {
     if (profileId === this.defaultProfileId) {
       throw new Error('Cannot delete default profile');
     }
 
-    return this.profiles.delete(profileId);
+    this.profiles.delete(profileId);
+
+    // DB에서도 삭제
+    try {
+      await AgentProfileModel.deleteOne({ profileId });
+    } catch (error) {
+      console.error('Profile DB delete error:', error.message);
+    }
+
+    return true;
   }
 
   /**

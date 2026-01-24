@@ -357,3 +357,154 @@ textarea.profile-field-input {
 [data-theme="dark"] .profile-custom-field:hover {
   background: rgba(255, 255, 255, 0.08);
 }
+
+/* 프로필 사진 섹션 */
+.profile-image-section {
+  text-align: center;
+  padding: 2rem 1.5rem !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+.profile-image-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.profile-image-wrapper {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.profile-image-wrapper:hover {
+  border-color: var(--primary, #3b82f6);
+  transform: scale(1.02);
+}
+
+.profile-image-wrapper:hover .profile-image-overlay {
+  opacity: 1;
+}
+
+.profile-image-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-image-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+.profile-image-placeholder svg {
+  width: 48px;
+  height: 48px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.profile-image-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.profile-image-upload-btn,
+.profile-image-delete-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.profile-image-upload-btn {
+  background: var(--primary, #3b82f6);
+  color: white;
+}
+
+.profile-image-upload-btn:hover {
+  background: #2563eb;
+  transform: scale(1.1);
+}
+
+.profile-image-delete-btn {
+  background: rgba(239, 68, 68, 0.9);
+  color: white;
+}
+
+.profile-image-delete-btn:hover {
+  background: #dc2626;
+  transform: scale(1.1);
+}
+
+.profile-image-upload-btn svg,
+.profile-image-delete-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.profile-image-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.profile-image-name {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.profile-image-hint {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* 반응형 - 프로필 사진 */
+@media (max-width: 768px) {
+  .profile-image-wrapper {
+    width: 100px;
+    height: 100px;
+  }
+
+  .profile-image-placeholder svg {
+    width: 40px;
+    height: 40px;
+  }
+
+  .profile-image-upload-btn,
+  .profile-image-delete-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .profile-image-upload-btn svg,
+  .profile-image-delete-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+}

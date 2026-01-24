@@ -15,6 +15,11 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/soul')
   const AIService = require('../models/AIService');
   await AIService.initializeBuiltInServices();
 
+  // 에이전트 프로필 로드 (DB에서)
+  const { getAgentProfileManager } = require('../utils/agent-profile');
+  const profileManager = getAgentProfileManager();
+  await profileManager.initialize();
+
   // 기본 역할(알바) 초기화
   const Role = require('../models/Role');
   await Role.initializeDefaultRoles();

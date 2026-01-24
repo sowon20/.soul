@@ -55,6 +55,7 @@ class AnthropicService extends AIService {
       temperature = 1.0,
       tools = null,
       toolExecutor = null, // 도구 실행 함수
+      thinking = false, // extended thinking 활성화
     } = options;
 
     const apiMessages = messages.map(msg => ({
@@ -66,8 +67,18 @@ class AnthropicService extends AIService {
       model: this.modelName,
       max_tokens: maxTokens,
       messages: apiMessages,
-      temperature
     };
+
+    // extended thinking 설정 (활성화 시 temperature 사용 불가)
+    if (thinking) {
+      params.thinking = {
+        type: 'enabled',
+        budget_tokens: Math.min(10000, Math.floor(maxTokens * 0.6)) // 최대 토큰의 60%를 thinking에 할당
+      };
+      console.log(`[Anthropic] Extended thinking enabled with budget: ${params.thinking.budget_tokens}`);
+    } else {
+      params.temperature = temperature;
+    }
 
     if (systemPrompt) {
       params.system = systemPrompt;
@@ -110,9 +121,20 @@ class AnthropicService extends AIService {
       response = await this.client.messages.create(params);
     }
 
-    // 최종 텍스트 응답 추출
+    // 최종 응답 추출 (thinking + text)
+    const thinkingBlock = response.content.find(block => block.type === 'thinking');
     const textBlock = response.content.find(block => block.type === 'text');
-    return textBlock ? textBlock.text : '';
+
+    const textContent = textBlock ? textBlock.text : '';
+
+    // thinking이 있으면 메타데이터와 함께 반환
+    if (thinkingBlock) {
+      console.log(`[Anthropic] Thinking content length: ${thinkingBlock.thinking.length}`);
+      // thinking 내용을 특수 마커로 감싸서 반환 (프론트엔드에서 파싱)
+      return `<thinking>${thinkingBlock.thinking}</thinking>\n\n${textContent}`;
+    }
+
+    return textContent;
   }
 
   async analyzeConversation(messages) {
@@ -194,18 +216,28 @@ class OpenAIService extends AIService {
       });
     }
 
+    const requestBody = {
+      model: this.modelName,
+      messages: apiMessages,
+    };
+
+    // o1 모델은 max_completion_tokens 사용, 일반 모델은 max_tokens
+    const isO1Model = this.modelName.includes('o1');
+    if (isO1Model) {
+      requestBody.max_completion_tokens = maxTokens;
+      // o1 모델은 temperature 지원 안함
+    } else {
+      requestBody.max_tokens = maxTokens;
+      requestBody.temperature = temperature;
+    }
+
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`
       },
-      body: JSON.stringify({
-        model: this.modelName,
-        messages: apiMessages,
-        max_tokens: maxTokens,
-        temperature
-      })
+      body: JSON.stringify(requestBody)
     });
 
     const data = await response.json();
@@ -304,12 +336,19 @@ class GoogleService extends AIService {
       parts: [{ text: msg.content }]
     }));
 
+    const generationConfig = {
+      maxOutputTokens: maxTokens,
+    };
+
+    // Gemini Thinking 모델은 temperature 지원 안함
+    const isThinkingModel = this.modelName.includes('thinking');
+    if (!isThinkingModel) {
+      generationConfig.temperature = temperature;
+    }
+
     const requestBody = {
       contents,
-      generationConfig: {
-        maxOutputTokens: maxTokens,
-        temperature
-      }
+      generationConfig
     };
 
     if (systemPrompt) {
@@ -432,13 +471,20 @@ class XAIService extends AIService {
       });
     }
 
-    console.log('[XAI] Request URL:', `${this.baseUrl}/chat/completions`);
-    console.log('[XAI] Request body:', JSON.stringify({
+    const requestBody = {
       model: this.modelName,
       messages: apiMessages,
       max_tokens: maxTokens,
-      temperature
-    }, null, 2));
+    };
+
+    // reasoning 모델은 temperature 지원 안할 수 있음
+    const isReasoningModel = this.modelName.includes('reasoning') || this.modelName.includes('r1');
+    if (!isReasoningModel) {
+      requestBody.temperature = temperature;
+    }
+
+    console.log('[XAI] Request URL:', `${this.baseUrl}/chat/completions`);
+    console.log('[XAI] Request body:', JSON.stringify(requestBody, null, 2));
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -446,12 +492,7 @@ class XAIService extends AIService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`
       },
-      body: JSON.stringify({
-        model: this.modelName,
-        messages: apiMessages,
-        max_tokens: maxTokens,
-        temperature
-      })
+      body: JSON.stringify(requestBody)
     });
 
     console.log('[XAI] Response status:', response.status);

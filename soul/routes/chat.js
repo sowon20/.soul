@@ -15,6 +15,8 @@ const { getSessionContinuity } = require('../utils/session-continuity');
 const { getSmartRouter } = require('../utils/smart-router');
 const { getPersonalityCore } = require('../utils/personality-core');
 const Role = require('../models/Role');
+const UsageStats = require('../models/UsageStats');
+const Message = require('../models/Message');
 const { loadMCPTools, executeMCPTool } = require('../utils/mcp-tools');
 
 /**
@@ -102,19 +104,26 @@ router.post('/', async (req, res) => {
       const activeService = await AIServiceModel.findOne({ isActive: true, apiKey: { $ne: null } }).select('+apiKey');
 
       let serviceName, modelId;
-      if (activeService && activeService.models && activeService.models.length > 0) {
-        // UI에서 설정한 활성 서비스 사용
+
+      // 스마트 라우팅 결과 사용
+      if (routingResult && routingResult.modelId && routingResult.serviceId) {
+        serviceName = routingResult.serviceId;
+        modelId = routingResult.modelId;
+        console.log(`[Chat] Using smart routing: ${serviceName}, model: ${modelId}`);
+      } else if (activeService && activeService.models && activeService.models.length > 0) {
+        // Fallback: 활성 서비스의 첫 번째 모델
         serviceName = activeService.serviceId;
-        modelId = activeService.models[0].id; // 첫 번째 모델 사용
-        console.log(`[Chat] Using active service: ${serviceName}, model: ${modelId}`);
+        modelId = activeService.models[0].id;
+        console.log(`[Chat] Fallback to active service: ${serviceName}, model: ${modelId}`);
       } else {
-        // Fallback: 라우팅 결과 기반 서비스 선택
+        // Fallback: 라우팅 결과 기반 서비스 선택 (모델 이름으로 서비스 추론)
         serviceName = routingResult.modelId.includes('claude') ? 'anthropic'
           : routingResult.modelId.includes('gpt') ? 'openai'
           : routingResult.modelId.includes('gemini') ? 'google'
+          : routingResult.modelId.includes('grok') ? 'xai'
           : 'anthropic';
         modelId = routingResult.modelId;
-        console.log(`[Chat] Fallback to routing: ${serviceName}, model: ${modelId}`);
+        console.log(`[Chat] Fallback to routing (inferred): ${serviceName}, model: ${modelId}`);
       }
 
       const aiService = await AIServiceFactory.createService(serviceName, modelId);
@@ -139,7 +148,8 @@ router.post('/', async (req, res) => {
         maxTokens: aiSettings.maxTokens,
         temperature: aiSettings.temperature,
         tools: mcpTools.length > 0 ? mcpTools : null,
-        toolExecutor: mcpTools.length > 0 ? executeMCPTool : null
+        toolExecutor: mcpTools.length > 0 ? executeMCPTool : null,
+        thinking: routingResult.thinking || false
       });
     } catch (aiError) {
       console.error('AI 호출 실패:', aiError);
@@ -225,6 +235,21 @@ router.post('/', async (req, res) => {
 
     // 8. 응답 저장
     await pipeline.handleResponse(message, finalResponse, sessionId);
+
+    // 9. 사용 통계 저장 (비동기, 응답 지연 없음)
+    const latency = Date.now() - startTime;
+    const tier = determineTier(routingResult.modelId);
+    UsageStats.addUsage({
+      tier,
+      modelId: routingResult.modelId,
+      serviceId: routingResult.serviceId || 'unknown',
+      inputTokens: conversationData.usage?.inputTokens || 0,
+      outputTokens: conversationData.usage?.outputTokens || 0,
+      totalTokens: conversationData.usage?.totalTokens || 0,
+      cost: routingResult.estimatedCost?.totalCost || 0,
+      latency,
+      sessionId
+    }).catch(err => console.error('Usage stats save error:', err));
 
     res.json({
       success: true,
@@ -318,24 +343,29 @@ router.post('/end', async (req, res) => {
 
 /**
  * GET /api/chat/history/:sessionId
- * 대화 히스토리 조회
+ * 대화 히스토리 조회 (MongoDB 페이지네이션)
  */
 router.get('/history/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { limit = 50, before, after } = req.query;
+    const { limit = 50, before } = req.query;
+    const limitNum = parseInt(limit);
 
-    const memoryManager = await getMemoryManager();
-    let messages = memoryManager.shortTerm.getAll();
+    let messages;
 
-    // TODO: before/after 필터링 구현
-    // 현재는 최근 N개만 반환
-    messages = messages.slice(-parseInt(limit));
+    if (before) {
+      // before 타임스탬프 이전의 메시지 조회
+      messages = await Message.getMessagesBefore(sessionId, before, limitNum);
+    } else {
+      // 최근 메시지 조회
+      messages = await Message.getRecentMessages(sessionId, limitNum);
+    }
 
     res.json({
       success: true,
       sessionId,
       messages: messages.map(m => ({
+        id: m._id,
         role: m.role,
         content: m.content,
         timestamp: m.timestamp
@@ -472,12 +502,14 @@ router.post('/analyze-task', async (req, res) => {
 
 /**
  * GET /api/chat/routing-stats
- * 라우팅 통계
+ * 라우팅 통계 (기간별 조회)
+ * @query period - 'today' | 'week' | 'month' | 'all' (기본: 'today')
  */
 router.get('/routing-stats', async (req, res) => {
   try {
-    const smartRouter = await getSmartRouter();
-    const stats = smartRouter.getStats();
+    const { period = 'today', startDate, endDate } = req.query;
+    const options = { startDate, endDate };
+    const stats = await UsageStats.getStatsByPeriod(period, options);
 
     res.json({
       success: true,
@@ -566,5 +598,28 @@ router.post('/personality/preference', (req, res) => {
     });
   }
 });
+
+/**
+ * 모델 ID로 티어 결정
+ */
+function determineTier(modelId) {
+  if (!modelId) return 'medium';
+
+  const id = modelId.toLowerCase();
+
+  // 경량 모델
+  if (id.includes('haiku') || id.includes('flash') || id.includes('mini') || id.includes('fast')) {
+    return 'light';
+  }
+
+  // 고성능 모델
+  if (id.includes('opus') || id.includes('pro') || id.includes('ultra') ||
+      (id.includes('grok-3') && !id.includes('mini') && !id.includes('fast'))) {
+    return 'heavy';
+  }
+
+  // 중간 (기본)
+  return 'medium';
+}
 
 module.exports = router;
