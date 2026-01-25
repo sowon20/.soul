@@ -570,11 +570,11 @@ settings/
 - [ ] ConversationArchiver 클래스 생성
 - [x] 메시지 수신 시 실시간 JSON 저장
 - [x] meta 필드 자동 계산 (침묵 시간, 시간대, 타임존 등)
-- [ ] aiMemo 생성 (선택적, 알바 작업)
-- [ ] 태그 자동 생성
+- [x] aiMemo 생성 (선택적, 알바 작업) → AlbaWorker 연동 완료
+- [x] 태그 자동 생성 → AlbaWorker 연동 완료
 - [x] 파일 구조: 월별 폴더 / 일별 파일
 
-#### 🧠 **2단계: 컨텍스트 윈도우 밀도 관리 (단기 메모리)**
+#### 🧠 **2단계: 컨텍스트 윈도우 밀도 관리 (단기 메모리)** ✅ 기본 구현 완료
 
 **컨텍스트 윈도우 구성 비율** (설정 가능):
 ```
@@ -1072,10 +1072,10 @@ soul/models/
 
 #### 🎯 **구현 우선순위**
 
-**Phase 1.6.1** (필수):
-- [ ] meta 확장 (localTime, hour, sessionDuration, topicDuration)
-- [ ] 기본 시간 해석 함수
-- [ ] aiMemo에 시간 맥락 반영
+**Phase 1.6.1** (필수): ✅ 완료
+- [x] meta 확장 (localTime, hour, sessionDuration, topicDuration)
+- [x] 기본 시간 해석 함수
+- [x] aiMemo에 시간 맥락 반영 (AlbaWorker 연동)
 
 **Phase 1.6.2** (중요):
 - [ ] PendingEvent 시스템 (떠남/복귀 추적)
