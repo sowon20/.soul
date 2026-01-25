@@ -11,6 +11,7 @@ import { APIClient } from './utils/api-client.js';
 import { initRoleManager } from './utils/role-manager.js';
 import dashboardManager from './utils/dashboard-manager.js';
 import { SearchManager } from './utils/search-manager.js';
+import { SoulSocketClient } from './utils/socket-client.js';
 
 class SoulApp {
   constructor() {
@@ -20,6 +21,7 @@ class SoulApp {
     this.menuManager = null;
     this.apiClient = null;
     this.searchManager = null;
+    this.socketClient = null;
 
     // UI Elements
     this.elements = {
@@ -94,6 +96,10 @@ class SoulApp {
     // 검색 매니저 초기화
     this.searchManager = new SearchManager(this.apiClient);
     this.searchManager.init();
+
+    // Socket.io 클라이언트 초기화
+    this.socketClient = new SoulSocketClient();
+    await this.socketClient.init();
 
     console.log('✅ Soul UI 초기화 완료!');
   }
