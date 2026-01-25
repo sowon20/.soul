@@ -28,5 +28,25 @@
     "metadata": {
       "responseTime": 0.001
     }
+  },
+  {
+    "role": "user",
+    "content": "타임존 테스트 메시지",
+    "timestamp": "2026-01-25T09:41:33.923Z",
+    "tokens": 5,
+    "meta": {
+      "localTime": "18:41",
+      "localDate": "2026-01-25",
+      "hour": 18,
+      "timeOfDay": "저녁",
+      "dayOfWeek": "일요일",
+      "isWeekend": true,
+      "timezone": "Asia/Seoul",
+      "silenceBefore": null,
+      "silenceFormatted": null
+    },
+    "aiMemo": null,
+    "tags": [],
+    "metadata": {}
   }
 ]

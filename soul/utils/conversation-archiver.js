@@ -32,11 +32,27 @@ class ConversationArchiver {
   }
 
   /**
-   * 메타 정보 계산
+   * 메타 정보 계산 (타임존 반영)
    */
-  calculateMeta(timestamp, lastMessageTime = null) {
+  calculateMeta(timestamp, lastMessageTime = null, timezone = 'Asia/Seoul') {
     const date = new Date(timestamp);
-    const hour = date.getHours();
+    
+    // 타임존 적용된 시간 정보
+    const options = { timeZone: timezone };
+    const localDate = new Date(date.toLocaleString('en-US', options));
+    const hour = localDate.getHours();
+    const minute = localDate.getMinutes();
+    
+    // 로컬 시간 문자열 (HH:MM)
+    const localTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    
+    // 로컬 날짜 (YYYY-MM-DD)
+    const localDateStr = localDate.toLocaleDateString('ko-KR', { 
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).replace(/\. /g, '-').replace('.', '');
     
     // 시간대 계산
     let timeOfDay;
@@ -48,19 +64,43 @@ class ConversationArchiver {
 
     // 요일 계산
     const days = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
-    const dayOfWeek = days[date.getDay()];
+    const dayOfWeek = days[localDate.getDay()];
+    
+    // 주말 여부
+    const isWeekend = localDate.getDay() === 0 || localDate.getDay() === 6;
 
     // 침묵 시간 계산
     let silenceBefore = null;
+    let silenceFormatted = null;
     if (lastMessageTime) {
       silenceBefore = Math.floor((date.getTime() - new Date(lastMessageTime).getTime()) / 1000);
+      silenceFormatted = this._formatDuration(silenceBefore);
     }
 
     return {
-      silenceBefore,
+      // 시점 정보
+      localTime,
+      localDate: localDateStr,
+      hour,
       timeOfDay,
-      dayOfWeek
+      dayOfWeek,
+      isWeekend,
+      timezone,
+      
+      // 간격 정보
+      silenceBefore,
+      silenceFormatted
     };
+  }
+  
+  /**
+   * 시간 간격 포맷 (초 → 읽기 쉬운 형태)
+   */
+  _formatDuration(seconds) {
+    if (seconds < 60) return '방금';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}분`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간`;
+    return `${Math.floor(seconds / 86400)}일`;
   }
 
   /**
@@ -84,7 +124,7 @@ class ConversationArchiver {
   /**
    * 메시지 실시간 저장 (핵심 함수)
    */
-  async archiveMessage(message, lastMessageTime = null) {
+  async archiveMessage(message, lastMessageTime = null, timezone = 'Asia/Seoul') {
     if (!this.initialized) {
       await this.initialize();
     }
@@ -96,8 +136,8 @@ class ConversationArchiver {
       // 월별 폴더 생성
       await fs.mkdir(monthDir, { recursive: true });
       
-      // 메타 정보 계산
-      const meta = this.calculateMeta(timestamp, lastMessageTime);
+      // 메타 정보 계산 (타임존 반영)
+      const meta = this.calculateMeta(timestamp, lastMessageTime, timezone);
       
       // 저장할 메시지 객체
       const archiveEntry = {
