@@ -1,0 +1,177 @@
+/**
+ * conversation-archiver.js
+ * 대화 실시간 저장 시스템 (Phase 1.5)
+ * 
+ * 역할:
+ * - 메시지 올 때마다 실시간으로 JSON 파일에 저장
+ * - 장기 메모리 = 영구 원문 보관 (절대 삭제/압축 안 함)
+ * - 월별 폴더 / 일별 파일 구조
+ */
+
+const fs = require('fs').promises;
+const path = require('path');
+
+class ConversationArchiver {
+  constructor(basePath = './memory') {
+    this.basePath = basePath;
+    this.conversationsPath = path.join(basePath, 'conversations');
+    this.initialized = false;
+  }
+
+  /**
+   * 초기화 - 폴더 구조 확인/생성
+   */
+  async initialize() {
+    try {
+      await fs.mkdir(this.conversationsPath, { recursive: true });
+      this.initialized = true;
+      console.log(`[Archiver] Initialized at ${this.conversationsPath}`);
+    } catch (error) {
+      console.error('[Archiver] Init failed:', error.message);
+    }
+  }
+
+  /**
+   * 메타 정보 계산
+   */
+  calculateMeta(timestamp, lastMessageTime = null) {
+    const date = new Date(timestamp);
+    const hour = date.getHours();
+    
+    // 시간대 계산
+    let timeOfDay;
+    if (hour >= 0 && hour < 6) timeOfDay = '새벽';
+    else if (hour >= 6 && hour < 12) timeOfDay = '아침';
+    else if (hour >= 12 && hour < 18) timeOfDay = '오후';
+    else if (hour >= 18 && hour < 22) timeOfDay = '저녁';
+    else timeOfDay = '밤';
+
+    // 요일 계산
+    const days = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+    const dayOfWeek = days[date.getDay()];
+
+    // 침묵 시간 계산
+    let silenceBefore = null;
+    if (lastMessageTime) {
+      silenceBefore = Math.floor((date.getTime() - new Date(lastMessageTime).getTime()) / 1000);
+    }
+
+    return {
+      silenceBefore,
+      timeOfDay,
+      dayOfWeek
+    };
+  }
+
+  /**
+   * 일별 파일 경로 생성
+   */
+  getFilePath(timestamp) {
+    const date = new Date(timestamp);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    
+    const monthDir = path.join(this.conversationsPath, `${year}-${month}`);
+    const fileName = `${year}-${month}-${day}.json`;
+    
+    return {
+      monthDir,
+      filePath: path.join(monthDir, fileName)
+    };
+  }
+
+  /**
+   * 메시지 실시간 저장 (핵심 함수)
+   */
+  async archiveMessage(message, lastMessageTime = null) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    try {
+      const timestamp = message.timestamp || new Date();
+      const { monthDir, filePath } = this.getFilePath(timestamp);
+      
+      // 월별 폴더 생성
+      await fs.mkdir(monthDir, { recursive: true });
+      
+      // 메타 정보 계산
+      const meta = this.calculateMeta(timestamp, lastMessageTime);
+      
+      // 저장할 메시지 객체
+      const archiveEntry = {
+        role: message.role,
+        content: message.content,
+        timestamp: new Date(timestamp).toISOString(),
+        tokens: message.tokens || 0,
+        meta,
+        aiMemo: message.aiMemo || null,
+        tags: message.tags || [],
+        metadata: message.metadata || {}
+      };
+
+      // 기존 파일 읽기 또는 새로 생성
+      let dayMessages = [];
+      try {
+        const existing = await fs.readFile(filePath, 'utf-8');
+        dayMessages = JSON.parse(existing);
+      } catch (e) {
+        // 파일 없으면 새로 시작
+      }
+      
+      // 메시지 추가
+      dayMessages.push(archiveEntry);
+      
+      // 파일 저장
+      await fs.writeFile(filePath, JSON.stringify(dayMessages, null, 2), 'utf-8');
+      
+      console.log(`[Archiver] Saved to ${filePath} (${dayMessages.length} messages)`);
+      return archiveEntry;
+    } catch (error) {
+      console.error('[Archiver] Save failed:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * 특정 날짜 메시지 읽기
+   */
+  async getMessagesForDate(date) {
+    const { filePath } = this.getFilePath(date);
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      return JSON.parse(content);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /**
+   * 기간 내 메시지 검색 (태그 기반)
+   */
+  async searchByTags(tags, startDate, endDate) {
+    // TODO: Phase 1.5.3에서 구현
+    return [];
+  }
+}
+
+// 싱글톤 인스턴스
+let archiverInstance = null;
+
+function getArchiver(basePath) {
+  if (!archiverInstance || (basePath && archiverInstance.basePath !== basePath)) {
+    archiverInstance = new ConversationArchiver(basePath);
+  }
+  return archiverInstance;
+}
+
+function resetArchiver() {
+  archiverInstance = null;
+}
+
+module.exports = {
+  ConversationArchiver,
+  getArchiver,
+  resetArchiver
+};

@@ -1,0 +1,32 @@
+[
+  {
+    "role": "user",
+    "content": "안녕 테스트야",
+    "timestamp": "2026-01-25T09:08:53.273Z",
+    "tokens": 2,
+    "meta": {
+      "silenceBefore": 569,
+      "timeOfDay": "아침",
+      "dayOfWeek": "일요일"
+    },
+    "aiMemo": null,
+    "tags": [],
+    "metadata": {}
+  },
+  {
+    "role": "assistant",
+    "content": "안녕! 뭐 하고 있었어?",
+    "timestamp": "2026-01-25T09:08:53.274Z",
+    "tokens": 4,
+    "meta": {
+      "silenceBefore": 0,
+      "timeOfDay": "아침",
+      "dayOfWeek": "일요일"
+    },
+    "aiMemo": null,
+    "tags": [],
+    "metadata": {
+      "responseTime": 0.001
+    }
+  }
+]
