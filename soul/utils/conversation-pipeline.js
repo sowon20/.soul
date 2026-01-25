@@ -265,6 +265,17 @@ class ConversationPipeline {
         await this.initialize();
       }
 
+      // 0. Archiver 가져오기 (실시간 파일 저장)
+      const { getArchiver } = require('./conversation-archiver');
+      const archiver = getArchiver(this.memoryConfig?.storagePath || './memory');
+      
+      // 마지막 메시지 시간 가져오기 (침묵 시간 계산용)
+      let lastMessageTime = null;
+      const recentMessages = this.memoryManager.shortTerm?.messages || [];
+      if (recentMessages.length > 0) {
+        lastMessageTime = recentMessages[recentMessages.length - 1].timestamp;
+      }
+
       // 1. 사용자 메시지 저장 (명시적 타임스탬프)
       const userTimestamp = new Date();
       await this.memoryManager.addMessage({
@@ -272,6 +283,14 @@ class ConversationPipeline {
         content: userMessage,
         timestamp: userTimestamp
       }, sessionId);
+      
+      // 1.1 사용자 메시지 파일 아카이브
+      await archiver.archiveMessage({
+        role: 'user',
+        content: userMessage,
+        timestamp: userTimestamp,
+        tokens: this._estimateTokens(userMessage)
+      }, lastMessageTime);
 
       // 2. 어시스턴트 응답 저장 (사용자 메시지보다 최소 1ms 뒤)
       const assistantTimestamp = new Date(userTimestamp.getTime() + 1);
@@ -281,6 +300,20 @@ class ConversationPipeline {
         timestamp: assistantTimestamp,
         ...metadata
       }, sessionId);
+      
+      // 2.1 어시스턴트 응답 파일 아카이브
+      const responseTime = metadata?.processingTime || 
+        (assistantTimestamp.getTime() - userTimestamp.getTime()) / 1000;
+      await archiver.archiveMessage({
+        role: 'assistant',
+        content: assistantResponse,
+        timestamp: assistantTimestamp,
+        tokens: this._estimateTokens(assistantResponse),
+        metadata: {
+          ...metadata,
+          responseTime
+        }
+      }, userTimestamp);
 
       return {
         success: true,

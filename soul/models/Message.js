@@ -32,6 +32,48 @@ const messageSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  
+  // === Phase 1.5 새 필드 ===
+  
+  // 밀도 레벨 (0: 원문, 1: 느슨한 압축, 2: 더 압축)
+  densityLevel: {
+    type: Number,
+    default: 0,
+    index: true
+  },
+  
+  // 메타 정보 (객관적 사실)
+  meta: {
+    silenceBefore: Number,    // 이전 메시지로부터 경과 시간 (초)
+    responseTime: Number,      // AI 응답까지 걸린 시간 (초)
+    timeOfDay: String,         // 새벽/아침/오후/저녁/밤
+    dayOfWeek: String          // 요일
+  },
+  
+  // AI 내면 메모 (주관적 해석)
+  aiMemo: {
+    type: String,
+    default: null
+  },
+  
+  // 검색용 태그
+  tags: [{
+    type: String
+  }],
+  
+  // 압축된 경우 원본 메시지 ID들
+  originalMessageIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Message'
+  }],
+  
+  // 장기 메모리 파일로 저장됨 여부
+  archived: {
+    type: Boolean,
+    default: false
+  },
+  
+  // 기존 metadata
   metadata: {
     modelId: String,
     serviceId: String,
