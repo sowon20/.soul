@@ -524,6 +524,7 @@ let globalRouter = null;
  * 사용자 설정에서 모델 정보 업데이트
  * 새 형식: { modelId: '...', serviceId: '...' } 또는 이전 형식: 'modelId'
  * 'auto'일 경우 기본 모델 사용
+ * thinking 설정: lightThinking, mediumThinking, heavyThinking 키 사용
  */
 function updateModelsFromConfig(routingConfig) {
   if (routingConfig.light && routingConfig.light !== 'auto') {
@@ -536,6 +537,11 @@ function updateModelsFromConfig(routingConfig) {
       MODELS.HAIKU.id = routingConfig.light;
     }
   }
+  // lightThinking 별도 키 지원
+  if (routingConfig.lightThinking !== undefined) {
+    MODELS.HAIKU.thinking = routingConfig.lightThinking;
+  }
+  
   if (routingConfig.medium && routingConfig.medium !== 'auto') {
     if (typeof routingConfig.medium === 'object') {
       MODELS.SONNET.id = routingConfig.medium.modelId;
@@ -545,6 +551,11 @@ function updateModelsFromConfig(routingConfig) {
       MODELS.SONNET.id = routingConfig.medium;
     }
   }
+  // mediumThinking 별도 키 지원
+  if (routingConfig.mediumThinking !== undefined) {
+    MODELS.SONNET.thinking = routingConfig.mediumThinking;
+  }
+  
   if (routingConfig.heavy && routingConfig.heavy !== 'auto') {
     if (typeof routingConfig.heavy === 'object') {
       MODELS.OPUS.id = routingConfig.heavy.modelId;
@@ -554,6 +565,11 @@ function updateModelsFromConfig(routingConfig) {
       MODELS.OPUS.id = routingConfig.heavy;
     }
   }
+  // heavyThinking 별도 키 지원
+  if (routingConfig.heavyThinking !== undefined) {
+    MODELS.OPUS.thinking = routingConfig.heavyThinking;
+  }
+  
   console.log('[SmartRouter] Models updated from config:', {
     light: { modelId: MODELS.HAIKU.id, serviceId: MODELS.HAIKU.serviceId, thinking: MODELS.HAIKU.thinking },
     medium: { modelId: MODELS.SONNET.id, serviceId: MODELS.SONNET.serviceId, thinking: MODELS.SONNET.thinking },
