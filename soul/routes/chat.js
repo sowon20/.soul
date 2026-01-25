@@ -263,6 +263,13 @@ router.post('/', async (req, res) => {
       sessionId
     }).catch(err => console.error('Usage stats save error:', err));
 
+    // 10. 주간 요약 자동 트리거 (비동기, 응답 지연 없음)
+    getMemoryManager().then(async manager => {
+      const recentMessages = manager.shortTerm.getRecent(100);
+      manager.middleTerm.checkAndTriggerWeeklySummary(recentMessages)
+        .catch(err => console.error('Weekly summary trigger error:', err));
+    }).catch(err => console.error('Memory manager error:', err));
+
     res.json({
       success: true,
       sessionId,
