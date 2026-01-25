@@ -48,13 +48,11 @@ class ConversationArchiver {
     // 로컬 시간 문자열 (HH:MM)
     const localTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
     
-    // 로컬 날짜 (YYYY-MM-DD)
-    const localDateStr = localDate.toLocaleDateString('ko-KR', { 
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).replace(/\. /g, '-').replace('.', '');
+    // 로컬 날짜 (YYYY-MM-DD) - localDate는 이미 타임존 적용됨
+    const localYear = localDate.getFullYear();
+    const localMonth = String(localDate.getMonth() + 1).padStart(2, '0');
+    const localDay = String(localDate.getDate()).padStart(2, '0');
+    const localDateStr = `${localYear}-${localMonth}-${localDay}`;
     
     // 시간대 계산
     let timeOfDay;
