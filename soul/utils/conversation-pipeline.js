@@ -309,6 +309,11 @@ class ConversationPipeline {
       const flowTracker = getConversationFlowTracker();
       flowTracker.processMessage({ content: userMessage, role: 'user' });
       
+      // 0.1.2 사용자 패턴 학습
+      const { getUserPatternLearner } = require('./user-pattern');
+      const patternLearner = await getUserPatternLearner(this.memoryConfig?.storagePath || './memory');
+      await patternLearner.learnFromMessage({ content: userMessage, timestamp: new Date() });
+      
       // 0.2 복귀 체크 (이전에 떠남 이벤트가 있었으면)
       let returnEvent = null;
       const timeContext = pendingEventManager.generateTimeContext();

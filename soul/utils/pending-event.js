@@ -117,6 +117,15 @@ class PendingEventManager {
     this.currentEvent.actualDuration = actualDuration;
     this.currentEvent.interpretation = this._interpretDuration(actualDuration);
     
+    // 패턴 학습: 이벤트 소요시간 기록
+    try {
+      const { getUserPatternLearner } = require('./user-pattern');
+      const patternLearner = await getUserPatternLearner(this.basePath);
+      await patternLearner.learnEventDuration(this.currentEvent.type, actualDuration);
+    } catch (e) {
+      console.error('[PendingEvent] Pattern learning failed:', e.message);
+    }
+    
     // 이벤트 히스토리에 저장
     await this._archiveEvent(this.currentEvent);
     
