@@ -25,8 +25,10 @@ class SoulSocketClient {
    * Socket.io 연결
    */
   _connect() {
-    // 같은 호스트로 연결
-    this.socket = io({
+    // 백엔드 서버로 연결 (프론트엔드와 포트 다름)
+    const backendUrl = window.location.origin.replace(':3080', ':3001');
+    
+    this.socket = io(backendUrl, {
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000
@@ -184,10 +186,5 @@ class SoulSocketClient {
   }
 }
 
-// 글로벌 인스턴스
-window.soulSocket = new SoulSocketClient();
-
-// DOM 로드 후 초기화
-document.addEventListener('DOMContentLoaded', () => {
-  window.soulSocket.init();
-});
+// ES Module export
+export { SoulSocketClient };
