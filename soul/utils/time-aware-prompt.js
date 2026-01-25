@@ -12,6 +12,7 @@
 
 const { getPendingEventManager } = require('./pending-event');
 const { getConversationFlowTracker } = require('./conversation-flow');
+const { getUserPatternLearner } = require('./user-pattern');
 const ProfileModel = require('../models/Profile');
 
 class TimeAwarePromptBuilder {
@@ -144,6 +145,15 @@ ${specialDay.map(s => `- ${s.type}: ${s.message}`).join('\n')}`);
       const flowSection = flowTracker.buildPromptSection();
       if (flowSection) {
         parts.push(`## 대화 흐름\n${flowSection}`);
+      }
+    } catch (e) {}
+
+    // 7. 사용자 패턴 요약
+    try {
+      const patternLearner = await getUserPatternLearner();
+      const patternSummary = patternLearner.buildPromptSummary();
+      if (patternSummary) {
+        parts.push(`## 사용자 패턴\n${patternSummary}`);
       }
     } catch (e) {}
 
