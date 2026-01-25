@@ -285,12 +285,13 @@ class ConversationPipeline {
       }, sessionId);
       
       // 1.1 사용자 메시지 파일 아카이브
+      const timezone = metadata?.timezone || 'Asia/Seoul';
       await archiver.archiveMessage({
         role: 'user',
         content: userMessage,
         timestamp: userTimestamp,
         tokens: this._estimateTokens(userMessage)
-      }, lastMessageTime);
+      }, lastMessageTime, timezone);
 
       // 2. 어시스턴트 응답 저장 (사용자 메시지보다 최소 1ms 뒤)
       const assistantTimestamp = new Date(userTimestamp.getTime() + 1);
@@ -313,7 +314,7 @@ class ConversationPipeline {
           ...metadata,
           responseTime
         }
-      }, userTimestamp);
+      }, userTimestamp, timezone);
 
       return {
         success: true,
