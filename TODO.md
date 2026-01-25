@@ -36,10 +36,11 @@
 - **thinking 토글 안내 수정** - 미지원 모델 안내 문구 (Git: 83d453d)
 - **thinking 접기/펼치기** - 버튼 클릭으로 토글 (Git: f8af03c)
 - **recall_memory 도구 추가** - AI가 자율적으로 과거 기억 조회 (builtin-tools.js)
+- **주간 요약 자동 트리거** - 7일 경과 or 100메시지 시 Alba가 백그라운드 생성
 
 ### 🔜 다음 작업 후보
-- 주간 요약 자동 생성 트리거 (7일 or N메시지)
 - 스트리밍 중 thinking 자동 펼침/완료 시 접기
+- recall_memory 실제 테스트 및 튜닝
 
 # Soul AI - TODO & 작업 이력
 

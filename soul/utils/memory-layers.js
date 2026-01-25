@@ -464,6 +464,91 @@ ${messages.map(m => `[${m.role}] ${m.content}`).join('\n').substring(0, 3000)}
       return null;
     }
   }
+
+  /**
+   * 주간 요약 자동 생성 체크 및 트리거
+   * 조건: 마지막 요약 후 7일 경과 OR 100개 메시지
+   * @param {Array} recentMessages - 최근 메시지 배열 (외부에서 전달)
+   */
+  async checkAndTriggerWeeklySummary(recentMessages = []) {
+    try {
+      const recentSummaries = await this.getRecentWeeklySummaries(1);
+      const lastSummary = recentSummaries[0];
+      
+      const now = new Date();
+      const currentWeek = this._getWeekNumber(now);
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+
+      // 조건 1: 마지막 요약이 없거나 7일 이상 경과
+      let shouldGenerate = false;
+      let reason = '';
+
+      if (!lastSummary) {
+        // 첫 요약 - 최소 20개 메시지 있어야 생성
+        if (recentMessages.length >= 20) {
+          shouldGenerate = true;
+          reason = 'first_summary';
+        }
+      } else {
+        // 같은 주면 스킵
+        if (lastSummary.year === currentYear && 
+            lastSummary.month === currentMonth && 
+            lastSummary.weekNum === currentWeek) {
+          return { triggered: false, reason: 'same_week' };
+        }
+
+        // 마지막 요약 이후 경과 확인
+        const lastDate = new Date(lastSummary.createdAt);
+        const daysSinceLastSummary = (now - lastDate) / (1000 * 60 * 60 * 24);
+
+        if (daysSinceLastSummary >= 7) {
+          shouldGenerate = true;
+          reason = 'days_elapsed';
+        } else if (recentMessages.length >= 100) {
+          shouldGenerate = true;
+          reason = 'message_count';
+        }
+      }
+
+      if (!shouldGenerate) {
+        return { triggered: false, reason: 'conditions_not_met' };
+      }
+
+      if (recentMessages.length < 10) {
+        return { triggered: false, reason: 'insufficient_messages' };
+      }
+
+      // 비동기로 생성 (응답 지연 없음)
+      console.log(`[WeeklySummary] Auto-trigger: ${reason}`);
+
+      // 백그라운드 생성 (await 없음)
+      this.generateWeeklySummary(recentMessages, {
+        year: currentYear,
+        month: currentMonth,
+        weekNum: currentWeek
+      }).then(result => {
+        if (result) {
+          console.log(`[WeeklySummary] Generated: ${currentYear}-${currentMonth} week ${currentWeek}`);
+        }
+      }).catch(err => {
+        console.error('[WeeklySummary] Background generation error:', err);
+      });
+
+      return { triggered: true, reason };
+    } catch (error) {
+      console.error('[WeeklySummary] Check trigger error:', error);
+      return { triggered: false, reason: 'error', error: error.message };
+    }
+  }
+
+  /**
+   * 주차 번호 계산
+   */
+  _getWeekNumber(date) {
+    const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+    return Math.ceil((date.getDate() + firstDay.getDay()) / 7);
+  }
 }
 
 /**
