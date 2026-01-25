@@ -196,17 +196,32 @@ export class MenuManager {
     `;
   }
 
-  renderMemory() {
-    this.subMenuContent.innerHTML = `
-      <div class="memory">
-        <h2 style="font-size: var(--font-size-xl); font-weight: 400; margin-bottom: 1.5rem;">
-          메모리 탐색
-        </h2>
-        <p style="font-size: var(--font-size-sm); opacity: 0.7; text-align: center; padding: 2rem;">
-          메모리 데이터가 없습니다.
-        </p>
-      </div>
-    `;
+  async renderMemory() {
+    this.subMenuContent.innerHTML = '<div class="loading" style="padding: 2rem; text-align: center;">메모리 관리자 로딩 중...</div>';
+
+    try {
+      const { MemoryManager } = await import('../memory/memory-manager.js');
+      await import('../memory/memory-manager.css', { assert: { type: 'css' } }).catch(() => {
+        // CSS import fallback - link tag로 추가
+        if (!document.querySelector('link[href*="memory-manager.css"]')) {
+          const link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = '/src/components/memory/memory-manager.css';
+          document.head.appendChild(link);
+        }
+      });
+      
+      const memoryManager = new MemoryManager(window.soulApp.apiClient);
+      await memoryManager.render(this.subMenuContent);
+    } catch (error) {
+      console.error('Memory Manager 로드 실패:', error);
+      this.subMenuContent.innerHTML = `
+        <div style="padding: 2rem; text-align: center;">
+          <p style="color: #ef4444; margin-bottom: 1rem;">메모리 관리자를 불러오는데 실패했습니다.</p>
+          <p style="font-size: 0.875rem; opacity: 0.7;">${error.message}</p>
+        </div>
+      `;
+    }
   }
 
   renderFiles() {

@@ -40,6 +40,7 @@
 - **메모리 스토리지 경로 환경 변수화** - MEMORY_STORAGE_PATH로 통합 관리
 - **장기 메모리 파일 기반으로 전환** - MongoDB → 파일 시스템 (평생 보관용)
 - **DocumentStorage 추가** - OCR/스캔 기록물 별도 저장 (/memory/documents/)
+- **메모리 UI 구현** - 개요/단기/중기/장기/문서 탭, 검색 기능
 
 ### 🔜 다음 작업 후보
 - 스트리밍 중 thinking 자동 펼침/완료 시 접기
