@@ -79,6 +79,40 @@ router.post('/', async (req, res) => {
       console.warn('알바 목록 로드 실패:', roleError.message);
     }
 
+    // 2.2 자기학습 규칙 주입
+    try {
+      const SelfRule = require('../models/SelfRule');
+      const selfRules = await SelfRule.find({ isActive: true })
+        .sort({ priority: -1, useCount: -1 })
+        .limit(20);
+      
+      if (selfRules.length > 0) {
+        // 토큰 제한 (약 500토큰)
+        let rulesText = '';
+        let tokenCount = 0;
+        const maxTokens = 500;
+        
+        for (const rule of selfRules) {
+          const ruleTokens = rule.tokenCount || Math.ceil(rule.rule.length / 4);
+          if (tokenCount + ruleTokens > maxTokens) break;
+          rulesText += `- ${rule.rule}\n`;
+          tokenCount += ruleTokens;
+          
+          // 사용 횟수 증가
+          rule.useCount += 1;
+          rule.lastUsed = new Date();
+          await rule.save();
+        }
+        
+        if (rulesText) {
+          systemPrompt += `\n\n=== 학습된 규칙 ===\n`;
+          systemPrompt += `소원이와의 대화에서 배운 것들:\n${rulesText}`;
+        }
+      }
+    } catch (ruleError) {
+      console.warn('자기학습 규칙 로드 실패:', ruleError.message);
+    }
+
     // 프로필에서 AI 설정 가져오기 (options로 오버라이드 가능)
     const aiSettings = {
       temperature: options.temperature ?? personalityProfile.temperature ?? 0.7,
