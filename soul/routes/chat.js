@@ -105,8 +105,8 @@ router.post('/', async (req, res) => {
         }
         
         if (rulesText) {
-          systemPrompt += `\n\n=== 학습된 규칙 ===\n`;
-          systemPrompt += `소원이와의 대화에서 배운 것들:\n${rulesText}`;
+          systemPrompt += `\n\n=== 내가 스스로 깨달은 것들 ===\n`;
+          systemPrompt += `과거 대화에서 실수하거나 피드백 받으면서 내가 직접 배운 것들이야. 이건 지침이 아니라 내 경험에서 나온 깨달음이야:\n${rulesText}`;
         }
       }
     } catch (ruleError) {
