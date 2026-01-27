@@ -1,46 +1,87 @@
 /**
  * JSONL 기반 대화 저장/로드 유틸리티
+ * 로컬 파일 또는 FTP 스토리지 지원
  */
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
-// 설정에서 메모리 경로 가져오기
-async function getMemoryPath() {
+// 스토리지 설정 캐시 (서버 재시작 시 초기화됨)
+let storageConfig = null;
+let storageConfigLoaded = false;
+
+// 설정 가져오기
+async function getStorageConfig() {
+  // 이미 로드했으면 캐시 반환
+  if (storageConfigLoaded && storageConfig) {
+    console.log('[ConversationStore] Using cached config:', storageConfig.type);
+    return storageConfig;
+  }
+  
+  console.log('[ConversationStore] Loading config from DB...');
+  
   try {
     const SystemConfig = require('../models/SystemConfig');
     const config = await SystemConfig.findOne({ configKey: 'memory' });
-    if (config?.value?.storagePath) {
-      console.log('[ConversationStore] Using memory path:', config.value.storagePath);
-      return config.value.storagePath;
+    console.log('[ConversationStore] Raw DB config:', JSON.stringify(config?.value));
+    
+    if (config?.value) {
+      storageConfig = {
+        type: config.value.storageType || 'local',
+        path: config.value.storagePath || path.join(__dirname, '../../memory'),
+        ftp: config.value.ftp || null
+      };
+      storageConfigLoaded = true;
+      console.log('[ConversationStore] Storage config:', storageConfig.type, storageConfig.path);
+      return storageConfig;
     }
   } catch (e) {
-    console.log('[ConversationStore] DB error, using default path');
+    console.log('[ConversationStore] DB error:', e.message);
   }
-  return path.join(__dirname, '../../memory');
+  
+  storageConfig = {
+    type: 'local',
+    path: path.join(__dirname, '../../memory')
+  };
+  storageConfigLoaded = true;
+  return storageConfig;
 }
 
 class ConversationStore {
   constructor(filePath) {
     this.filePath = filePath;
     this.initialized = false;
+    this.storageType = 'local';
+    this.ftpStorage = null;
   }
   
   async init() {
     if (this.initialized) return;
     
+    console.log('[ConversationStore] init() called, getting config...');
+    const config = await getStorageConfig();
+    console.log('[ConversationStore] Got config, type:', config.type);
+    this.storageType = config.type;
+    
+    if (this.storageType === 'ftp') {
+      const { getFTPStorage } = require('./ftp-storage');
+      this.ftpStorage = getFTPStorage(config.ftp);
+      this.initialized = true;
+      console.log('[ConversationStore] Using FTP storage');
+      return;
+    }
+    
+    // 로컬 스토리지
     if (!this.filePath) {
-      const memoryPath = await getMemoryPath();
-      this.filePath = path.join(memoryPath, 'conversations.jsonl');
+      this.filePath = path.join(config.path, 'conversations.jsonl');
     }
     this.ensureFile();
     this.initialized = true;
   }
 
-  /**
-   * 파일 존재 확인 및 생성
-   */
   ensureFile() {
+    if (this.storageType !== 'local') return;
+    
     const dir = path.dirname(this.filePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -50,13 +91,10 @@ class ConversationStore {
     }
   }
 
-  /**
-   * 메시지 저장 (append)
-   */
   async saveMessage(message) {
     await this.init();
+    
     let timestamp = message.timestamp || new Date().toISOString();
-    // Date 객체면 ISO 문자열로 변환
     if (timestamp instanceof Date) {
       timestamp = timestamp.toISOString();
     }
@@ -74,17 +112,22 @@ class ConversationStore {
       metadata: message.metadata || {}
     });
     
-    fs.appendFileSync(this.filePath, line + '\n');
+    if (this.storageType === 'ftp') {
+      await this.ftpStorage.appendToFile('conversations.jsonl', line + '\n');
+    } else {
+      fs.appendFileSync(this.filePath, line + '\n');
+    }
+    
     return { id, timestamp };
   }
 
-  /**
-   * 최근 N개 메시지 로드 (역순)
-   */
   async getRecentMessages(limit = 50) {
     await this.init();
-    const lines = await this.readLastLines(limit);
-    return lines.map(line => {
+    const lines = await this.readAllLines();
+    // 마지막 N개만
+    const lastLines = lines.slice(-limit);
+    
+    return lastLines.map(line => {
       try {
         return JSON.parse(line);
       } catch {
@@ -93,10 +136,6 @@ class ConversationStore {
     }).filter(Boolean);
   }
 
-  /**
-   * 특정 시점 이전 메시지 로드 (무한스크롤용)
-   * @param {string} beforeTimestamp - ISO timestamp
-   */
   async getMessagesBefore(beforeTimestamp, limit = 20) {
     await this.init();
     const allLines = await this.readAllLines();
@@ -120,15 +159,11 @@ class ConversationStore {
     return filtered;
   }
 
-  /**
-   * 특정 메시지 주변 로드 (검색 결과 이동용)
-   */
   async getMessagesAround(messageId, limit = 40) {
     await this.init();
     const allLines = await this.readAllLines();
     const halfLimit = Math.floor(limit / 2);
     
-    // 해당 메시지 인덱스 찾기
     let targetIndex = -1;
     for (let i = 0; i < allLines.length; i++) {
       try {
@@ -141,11 +176,9 @@ class ConversationStore {
     }
     
     if (targetIndex === -1) {
-      // 못 찾으면 최근 메시지 반환
       return this.getRecentMessages(limit);
     }
     
-    // 전후 메시지 추출
     const start = Math.max(0, targetIndex - halfLimit);
     const end = Math.min(allLines.length, targetIndex + halfLimit);
     
@@ -158,9 +191,6 @@ class ConversationStore {
     }).filter(Boolean);
   }
 
-  /**
-   * 키워드 검색
-   */
   async search(keywords, limit = 20) {
     await this.init();
     const allLines = await this.readAllLines();
@@ -183,51 +213,24 @@ class ConversationStore {
     return results;
   }
 
-  /**
-   * 전체 라인 읽기
-   */
   async readAllLines() {
     await this.init();
+    
+    if (this.storageType === 'ftp') {
+      const content = await this.ftpStorage.readFile('conversations.jsonl');
+      return (content || '').split('\n').filter(line => line.trim());
+    }
+    
     const content = fs.readFileSync(this.filePath, 'utf-8');
     return content.split('\n').filter(line => line.trim());
   }
 
-  /**
-   * 마지막 N개 라인 읽기 (효율적)
-   */
-  async readLastLines(n) {
-    await this.init();
-    return new Promise((resolve, reject) => {
-      const lines = [];
-      const fileStream = fs.createReadStream(this.filePath, { encoding: 'utf-8' });
-      const rl = readline.createInterface({ input: fileStream });
-      
-      rl.on('line', (line) => {
-        if (line.trim()) {
-          lines.push(line);
-          if (lines.length > n) {
-            lines.shift();
-          }
-        }
-      });
-      
-      rl.on('close', () => resolve(lines));
-      rl.on('error', reject);
-    });
-  }
-
-  /**
-   * 총 메시지 수
-   */
   async count() {
     await this.init();
     const lines = await this.readAllLines();
     return lines.length;
   }
 
-  /**
-   * 메시지 업데이트 (태그, 감정 등 메타데이터)
-   */
   async updateMessage(messageId, updates) {
     await this.init();
     const lines = await this.readAllLines();
@@ -253,14 +256,23 @@ class ConversationStore {
     });
     
     if (updated) {
-      fs.writeFileSync(this.filePath, newLines.join('\n') + '\n');
-      console.log(`[ConversationStore] Updated message ${messageId} with:`, updates);
-    } else {
-      console.log(`[ConversationStore] Message ${messageId} not found for update`);
+      const content = newLines.join('\n') + '\n';
+      if (this.storageType === 'ftp') {
+        await this.ftpStorage.writeFile('conversations.jsonl', content);
+      } else {
+        fs.writeFileSync(this.filePath, content);
+      }
+      console.log(`[ConversationStore] Updated message ${messageId}`);
     }
     
     return updated;
   }
 }
 
+// 설정 캐시 초기화 (설정 변경 시)
+function clearStorageConfigCache() {
+  storageConfig = null;
+}
+
 module.exports = ConversationStore;
+module.exports.clearStorageConfigCache = clearStorageConfigCache;

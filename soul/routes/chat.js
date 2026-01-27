@@ -22,8 +22,15 @@ const ConversationStore = require('../utils/conversation-store');
 const { loadMCPTools, executeMCPTool } = require('../utils/mcp-tools');
 const { builtinTools, executeBuiltinTool, isBuiltinTool } = require('../utils/builtin-tools');
 
-// JSONL 대화 저장소
-const conversationStore = new ConversationStore();
+// JSONL 대화 저장소 (lazy init)
+let _conversationStore = null;
+async function getConversationStore() {
+  if (!_conversationStore) {
+    _conversationStore = new ConversationStore();
+    await _conversationStore.init();
+  }
+  return _conversationStore;
+}
 
 /**
  * POST /api/chat
@@ -526,6 +533,7 @@ router.get('/history/:sessionId', async (req, res) => {
     const { limit = 50, before, around } = req.query;
     const limitNum = parseInt(limit);
 
+    const conversationStore = await getConversationStore();
     let messages;
 
     if (around) {
