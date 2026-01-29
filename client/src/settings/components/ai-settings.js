@@ -107,8 +107,114 @@ export class AISettings {
             </svg>
           </div>
 
-          <!-- 온보딩 카드 섹션 -->
-          <div class="onboarding-cards">
+          <!-- 타임라인 섹션 (테스트) -->
+          <div class="soul-timeline">
+            <!-- 정체성 -->
+            <div class="timeline-item expanded" data-section="identity" style="--timeline-color-from: #a8998a; --timeline-color-to: #8a9a9a;">
+              <div class="timeline-icon" style="background: linear-gradient(145deg, #b8a899, #a8998a);">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5a524a" stroke-width="2">
+                  <circle cx="12" cy="8" r="4"/>
+                  <path d="M4 20c0-4 4-6 8-6s8 2 8 6"/>
+                </svg>
+              </div>
+              <div class="timeline-main">
+                <div class="timeline-header">
+                  <div class="timeline-content">
+                    <div class="timeline-title">정체성 <span class="timeline-subtitle">이름과 역할</span></div>
+                  </div>
+                  <div class="timeline-progress">
+                    <svg width="24" height="24" viewBox="0 0 24 24">
+                      <circle cx="12" cy="12" r="10" fill="none" stroke="rgba(120,110,100,0.15)" stroke-width="2"/>
+                      <circle class="progress-ring" cx="12" cy="12" r="10" fill="none" stroke="#5cb85c" stroke-width="2"
+                        stroke-dasharray="62.83" stroke-dashoffset="62.83" stroke-linecap="round"
+                        transform="rotate(-90 12 12)"/>
+                      <path class="check-icon" d="M8 12l3 3 5-6" fill="none" stroke="#5cb85c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="timeline-body">
+                  <div class="neu-field-group">
+                    <div class="neu-field">
+                      <input type="text" class="neu-field-input timeline-field" data-section="identity" placeholder="이름" value="${this.agentProfile?.name || ''}" />
+                    </div>
+                    <div class="neu-field">
+                      <input type="text" class="neu-field-input timeline-field" data-section="identity" placeholder="역할 (예: 비서, 친구, 선생님)" value="${this.agentProfile?.role || ''}" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 성격 -->
+            <div class="timeline-item" data-section="personality" style="--timeline-color-from: #8a9a9a; --timeline-color-to: #9a8a7a;">
+              <div class="timeline-icon" style="background: linear-gradient(145deg, #9aaaa8, #8a9a9a);">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4a5a5a" stroke-width="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+              </div>
+              <div class="timeline-main">
+                <div class="timeline-header">
+                  <div class="timeline-content">
+                    <div class="timeline-title">성격 <span class="timeline-subtitle">말투와 스타일</span></div>
+                  </div>
+                  <div class="timeline-progress">
+                    <svg width="24" height="24" viewBox="0 0 24 24">
+                      <circle cx="12" cy="12" r="10" fill="none" stroke="rgba(120,110,100,0.15)" stroke-width="2"/>
+                      <circle class="progress-ring" cx="12" cy="12" r="10" fill="none" stroke="#5cb85c" stroke-width="2"
+                        stroke-dasharray="62.83" stroke-dashoffset="62.83" stroke-linecap="round"
+                        transform="rotate(-90 12 12)"/>
+                      <path class="check-icon" d="M8 12l3 3 5-6" fill="none" stroke="#5cb85c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="timeline-body">
+                  <div class="neu-field-group">
+                    <div class="neu-field">
+                      <textarea class="neu-field-input neu-field-textarea timeline-field" data-section="personality" placeholder="성격 (말투와 스타일을 설명해주세요)">${this.agentProfile?.description || ''}</textarea>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 두뇌 -->
+            <div class="timeline-item" data-section="brain">
+              <div class="timeline-icon" style="background: linear-gradient(145deg, #aa9a8a, #9a8a7a);">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5a4a3a" stroke-width="2">
+                  <circle cx="12" cy="6" r="4"/>
+                  <path d="M12 10v6"/>
+                  <path d="M8 22h8"/>
+                  <path d="M12 16v2"/>
+                </svg>
+              </div>
+              <div class="timeline-main">
+                <div class="timeline-header">
+                  <div class="timeline-content">
+                    <div class="timeline-title">두뇌 <span class="timeline-subtitle">AI 모델 선택</span></div>
+                  </div>
+                  <div class="timeline-progress">
+                    <svg width="24" height="24" viewBox="0 0 24 24">
+                      <circle cx="12" cy="12" r="10" fill="none" stroke="rgba(120,110,100,0.15)" stroke-width="2"/>
+                      <circle class="progress-ring" cx="12" cy="12" r="10" fill="none" stroke="#5cb85c" stroke-width="2"
+                        stroke-dasharray="62.83" stroke-dashoffset="62.83" stroke-linecap="round"
+                        transform="rotate(-90 12 12)"/>
+                      <path class="check-icon" d="M8 12l3 3 5-6" fill="none" stroke="#5cb85c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="timeline-body">
+                  <div class="neu-field-group">
+                    <div class="neu-field">
+                      <input type="text" class="neu-field-input timeline-field" data-section="brain" placeholder="AI 모델" value="${this.agentProfile?.defaultModel || ''}" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 온보딩 카드 섹션 (기존) -->
+          <div class="onboarding-cards" style="display: none;">
             <!-- 정체성 카드 -->
             <div class="onboarding-item">
               <div class="onboarding-card" data-target="onboard-identity">
@@ -2468,6 +2574,12 @@ export class AISettings {
             if (valueDisplay) valueDisplay.textContent = '';
           }
         }
+
+        // 타임라인 프로그레스 업데이트
+        if (input.classList.contains('timeline-field')) {
+          const section = input.dataset.section;
+          this.updateTimelineProgress(section);
+        }
       }
     }, { signal });
 
@@ -2483,6 +2595,51 @@ export class AISettings {
       }
     }, { signal });
 
+    // 타임라인 필드 엔터키 처리 (한글 조합 중 무시)
+    let isComposing = false;
+    container.addEventListener('compositionstart', () => { isComposing = true; }, { signal });
+    container.addEventListener('compositionend', () => { isComposing = false; }, { signal });
+
+    container.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || isComposing) return;
+      const input = e.target.closest('.timeline-field');
+      if (!input || input.tagName === 'TEXTAREA') return;
+
+      e.preventDefault();
+      const item = input.closest('.timeline-item');
+      const section = input.dataset.section;
+      const fields = Array.from(item.querySelectorAll('.timeline-field'));
+      const currentIndex = fields.indexOf(input);
+
+      // 엔터 시 현재 값 저장 (어느 필드에서든)
+      this.updateTimelineProgress(section);
+      this.saveTimelineSectionDirect(section);
+
+      // 같은 섹션 내 다음 필드가 있으면 이동
+      if (currentIndex < fields.length - 1) {
+        fields[currentIndex + 1].focus();
+      } else {
+        // 마지막 필드면 완료 처리 후 다음 섹션으로
+        const allFilled = fields.every(f => f.value.trim());
+        if (allFilled) {
+          item.classList.remove('expanded');
+
+          // 다음 섹션 찾아서 펼치기
+          const nextItem = item.nextElementSibling?.closest('.timeline-item') ||
+                          item.parentElement.querySelector(`.timeline-item:not([data-section="${section}"])`);
+          if (nextItem && !nextItem.classList.contains('expanded')) {
+            nextItem.dataset.expanding = 'true';
+            nextItem.classList.add('expanded');
+            setTimeout(() => {
+              const firstField = nextItem.querySelector('.timeline-field');
+              if (firstField) firstField.focus();
+              setTimeout(() => delete nextItem.dataset.expanding, 200);
+            }, 100);
+          }
+        }
+      }
+    }, { signal });
+
     // neu-field 포커스 아웃 시 편집 모드 종료
     container.addEventListener('focusout', (e) => {
       const input = e.target.closest('.neu-field-input');
@@ -2491,6 +2648,79 @@ export class AISettings {
         if (field) {
           field.classList.remove('editing');
         }
+
+        // 타임라인 필드인 경우, 포커스 아웃 시 완료 체크 후 접기
+        if (input.classList.contains('timeline-field')) {
+          const section = input.dataset.section;
+          setTimeout(() => {
+            // 같은 섹션 내 다른 필드로 포커스 이동했는지 확인
+            const item = document.querySelector(`.timeline-item[data-section="${section}"]`);
+            // 편집 모드 전환 중이면 무시
+            if (item?.dataset.expanding) return;
+            const stillFocused = item?.querySelector('.timeline-field:focus');
+            if (!stillFocused && item) {
+              // focusout 시 항상 저장
+              this.updateTimelineProgress(section);
+              this.saveTimelineSectionDirect(section);
+
+              // 모든 필드 채워졌으면 접기
+              const fields = item.querySelectorAll('.timeline-field');
+              const allFilled = Array.from(fields).every(f => f.value.trim());
+              if (allFilled) {
+                setTimeout(() => {
+                  item.classList.remove('expanded');
+                }, 200);
+              }
+            }
+          }, 100);
+        }
+      }
+    }, { signal });
+
+    // 타임라인 프로그레스(체크버튼) 클릭 시 다시 펼치기
+    container.addEventListener('click', (e) => {
+      const progress = e.target.closest('.timeline-progress');
+      if (progress) {
+        const item = progress.closest('.timeline-item');
+        if (item && !item.classList.contains('expanded')) {
+          // 편집 모드로 전환 중 플래그 설정
+          item.dataset.expanding = 'true';
+          item.classList.add('expanded');
+          // 첫 번째 필드에 포커스 및 캡슐 높이 조절
+          setTimeout(() => {
+            const firstField = item.querySelector('.timeline-field');
+            if (firstField) firstField.focus();
+            // 펼쳐진 상태로 캡슐 높이 조절
+            this.adjustCapsuleHeight(item, true);
+            // 플래그 해제
+            setTimeout(() => {
+              delete item.dataset.expanding;
+            }, 200);
+          }, 100);
+        }
+      }
+    }, { signal });
+
+    // 타임라인 헤더 클릭 시 펼치기/접기
+    container.addEventListener('click', (e) => {
+      const header = e.target.closest('.timeline-header');
+      if (!header) return;
+      // 프로그레스 버튼 클릭은 위에서 처리
+      if (e.target.closest('.timeline-progress')) return;
+
+      const item = header.closest('.timeline-item');
+      if (!item) return;
+
+      if (item.classList.contains('expanded')) {
+        item.classList.remove('expanded');
+        this.adjustCapsuleHeight(item, false);
+      } else {
+        item.dataset.expanding = 'true';
+        item.classList.add('expanded');
+        setTimeout(() => {
+          this.adjustCapsuleHeight(item, true);
+          setTimeout(() => delete item.dataset.expanding, 200);
+        }, 100);
       }
     }, { signal });
 
@@ -2655,6 +2885,23 @@ export class AISettings {
 
     // 스토리지 타입 로드
     this.loadStorageTypes();
+
+    // 초기 타임라인 상태 설정 (저장된 값 반영)
+    setTimeout(() => {
+      container.querySelectorAll('.timeline-item').forEach(item => {
+        const section = item.dataset.section;
+        this.updateTimelineProgress(section);
+
+        // 값이 모두 채워진 섹션은 접기
+        const fields = item.querySelectorAll('.timeline-field');
+        const allFilled = Array.from(fields).every(f => f.value.trim());
+        if (allFilled && fields.length > 0) {
+          item.classList.remove('expanded');
+        }
+
+        this.adjustCapsuleHeight(item, item.classList.contains('expanded'));
+      });
+    }, 100);
 
     // 라우팅 통계 버튼
     const refreshStatsBtn = container.querySelector('#refreshStatsBtn');
@@ -3368,6 +3615,164 @@ export class AISettings {
       console.error('Failed to save routing settings:', error);
       this.showSaveStatus('라우팅 설정 저장에 실패했습니다.', 'error');
     }
+  }
+
+  /**
+   * 타임라인 프로그레스 업데이트
+   */
+  updateTimelineProgress(section) {
+    const item = document.querySelector(`.timeline-item[data-section="${section}"]`);
+    if (!item) return;
+
+    const fields = item.querySelectorAll('.timeline-field');
+    const totalFields = fields.length;
+    let filledFields = 0;
+
+    fields.forEach(field => {
+      if (field.value.trim()) filledFields++;
+    });
+
+    const progress = totalFields > 0 ? filledFields / totalFields : 0;
+    const circumference = 62.83; // 2 * PI * r (r=10)
+    const offset = circumference * (1 - progress);
+
+    const progressRing = item.querySelector('.progress-ring');
+    const checkIcon = item.querySelector('.check-icon');
+
+    if (progressRing) {
+      progressRing.style.strokeDashoffset = offset;
+    }
+
+    if (checkIcon) {
+      checkIcon.style.opacity = progress >= 1 ? '1' : '0';
+    }
+
+    // 값들 수집 (입력 중에도 실시간 표시 - 모든 필드 포함)
+    const summaryEl = item.querySelector('.timeline-summary');
+    const allFieldValues = [];
+    let hasAnyValue = false;
+    fields.forEach(field => {
+      const placeholder = field.getAttribute('placeholder') || '';
+      const label = placeholder.split(' ')[0].replace(/[()]/g, '');
+      const value = field.value.trim();
+      allFieldValues.push({ label, value: value || '-' });
+      if (value) hasAnyValue = true;
+    });
+
+    // summary 업데이트 또는 생성 - 하나라도 값이 있으면 모든 필드 표시
+    if (hasAnyValue) {
+      const summaryHtml = allFieldValues.map(v =>
+        `<div><span class="summary-label">${v.label}</span>${v.value}</div>`
+      ).join('');
+      if (summaryEl) {
+        summaryEl.innerHTML = summaryHtml;
+      } else {
+        const newSummary = document.createElement('div');
+        newSummary.className = 'timeline-summary';
+        newSummary.innerHTML = summaryHtml;
+        item.querySelector('.timeline-content').appendChild(newSummary);
+      }
+    } else if (summaryEl) {
+      summaryEl.innerHTML = '';
+    }
+
+    // DB 저장용 값 (빈 값 제외) - 저장은 별도 이벤트에서 처리
+    item._timelineValues = allFieldValues.filter(v => v.value !== '-');
+    item._timelineProgress = progress;
+
+    // 100% 완료 시 캡슐 높이 조절
+    if (progress >= 1) {
+      setTimeout(() => {
+        this.adjustCapsuleHeight(item);
+      }, 50);
+    }
+  }
+
+  /**
+   * 타임라인 섹션 저장 트리거 (focusout 시 호출 - 100% 완료 시에만)
+   */
+  triggerTimelineSave(section) {
+    const item = document.querySelector(`.timeline-item[data-section="${section}"]`);
+    if (!item) return;
+
+    // 100% 완료이고 값이 있을 때만 저장
+    if (item._timelineProgress >= 1 && item._timelineValues?.length > 0) {
+      this.saveTimelineSection(section, item._timelineValues);
+    }
+  }
+
+  /**
+   * 타임라인 섹션 직접 저장 (엔터 시 호출 - 빈 값도 저장)
+   */
+  saveTimelineSectionDirect(section) {
+    const item = document.querySelector(`.timeline-item[data-section="${section}"]`);
+    if (!item) return;
+
+    // 필드에서 직접 값 수집 (빈 값도 포함)
+    const fields = item.querySelectorAll('.timeline-field');
+    const values = [];
+    fields.forEach(field => {
+      const placeholder = field.getAttribute('placeholder') || '';
+      const label = placeholder.split(' ')[0].replace(/[()]/g, '');
+      const value = field.value.trim();
+      values.push({ label, value });
+    });
+
+    this.saveTimelineSection(section, values);
+  }
+
+  /**
+   * 타임라인 섹션 DB 저장
+   */
+  async saveTimelineSection(section, values) {
+    try {
+      const profileId = this.agentProfile?.id || 'default';
+      const updateData = {};
+
+      if (section === 'identity') {
+        values.forEach(v => {
+          if (v.label === '이름') {
+            updateData.name = v.value;
+            // 아래 폼 동기화
+            const soulName = document.getElementById('soulName');
+            if (soulName) soulName.value = v.value;
+          }
+          if (v.label === '역할') {
+            updateData.role = v.value;
+            const soulRole = document.getElementById('soulRole');
+            if (soulRole) soulRole.value = v.value;
+          }
+        });
+      } else if (section === 'personality') {
+        values.forEach(v => {
+          // placeholder가 "성격과 말투를 설명해주세요"라서 label이 "성격과"
+          updateData.description = v.value;
+          const soulDesc = document.getElementById('soulDescription');
+          if (soulDesc) soulDesc.value = v.value;
+        });
+      } else if (section === 'brain') {
+        values.forEach(v => {
+          updateData.defaultModel = v.value;
+        });
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await this.apiClient.put(`/profile/agent/${profileId}`, updateData);
+        // 로컬 프로필 데이터도 업데이트
+        Object.assign(this.agentProfile, updateData);
+      } else {
+        console.log('No data to save');
+      }
+    } catch (error) {
+      console.error('Failed to save timeline section:', error);
+    }
+  }
+
+  /**
+   * 캡슐 높이 조절 (CSS align-self: stretch로 자동 처리됨)
+   */
+  adjustCapsuleHeight(item, expanded = false) {
+    // CSS로 자동 처리
   }
 
   /**

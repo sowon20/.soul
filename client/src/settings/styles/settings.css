@@ -76,9 +76,17 @@
     inset -1px -1px 3px rgba(255, 248, 240, 0.6);
 }
 
-/* 값이 있으면 인풋 숨김 */
+/* 값이 있으면 인풋 숨김 (타임라인 내부 제외) */
 .neu-field.has-value:not(.editing) .neu-field-input {
   display: none;
+}
+
+.timeline-body .neu-field.has-value:not(.editing) .neu-field-input {
+  display: block;
+}
+
+.timeline-body .neu-field-display {
+  display: none !important;
 }
 
 /* date 인풋 스타일 통일 */
@@ -1138,9 +1146,175 @@ textarea.settings-field-input {
   font-size: 0.7rem;
 }
 
+/* 타임라인 스타일 */
+.soul-timeline {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 0;
+  position: relative;
+}
 
-.soul-modal-close:hover {
-  background: rgba(0, 0, 0, 0.12);
+.timeline-item {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px 8px;
+  position: relative;
+}
+
+.timeline-main {
+  flex: 1;
+}
+
+/* 세로 점선 - 캡슐 아이콘 기준, 그라데이션 */
+.timeline-item:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 56px;
+  bottom: -12px;
+  width: 2px;
+  border-radius: 1px;
+  background: linear-gradient(
+    to bottom,
+    var(--timeline-color-from, #a8998a),
+    var(--timeline-color-to, #8a9a9a)
+  );
+  mask: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    black 2px,
+    black 6px
+  );
+  -webkit-mask: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    black 2px,
+    black 6px
+  );
+}
+
+.timeline-icon {
+  width: 24px;
+  min-height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  z-index: 1;
+  align-self: stretch;
+}
+
+.timeline-content {
+  flex: 1;
+}
+
+.timeline-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #4a4540;
+}
+
+.timeline-subtitle {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: #7a716a;
+  margin-left: 6px;
+}
+
+.timeline-summary {
+  margin-top: 4px;
+  display: block;
+}
+
+.timeline-summary:empty {
+  display: none;
+}
+
+.timeline-summary div {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+  color: #4a4540;
+  font-size: 0.85rem;
+}
+
+.timeline-summary .summary-label {
+  background: #4a4540;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.timeline-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(120, 110, 100, 0.3);
+  color: rgba(120, 110, 100, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 300;
+}
+
+.timeline-check.completed {
+  border-color: #8a9a8a;
+  color: #8a9a8a;
+  background: rgba(138, 154, 138, 0.1);
+}
+
+/* 프로그레스 링 */
+.timeline-progress {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.timeline-progress:hover {
+  opacity: 0.8;
+}
+
+.timeline-progress .progress-ring {
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+.timeline-progress .check-icon {
+  transition: opacity 0.2s ease;
+}
+
+/* 타임라인 헤더 (접힌 상태 기본) */
+.timeline-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+
+/* 타임라인 바디 (펼침 내용) */
+.timeline-body {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.3s ease, opacity 0.2s ease, padding 0.3s ease;
+}
+
+.timeline-item.expanded .timeline-body {
+  max-height: 300px;
+  opacity: 1;
+  padding-top: 8px;
+}
+
+.timeline-body .neu-field-group {
+  gap: 0.2rem;
 }
 
 /* ============================================
