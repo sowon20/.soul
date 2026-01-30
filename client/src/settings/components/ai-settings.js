@@ -203,6 +203,13 @@ export class AISettings {
                       </div>
                       <input type="range" class="timeline-range" data-field="empathy" min="0" max="1" step="0.1" value="${this.agentProfile?.personality?.traits?.empathetic ?? 0.6}">
                     </div>
+                    <div class="timeline-slider-item">
+                      <div class="slider-labels">
+                        <span>🎯 정확</span>
+                        <span>🎨 창의</span>
+                      </div>
+                      <input type="range" class="timeline-range" data-field="temperature" min="0" max="1" step="0.1" value="${this.agentProfile?.temperature ?? 0.7}">
+                    </div>
                   </div>
                 </div>
               </div>
@@ -221,7 +228,7 @@ export class AISettings {
               <div class="timeline-main">
                 <div class="timeline-header">
                   <div class="timeline-content">
-                    <div class="timeline-title">두뇌 <span class="timeline-subtitle">AI 모델 선택</span></div>
+                    <div class="timeline-title">두뇌 <span class="timeline-subtitle">AI 모델 & 라우팅</span></div>
                   </div>
                   <div class="timeline-progress">
                     <svg width="24" height="24" viewBox="0 0 24 24">
@@ -234,27 +241,64 @@ export class AISettings {
                   </div>
                 </div>
                 <div class="timeline-body">
-                  <div class="neu-field-group">
-                    <div class="neu-field timeline-select-wrapper">
-                      <select class="neu-field-input timeline-field timeline-select" data-section="brain" data-field="defaultModel">
-                        <option value="">모델 선택...</option>
-                        ${this.availableModels.map(m => `
-                          <option value="${m.id}" ${this.agentProfile?.defaultModel === m.id ? 'selected' : ''} ${m.disabled ? 'disabled' : ''}>
-                            ${m.name} ${m.service ? `(${m.service})` : ''}
-                          </option>
-                        `).join('')}
-                      </select>
-                    </div>
-                  </div>
-                  <!-- 창의성 슬라이더 -->
-                  <div class="timeline-sliders">
-                    <div class="timeline-slider-item">
-                      <div class="slider-labels">
-                        <span>🎯 정확</span>
-                        <span>🎨 창의</span>
+                  <!-- 스마트 라우팅 설정 -->
+                  <div class="brain-routing-section">
+                    <div class="brain-routing-item">
+                      <div class="brain-routing-header">
+                        <span class="routing-tier">라우팅</span>
+                        <span class="routing-desc">복잡도 분석 담당</span>
                       </div>
-                      <input type="range" class="timeline-range" data-field="temperature" min="0" max="1" step="0.1" value="${this.agentProfile?.temperature ?? 0.7}">
+                      <div class="brain-routing-controls">
+                        <select class="brain-routing-select" id="routingManager">
+                          <option value="server" ${!this.routingConfig.manager || this.routingConfig.manager === 'server' ? 'selected' : ''}>서버 (SmartRouter)</option>
+                          <option value="ai" ${this.routingConfig.manager === 'ai' ? 'selected' : ''}>AI 모델</option>
+                          <option value="fixed" ${this.routingConfig.manager === 'fixed' ? 'selected' : ''}>고정 (중간만)</option>
+                        </select>
+                        <select class="brain-routing-select" id="routingManagerModel" ${!this.routingConfig.manager || this.routingConfig.manager !== 'ai' ? 'disabled' : ''}>
+                          ${this.renderModelOptions(this.routingConfig.managerModel)}
+                        </select>
+                      </div>
                     </div>
+
+                    <div class="brain-routing-item">
+                      <div class="brain-routing-header">
+                        <span class="routing-tier">경량</span>
+                        <span class="routing-desc">간단한 질문, 번역</span>
+                      </div>
+                      <div class="brain-routing-controls">
+                        <select class="brain-routing-select" id="routingLight">
+                          ${this.renderModelOptions(this.routingConfig.light)}
+                        </select>
+                        ${this.renderThinkingToggle('Light', this.routingConfig.light, this.routingConfig.lightThinking)}
+                      </div>
+                    </div>
+
+                    <div class="brain-routing-item">
+                      <div class="brain-routing-header">
+                        <span class="routing-tier">중간</span>
+                        <span class="routing-desc">코드, 분석</span>
+                      </div>
+                      <div class="brain-routing-controls">
+                        <select class="brain-routing-select" id="routingMedium">
+                          ${this.renderModelOptions(this.routingConfig.medium)}
+                        </select>
+                        ${this.renderThinkingToggle('Medium', this.routingConfig.medium, this.routingConfig.mediumThinking)}
+                      </div>
+                    </div>
+
+                    <div class="brain-routing-item">
+                      <div class="brain-routing-header">
+                        <span class="routing-tier">고성능</span>
+                        <span class="routing-desc">설계, 연구</span>
+                      </div>
+                      <div class="brain-routing-controls">
+                        <select class="brain-routing-select" id="routingHeavy">
+                          ${this.renderModelOptions(this.routingConfig.heavy)}
+                        </select>
+                        ${this.renderThinkingToggle('Heavy', this.routingConfig.heavy, this.routingConfig.heavyThinking)}
+                      </div>
+                    </div>
+
                   </div>
                 </div>
               </div>
@@ -416,13 +460,6 @@ export class AISettings {
             </div>
           </div>
 
-          <!-- 기본모델 설정 -->
-          <section class="settings-section">
-            <h3 class="settings-section-title">기본모델 설정</h3>
-            <p class="settings-section-desc">작업 복잡도에 따라 자동으로 최적 모델을 선택합니다.</p>
-            ${this.renderSmartRoutingSettings()}
-          </section>
-
           <!-- 알바 설정 -->
           <section class="settings-section">
             <h3 class="settings-section-title">알바</h3>
@@ -442,13 +479,6 @@ export class AISettings {
             <h3 class="settings-section-title">저장소 경로 설정</h3>
             <p class="settings-section-desc">메모리와 파일의 저장 위치를 지정합니다</p>
             ${this.renderStorageSettings()}
-          </section>
-
-          <!-- 시스템 프롬프트 설정 -->
-          <section class="settings-section">
-            <h3 class="settings-section-title">시스템 프롬프트 설정</h3>
-            <p class="settings-section-desc">AI의 기본 성격과 역할을 정의합니다.</p>
-            ${this.renderPromptSettings()}
           </section>
 
         </div>
@@ -556,6 +586,10 @@ export class AISettings {
       if (response && response.light) {
         // 새 형식 (serviceId + thinking 포함) 또는 이전 형식 (modelId만)
         this.routingConfig = {
+          // 라우팅 담당
+          manager: response.manager || 'server',
+          managerModel: response.managerModel?.modelId || null,
+          // 티어별 모델
           light: response.light?.modelId || response.light,
           medium: response.medium?.modelId || response.medium,
           heavy: response.heavy?.modelId || response.heavy,
@@ -736,104 +770,6 @@ export class AISettings {
           <span class="thinking-toggle-label">생각</span>
         </label>
         <span class="thinking-hint">미지원 모델은 생각과정 없이 응답</span>
-      </div>
-    `;
-  }
-
-  /**
-   * 스마트 라우팅 설정 렌더링
-   */
-  renderSmartRoutingSettings() {
-    const hasModels = this.availableModels.length > 0 && !this.availableModels[0].disabled;
-    
-    return `
-      <div class="routing-settings-container">
-        ${!hasModels ? `
-          <div class="routing-notice">
-            <div class="routing-notice-icon">💡</div>
-            <div class="routing-notice-content">
-              <p class="routing-notice-title">API 키를 먼저 설정해주세요</p>
-              <p class="routing-notice-desc">위의 AI 서비스 관리에서 API 키를 입력하고 [모델 새로고침]을 클릭하면, 사용 가능한 모델이 자동으로 드롭다운에 표시됩니다.</p>
-            </div>
-          </div>
-        ` : ''}
-
-        <div class="routing-field routing-manager-field">
-          <label class="routing-label">
-            <span class="label-text">라우팅 담당</span>
-            <span class="label-hint">작업 복잡도를 판단하는 주체</span>
-          </label>
-          <div class="routing-manager-options">
-            <label class="routing-radio-label">
-              <input type="radio" name="routingManager" value="server"
-                ${!this.routingConfig.manager || this.routingConfig.manager === 'server' ? 'checked' : ''}>
-              <span class="radio-text">서버 (SmartRouter)</span>
-              <span class="radio-hint">서버가 키워드/복잡도 분석으로 자동 선택</span>
-            </label>
-            <label class="routing-radio-label">
-              <input type="radio" name="routingManager" value="ai"
-                ${this.routingConfig.manager === 'ai' ? 'checked' : ''}>
-              <span class="radio-text">AI 자체 판단</span>
-              <span class="radio-hint">경량 AI가 먼저 분석 후 적절한 모델 선택 (추가 비용 발생)</span>
-            </label>
-            <label class="routing-radio-label">
-              <input type="radio" name="routingManager" value="fixed"
-                ${this.routingConfig.manager === 'fixed' ? 'checked' : ''}>
-              <span class="radio-text">고정 모델</span>
-              <span class="radio-hint">항상 중간 작업 모델 사용 (라우팅 비활성화)</span>
-            </label>
-          </div>
-        </div>
-
-        <div class="routing-divider"></div>
-
-        <div class="routing-field">
-          <label class="routing-label">
-            <span class="label-text">경량 작업 (1-2)</span>
-            <span class="label-hint">간단한 질문, 번역, 요약</span>
-          </label>
-          <div class="routing-field-row">
-            <select class="routing-select" id="routingLight" ${!hasModels ? 'disabled' : ''}>
-              ${this.renderModelOptions(this.routingConfig.light)}
-            </select>
-            ${this.renderThinkingToggle('Light', this.routingConfig.light, this.routingConfig.lightThinking)}
-          </div>
-        </div>
-
-        <div class="routing-field">
-          <label class="routing-label">
-            <span class="label-text">중간 작업 (4-6)</span>
-            <span class="label-hint">코드 생성, 리뷰, 분석, 문제 해결</span>
-          </label>
-          <div class="routing-field-row">
-            <select class="routing-select" id="routingMedium" ${!hasModels ? 'disabled' : ''}>
-              ${this.renderModelOptions(this.routingConfig.medium)}
-            </select>
-            ${this.renderThinkingToggle('Medium', this.routingConfig.medium, this.routingConfig.mediumThinking)}
-          </div>
-        </div>
-
-        <div class="routing-field">
-          <label class="routing-label">
-            <span class="label-text">고성능 작업 (7-9)</span>
-            <span class="label-hint">아키텍처 설계, 복잡한 디버깅, 연구</span>
-          </label>
-          <div class="routing-field-row">
-            <select class="routing-select" id="routingHeavy" ${!hasModels ? 'disabled' : ''}>
-              ${this.renderModelOptions(this.routingConfig.heavy)}
-            </select>
-            ${this.renderThinkingToggle('Heavy', this.routingConfig.heavy, this.routingConfig.heavyThinking)}
-          </div>
-        </div>
-
-        <div class="routing-actions">
-          <button class="settings-btn settings-btn-primary" id="saveRoutingBtn" ${!hasModels ? 'disabled' : ''}>
-            저장
-          </button>
-          <button class="settings-btn settings-btn-outline" id="resetRoutingBtn"
-            기본값으로 초기화
-          </button>
-        </div>
       </div>
     `;
   }
@@ -1916,209 +1852,6 @@ export class AISettings {
   /**
    * 프롬프트 설정 렌더링
    */
-  renderPromptSettings() {
-    if (!this.agentProfile) {
-      return '<p style="color: rgba(0, 0, 0, 0.5);">프로필을 불러오는 중...</p>';
-    }
-
-    return `
-      <div class="prompt-settings-container">
-        <div class="prompt-field">
-          <label class="prompt-label">
-            <span class="label-text">에이전트 이름</span>
-            <span class="label-hint">AI의 이름을 설정합니다</span>
-          </label>
-          <input type="text"
-                 class="prompt-input"
-                 id="agentName"
-                 value="${this.agentProfile.name || ''}"
-                 placeholder="Soul">
-        </div>
-
-        <div class="prompt-field">
-          <label class="prompt-label">
-            <span class="label-text">역할</span>
-            <span class="label-hint">AI의 기본 역할을 정의합니다</span>
-          </label>
-          <input type="text"
-                 class="prompt-input"
-                 id="agentRole"
-                 value="${this.agentProfile.role || ''}"
-                 placeholder="AI Assistant">
-        </div>
-
-        <div class="prompt-field">
-          <label class="prompt-label">
-            <span class="label-text">설명</span>
-            <span class="label-hint">AI에 대한 간단한 설명</span>
-          </label>
-          <textarea class="prompt-textarea"
-                    id="agentDescription"
-                    rows="2"
-                    placeholder="당신의 AI 동반자">${this.agentProfile.description || ''}</textarea>
-        </div>
-
-        <div class="prompt-field">
-          <label class="prompt-label">
-            <span class="label-text">커스텀 시스템 프롬프트 (선택사항)</span>
-            <span class="label-hint">추가로 포함할 지침이나 맥락을 입력하세요</span>
-          </label>
-          <textarea class="prompt-textarea"
-                    id="customPrompt"
-                    rows="6"
-                    placeholder="예: 항상 코드 예시를 포함하세요. 답변은 친절하고 상세하게 작성하세요.">${this.agentProfile.customPrompt || ''}</textarea>
-        </div>
-
-        <div class="prompt-divider">
-          <span>AI 동작 설정</span>
-        </div>
-
-        <div class="prompt-field">
-          <label class="prompt-label">
-            <span class="label-text">기본 모델</span>
-            <span class="label-hint">대화에 사용할 기본 AI 모델</span>
-          </label>
-          <select class="prompt-select" id="defaultModel">
-            <option value="">자동 선택 (스마트 라우팅)</option>
-            ${this.renderModelOptions(this.agentProfile.defaultModel)}
-          </select>
-        </div>
-
-        <div class="prompt-field-row">
-          <div class="prompt-field prompt-field-half">
-            <label class="prompt-label">
-              <span class="label-text">창의성 (Temperature)</span>
-              <span class="label-hint">낮을수록 일관적, 높을수록 창의적</span>
-            </label>
-            <div class="prompt-range-wrap">
-              <input type="range"
-                     class="prompt-range"
-                     id="soulTemperature"
-                     min="0" max="2" step="0.1"
-                     value="${this.agentProfile.temperature ?? 0.7}">
-              <span class="prompt-range-value" id="soulTempValue">${this.agentProfile.temperature ?? 0.7}</span>
-            </div>
-            <div class="prompt-range-labels">
-              <span>정확함</span>
-              <span>창의적</span>
-            </div>
-          </div>
-
-          <div class="prompt-field prompt-field-half">
-            <label class="prompt-label">
-              <span class="label-text">응답 길이 (Max Tokens)</span>
-              <span class="label-hint">최대 응답 토큰 수</span>
-            </label>
-            <input type="number"
-                   class="prompt-input prompt-input-number"
-                   id="soulMaxTokens"
-                   min="256" max="32000" step="256"
-                   value="${this.agentProfile.maxTokens || 4096}">
-          </div>
-        </div>
-
-        <div class="prompt-field">
-          <label class="prompt-label">
-            <span class="label-text">대화 스타일</span>
-            <span class="label-hint">각 항목을 슬라이더로 세밀하게 조절하세요</span>
-          </label>
-          <div class="personality-sliders">
-            <div class="personality-slider-item">
-              <div class="slider-header">
-                <span class="slider-label-left">🎉 캐주얼</span>
-                <span class="slider-label-right">🎩 격식</span>
-              </div>
-              <input type="range" class="personality-range" id="personalityFormality"
-                     min="0" max="1" step="0.1"
-                     value="${this.agentProfile.personality?.communication?.formality ?? 0.5}">
-            </div>
-
-            <div class="personality-slider-item">
-              <div class="slider-header">
-                <span class="slider-label-left">⚡ 간결</span>
-                <span class="slider-label-right">📚 상세</span>
-              </div>
-              <input type="range" class="personality-range" id="personalityVerbosity"
-                     min="0" max="1" step="0.1"
-                     value="${this.agentProfile.personality?.communication?.verbosity ?? 0.5}">
-            </div>
-
-            <div class="personality-slider-item">
-              <div class="slider-header">
-                <span class="slider-label-left">🌸 완곡</span>
-                <span class="slider-label-right">🎯 직접적</span>
-              </div>
-              <input type="range" class="personality-range" id="personalityDirectness"
-                     min="0" max="1" step="0.1"
-                     value="${this.agentProfile.personality?.communication?.directness ?? 0.7}">
-            </div>
-
-            <div class="personality-slider-item">
-              <div class="slider-header">
-                <span class="slider-label-left">📝 일반 용어</span>
-                <span class="slider-label-right">🔧 기술 용어</span>
-              </div>
-              <input type="range" class="personality-range" id="personalityTechnicality"
-                     min="0" max="1" step="0.1"
-                     value="${this.agentProfile.personality?.communication?.technicality ?? 0.5}">
-            </div>
-
-            <div class="personality-slider-item">
-              <div class="slider-header">
-                <span class="slider-label-left">😐 이모지 없음</span>
-                <span class="slider-label-right">😊 이모지 많이</span>
-              </div>
-              <input type="range" class="personality-range" id="personalityEmoji"
-                     min="0" max="1" step="0.1"
-                     value="${this.agentProfile.personality?.communication?.emoji ?? 0.3}">
-            </div>
-
-            <div class="personality-slider-item">
-              <div class="slider-header">
-                <span class="slider-label-left">🧐 진지</span>
-                <span class="slider-label-right">😄 유머러스</span>
-              </div>
-              <input type="range" class="personality-range" id="personalityHumor"
-                     min="0" max="1" step="0.1"
-                     value="${this.agentProfile.personality?.communication?.humor ?? 0.3}">
-            </div>
-
-            <div class="personality-slider-item">
-              <div class="slider-header">
-                <span class="slider-label-left">🤖 기계적</span>
-                <span class="slider-label-right">💕 공감적</span>
-              </div>
-              <input type="range" class="personality-range" id="personalityEmpathy"
-                     min="0" max="1" step="0.1"
-                     value="${this.agentProfile.personality?.traits?.empathetic ?? 0.6}">
-            </div>
-
-            <div class="personality-slider-item">
-              <div class="slider-header">
-                <span class="slider-label-left">🐢 수동적</span>
-                <span class="slider-label-right">🚀 적극적</span>
-              </div>
-              <input type="range" class="personality-range" id="personalityProactive"
-                     min="0" max="1" step="0.1"
-                     value="${this.agentProfile.personality?.traits?.proactive ?? 0.7}">
-            </div>
-          </div>
-        </div>
-
-        <div class="prompt-actions">
-          <button class="settings-btn settings-btn-primary"
-                  id="savePromptBtn">
-            저장
-          </button>
-          <button class="settings-btn settings-btn-outline"
-                  id="resetPromptBtn">
-            초기화
-          </button>
-        </div>
-      </div>
-    `;
-  }
-
   /**
    * 서비스 카드 렌더링
    */
@@ -2887,16 +2620,37 @@ export class AISettings {
       });
     });
 
-    // 라우팅 설정 버튼
-    const saveRoutingBtn = container.querySelector('#saveRoutingBtn');
-    const resetRoutingBtn = container.querySelector('#resetRoutingBtn');
+    // 라우팅 설정 - 드롭다운 변경 시 자동 저장
+    const routingManagerSelect = container.querySelector('#routingManager');
+    const routingManagerModelSelect = container.querySelector('#routingManagerModel');
+    const routingSelects = container.querySelectorAll('.brain-routing-select');
+    const thinkingToggles = container.querySelectorAll('[id^="thinking"]');
 
-    if (saveRoutingBtn) {
-      saveRoutingBtn.addEventListener('click', () => this.saveRoutingSettings());
-    }
+    // 모든 라우팅 드롭다운에 change 이벤트 추가
+    routingSelects.forEach(select => {
+      select.addEventListener('change', () => {
+        this.saveRoutingSettings();
+        this.updateTimelineProgress('brain');
+      });
+    });
 
-    if (resetRoutingBtn) {
-      resetRoutingBtn.addEventListener('click', () => this.resetRoutingSettings());
+    // 생각 토글에도 change 이벤트 추가
+    thinkingToggles.forEach(toggle => {
+      toggle.addEventListener('change', () => {
+        this.saveRoutingSettings();
+        this.updateTimelineProgress('brain');
+      });
+    });
+
+    // 라우팅 담당 변경 시 모델 드롭다운 활성화/비활성화
+    if (routingManagerSelect && routingManagerModelSelect) {
+      routingManagerSelect.addEventListener('change', (e) => {
+        const isAI = e.target.value === 'ai';
+        routingManagerModelSelect.disabled = !isAI;
+        if (!isAI) {
+          routingManagerModelSelect.value = '';
+        }
+      });
     }
 
 
@@ -2928,19 +2682,7 @@ export class AISettings {
       saveToolSearchBtn.addEventListener('click', () => this.saveToolSearchSettings());
     }
 
-    // 프롬프트 설정 버튼
-    const savePromptBtn = container.querySelector('#savePromptBtn');
-    const resetPromptBtn = container.querySelector('#resetPromptBtn');
-
-    if (savePromptBtn) {
-      savePromptBtn.addEventListener('click', () => this.savePromptSettings());
-    }
-
-    if (resetPromptBtn) {
-      resetPromptBtn.addEventListener('click', () => this.resetPromptSettings());
-    }
-
-    // Soul temperature 슬라이더
+    // Soul temperature 슬라이더 (레거시 - 제거됨)
     const soulTempSlider = container.querySelector('#soulTemperature');
     if (soulTempSlider) {
       soulTempSlider.addEventListener('input', (e) => {
@@ -3698,9 +3440,12 @@ export class AISettings {
       const medium = document.getElementById('routingMedium')?.value;
       const heavy = document.getElementById('routingHeavy')?.value;
 
-      // 라우팅 담당 가져오기
-      const managerRadio = document.querySelector('input[name="routingManager"]:checked');
-      const manager = managerRadio?.value || 'server';
+      // 라우팅 담당 가져오기 (드롭다운 방식)
+      const managerSelect = document.getElementById('routingManager');
+      const manager = managerSelect?.value || 'server';
+
+      // 라우팅 담당 모델 (AI 선택 시)
+      const managerModel = document.getElementById('routingManagerModel')?.value || null;
 
       // 생각 토글 상태 가져오기
       const lightThinking = document.getElementById('thinkingLight')?.checked || false;
@@ -3711,11 +3456,13 @@ export class AISettings {
       const lightService = this.findServiceByModelId(light);
       const mediumService = this.findServiceByModelId(medium);
       const heavyService = this.findServiceByModelId(heavy);
+      const managerService = managerModel ? this.findServiceByModelId(managerModel) : null;
 
       // 서버에 저장할 데이터 (modelId + serviceId + thinking 형식)
       const routingData = {
         enabled: true,
         manager,  // 라우팅 담당: server, ai, fixed
+        managerModel: manager === 'ai' ? { modelId: managerModel, serviceId: managerService?.serviceId || null } : null,
         light: { modelId: light, serviceId: lightService?.serviceId || null, thinking: lightThinking },
         medium: { modelId: medium, serviceId: mediumService?.serviceId || null, thinking: mediumThinking },
         heavy: { modelId: heavy, serviceId: heavyService?.serviceId || null, thinking: heavyThinking }
@@ -3727,6 +3474,7 @@ export class AISettings {
       // 로컬 상태 업데이트
       this.routingConfig = {
         manager,
+        managerModel,
         light, medium, heavy,
         lightThinking, mediumThinking, heavyThinking,
         lightService: lightService?.serviceId,
@@ -3737,7 +3485,7 @@ export class AISettings {
       // localStorage에도 백업 저장
       localStorage.setItem('smartRoutingConfig', JSON.stringify(this.routingConfig));
 
-      this.showSaveStatus('스마트 라우팅 설정이 저장되었습니다.', 'success');
+      this.showSaveStatus('라우팅 설정이 저장되었습니다.', 'success');
     } catch (error) {
       console.error('Failed to save routing settings:', error);
       this.showSaveStatus('라우팅 설정 저장에 실패했습니다.', 'error');
@@ -3750,6 +3498,31 @@ export class AISettings {
   updateTimelineProgress(section) {
     const item = document.querySelector(`.timeline-item[data-section="${section}"]`);
     if (!item) return;
+
+    // 두뇌 섹션은 별도 처리 (드롭다운 기반)
+    if (section === 'brain') {
+      const selects = item.querySelectorAll('.brain-routing-select');
+      let filledCount = 0;
+      selects.forEach(select => {
+        if (select.value && !select.disabled) filledCount++;
+      });
+
+      // 최소 3개(경량/중간/고성능) 선택되면 100%
+      const progress = filledCount >= 3 ? 1 : filledCount / 3;
+      const circumference = 62.83;
+      const offset = circumference * (1 - progress);
+
+      const progressRing = item.querySelector('.progress-ring');
+      const checkIcon = item.querySelector('.check-icon');
+
+      if (progressRing) {
+        progressRing.style.strokeDashoffset = offset;
+      }
+      if (checkIcon) {
+        checkIcon.style.opacity = progress >= 1 ? '1' : '0';
+      }
+      return;
+    }
 
     const fields = item.querySelectorAll('.timeline-field');
     const sliders = item.querySelectorAll('.timeline-range');
@@ -3795,7 +3568,7 @@ export class AISettings {
     // summary 업데이트 또는 생성 - 하나라도 값이 있으면 모든 필드 표시
     if (hasAnyValue) {
       const summaryHtml = allFieldValues.map(v =>
-        `<div><span class="summary-label">${v.label}</span>${v.value}</div>`
+        `<div><span class="summary-label">${v.label}</span><span class="summary-text">${v.value}</span></div>`
       ).join('');
       if (summaryEl) {
         summaryEl.innerHTML = summaryHtml;
@@ -4121,115 +3894,6 @@ export class AISettings {
     } catch (error) {
       console.error('Failed to save tool search settings:', error);
       this.showSaveStatus('Tool Search 설정 저장에 실패했습니다.', 'error');
-    }
-  }
-
-  /**
-   * 프롬프트 설정 저장
-   */
-  async savePromptSettings() {
-    try {
-      const name = document.getElementById('agentName')?.value || 'Soul';
-      const role = document.getElementById('agentRole')?.value || 'AI Assistant';
-      const description = document.getElementById('agentDescription')?.value || '';
-      const customPrompt = document.getElementById('customPrompt')?.value || '';
-
-      // AI 동작 설정
-      const defaultModel = document.getElementById('defaultModel')?.value || '';
-      const temperature = parseFloat(document.getElementById('soulTemperature')?.value) || 0.7;
-      const maxTokens = parseInt(document.getElementById('soulMaxTokens')?.value) || 4096;
-
-      // 대화 스타일 (personality)
-      const personality = {
-        traits: {
-          helpful: 1.0,
-          professional: 0.9,
-          friendly: 0.8,
-          precise: 0.9,
-          proactive: parseFloat(document.getElementById('personalityProactive')?.value) || 0.7,
-          empathetic: parseFloat(document.getElementById('personalityEmpathy')?.value) || 0.6
-        },
-        communication: {
-          formality: parseFloat(document.getElementById('personalityFormality')?.value) || 0.5,
-          verbosity: parseFloat(document.getElementById('personalityVerbosity')?.value) || 0.5,
-          technicality: parseFloat(document.getElementById('personalityTechnicality')?.value) || 0.5,
-          directness: parseFloat(document.getElementById('personalityDirectness')?.value) || 0.7,
-          emoji: parseFloat(document.getElementById('personalityEmoji')?.value) || 0.3,
-          humor: parseFloat(document.getElementById('personalityHumor')?.value) || 0.3
-        }
-      };
-
-      const profileId = this.agentProfile?.id || 'default';
-
-      await this.apiClient.put(`/profile/agent/${profileId}`, {
-        name,
-        role,
-        description,
-        customPrompt,
-        defaultModel,
-        temperature,
-        maxTokens,
-        personality
-      });
-
-      this.showSaveStatus('설정이 저장되었습니다.', 'success');
-
-      // 프로필 새로고침
-      await this.loadAgentProfile();
-    } catch (error) {
-      console.error('Failed to save prompt settings:', error);
-      this.showSaveStatus('설정 저장에 실패했습니다.', 'error');
-    }
-  }
-
-  /**
-   * 프롬프트 설정 초기화
-   */
-  async resetPromptSettings() {
-    if (!confirm('프롬프트 설정을 초기값으로 되돌리시겠습니까?')) {
-      return;
-    }
-
-    try {
-      const profileId = this.agentProfile?.id || 'default';
-
-      await this.apiClient.put(`/profile/agent/${profileId}`, {
-        name: 'Soul',
-        role: 'AI Assistant',
-        description: '당신의 AI 동반자',
-        customPrompt: '',
-        defaultModel: '',
-        temperature: 0.7,
-        maxTokens: 4096,
-        personality: {
-          traits: {
-            helpful: 1.0,
-            professional: 0.9,
-            friendly: 0.8,
-            precise: 0.9,
-            proactive: 0.7,
-            empathetic: 0.6
-          },
-          communication: {
-            formality: 0.5,
-            verbosity: 0.5,
-            technicality: 0.5,
-            directness: 0.7,
-            emoji: 0.3,
-            humor: 0.3
-          }
-        }
-      });
-
-      this.showSaveStatus('설정이 초기화되었습니다.', 'success');
-
-      // UI 새로고침
-      await this.loadAgentProfile();
-      const container = document.querySelector('.ai-settings-panel').parentElement;
-      await this.render(container, this.apiClient);
-    } catch (error) {
-      console.error('Failed to reset prompt settings:', error);
-      this.showSaveStatus('프롬프트 초기화에 실패했습니다.', 'error');
     }
   }
 

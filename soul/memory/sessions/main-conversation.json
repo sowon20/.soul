@@ -1,0 +1,42 @@
+{
+  "sessionId": "main-conversation",
+  "summary": {
+    "messageCount": 50,
+    "keywords": [
+      "도구를",
+      "나에게",
+      "컨텍스트",
+      "시스템",
+      "llm이",
+      "api",
+      "그리고",
+      "소원이가",
+      "thinking",
+      "llm"
+    ],
+    "topics": [
+      "api"
+    ],
+    "startTime": "2026-01-29T12:53:22.313Z",
+    "endTime": "2026-01-29T13:57:17.428Z"
+  },
+  "savedAt": "2026-01-29T13:57:17.468Z",
+  "messageCount": 50,
+  "keywords": [
+    "도구를",
+    "나에게",
+    "컨텍스트",
+    "시스템",
+    "llm이",
+    "api",
+    "그리고",
+    "소원이가",
+    "thinking",
+    "llm"
+  ],
+  "decisions": [],
+  "todos": [],
+  "topics": [
+    "api"
+  ]
+}

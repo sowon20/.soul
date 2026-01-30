@@ -85,7 +85,8 @@ class SmartRouter {
       costPriority: config.costPriority || 0.3, // 0 = performance, 1 = cost
       enableMonitoring: config.enableMonitoring !== false,
       forceModel: config.forceModel || null, // 강제 모델 지정
-      manager: config.manager || 'server' // 라우팅 담당: server, ai, fixed
+      manager: config.manager || 'server', // 라우팅 담당: server, ai, fixed
+      managerModel: config.managerModel || null // AI 라우팅 시 사용할 모델
     };
 
     this.stats = {
@@ -131,6 +132,14 @@ class SmartRouter {
         reason: 'Fixed routing (always medium)',
         confidence: 1.0
       };
+    }
+
+    // 2.5. AI 라우팅 모드 (현재는 서버 라우팅과 동일하게 동작)
+    // TODO: 실제 AI 호출을 통한 라우팅 결정 구현 필요
+    if (this.config.manager === 'ai' && this.config.managerModel) {
+      console.log('[SmartRouter] AI routing mode with model:', this.config.managerModel);
+      // 현재는 서버 휴리스틱과 동일하게 처리
+      // 나중에 managerModel을 사용해서 AI에게 라우팅 결정을 요청하는 로직 추가 예정
     }
 
     // 3. 자동 라우팅 비활성화 시
@@ -643,17 +652,19 @@ async function getSmartRouter(config = {}) {
   if (!globalRouter) {
     // 설정에서 라우팅 정보 로드
     let manager = 'server';
+    let managerModel = null;
     try {
       const configManager = require('./config');
       const routingConfig = await configManager.getRoutingConfig();
       console.log('[SmartRouter] Loading routing config from DB:', JSON.stringify(routingConfig, null, 2));
       manager = updateModelsFromConfig(routingConfig);
+      managerModel = routingConfig.managerModel || null;
     } catch (err) {
       console.warn('[SmartRouter] Could not load routing config:', err.message);
       console.warn('[SmartRouter] Using default hardcoded models - this should be fixed!');
     }
-    globalRouter = new SmartRouter({ ...config, manager });
-    console.log('[SmartRouter] Router initialized with manager:', manager);
+    globalRouter = new SmartRouter({ ...config, manager, managerModel });
+    console.log('[SmartRouter] Router initialized with manager:', manager, 'managerModel:', managerModel);
   }
   return globalRouter;
 }
@@ -663,11 +674,13 @@ async function getSmartRouter(config = {}) {
  */
 function resetSmartRouter(routingConfig = null) {
   let manager = 'server';
+  let managerModel = null;
   if (routingConfig) {
     manager = updateModelsFromConfig(routingConfig);
+    managerModel = routingConfig.managerModel || null;
   }
-  globalRouter = new SmartRouter({ manager });
-  console.log('[SmartRouter] Router reset with manager:', manager);
+  globalRouter = new SmartRouter({ manager, managerModel });
+  console.log('[SmartRouter] Router reset with manager:', manager, 'managerModel:', managerModel);
   return globalRouter;
 }
 
