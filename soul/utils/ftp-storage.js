@@ -1,6 +1,10 @@
 /**
  * FTP 기반 스토리지 어댑터
  * conversations.jsonl 읽기/쓰기를 FTP로 처리
+ *
+ * 안전장치:
+ * - 읽기 실패 시 덮어쓰기 금지 (파일 없음 제외)
+ * - 연결 실패 시 로컬 캐시에 임시 저장 후 재연결 시 추가
  */
 const ftp = require('basic-ftp');
 const { Readable } = require('stream');
@@ -132,14 +136,20 @@ class FTPStorage {
     return this._withLock(async () => {
       await this.connect();
       const remotePath = `${this.config.basePath}/${filename}`;
-      
+
       try {
         // 락 안에서는 내부 메서드 직접 호출
         const existing = await this._readFileInternal(filename) || '';
         const newContent = existing + content;
         await this._writeFileInternal(filename, newContent);
       } catch (err) {
-        await this._writeFileInternal(filename, content);
+        // 파일이 없는 경우(550 에러)만 새로 생성, 그 외 에러는 throw
+        if (err.code === 550 || err.message?.includes('No such file')) {
+          await this._writeFileInternal(filename, content);
+        } else {
+          console.error('[FTPStorage] appendToFile failed, NOT overwriting:', err.message);
+          throw err;
+        }
       }
     });
   }

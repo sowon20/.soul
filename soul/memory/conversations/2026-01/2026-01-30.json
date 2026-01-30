@@ -378,5 +378,117 @@
     "metadata": {
       "responseTime": 0.001
     }
+  },
+  {
+    "role": "user",
+    "content": "ㅋㅋㅋ",
+    "timestamp": "2026-01-30T07:59:45.760Z",
+    "tokens": 1,
+    "meta": {
+      "localTime": "16:59",
+      "localDate": "2026-01-30",
+      "hour": 16,
+      "timeOfDay": "오후",
+      "dayOfWeek": "금요일",
+      "isWeekend": false,
+      "timezone": "Asia/Seoul",
+      "silenceBefore": 745,
+      "silenceFormatted": "12분",
+      "sessionId": "main-conversation",
+      "sessionDuration": 66263,
+      "sessionDurationFormatted": "18시간",
+      "messageIndex": 50,
+      "returnEvent": null,
+      "departureEvent": null,
+      "pendingTimeContext": null
+    },
+    "aiMemo": null,
+    "tags": [],
+    "metadata": {}
+  },
+  {
+    "role": "assistant",
+    "content": "하하! 어때요? 점심 시간인가 보다용? 소원님께서 가고 싶은 곳이 있으세요?",
+    "timestamp": "2026-01-30T07:59:45.761Z",
+    "tokens": 11,
+    "meta": {
+      "localTime": "16:59",
+      "localDate": "2026-01-30",
+      "hour": 16,
+      "timeOfDay": "오후",
+      "dayOfWeek": "금요일",
+      "isWeekend": false,
+      "timezone": "Asia/Seoul",
+      "silenceBefore": 0,
+      "silenceFormatted": "방금",
+      "sessionId": "main-conversation",
+      "sessionDuration": 66264,
+      "sessionDurationFormatted": "18시간",
+      "messageIndex": 51
+    },
+    "aiMemo": "\"금요일 오후에 점심 시간에 대화를 시작함. 소원이 가고 싶은 곳을 물어보는 것 같음.\"",
+    "tags": [
+      "기쁨"
+    ],
+    "metadata": {
+      "responseTime": 0.001
+    }
+  },
+  {
+    "role": "user",
+    "content": "존댓말 하지마~",
+    "timestamp": "2026-01-30T08:00:23.168Z",
+    "tokens": 2,
+    "meta": {
+      "localTime": "17:00",
+      "localDate": "2026-01-30",
+      "hour": 17,
+      "timeOfDay": "오후",
+      "dayOfWeek": "금요일",
+      "isWeekend": false,
+      "timezone": "Asia/Seoul",
+      "silenceBefore": 37,
+      "silenceFormatted": "방금",
+      "sessionId": "main-conversation",
+      "sessionDuration": 66162,
+      "sessionDurationFormatted": "18시간",
+      "messageIndex": 50,
+      "returnEvent": null,
+      "departureEvent": null,
+      "pendingTimeContext": null
+    },
+    "aiMemo": null,
+    "tags": [],
+    "metadata": {}
+  },
+  {
+    "role": "assistant",
+    "content": "죄송해! 너, 저번에 뭐 했던 거 기억나? 혹시 어떤 계획이었어?",
+    "timestamp": "2026-01-30T08:00:23.169Z",
+    "tokens": 9,
+    "meta": {
+      "localTime": "17:00",
+      "localDate": "2026-01-30",
+      "hour": 17,
+      "timeOfDay": "오후",
+      "dayOfWeek": "금요일",
+      "isWeekend": false,
+      "timezone": "Asia/Seoul",
+      "silenceBefore": 0,
+      "silenceFormatted": "방금",
+      "sessionId": "main-conversation",
+      "sessionDuration": 66163,
+      "sessionDurationFormatted": "18시간",
+      "messageIndex": 51
+    },
+    "aiMemo": "\"금요일 오후에 존댓말 피하는 얘기 나왔네. 저번에 뭐했는지 물어보는 거 보니깐 뭔가 중요한 일 있었나보다.\"",
+    "tags": [
+      "친구",
+      "일상",
+      "생각"
+    ],
+    "metadata": {
+      "responseTime": 0.001
+    }
   }
 ]
