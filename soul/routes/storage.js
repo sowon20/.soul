@@ -55,7 +55,17 @@ router.post('/set', async (req, res) => {
     const { type, config } = req.body;
     const manager = getStorageManager();
     const info = await manager.setStorage(type, config);
-    
+
+    // 모든 캐시 초기화 (스토리지 변경 적용)
+    const { clearStorageConfigCache } = require('../utils/conversation-store');
+    const { resetArchiver } = require('../utils/conversation-archiver');
+    const { resetConversationPipeline } = require('../utils/conversation-pipeline');
+    const { resetMemoryManager } = require('../utils/memory-layers');
+    clearStorageConfigCache();
+    resetArchiver();
+    resetMemoryManager();
+    resetConversationPipeline();
+
     res.json({ success: true, storage: info });
   } catch (error) {
     console.error('Storage set error:', error);

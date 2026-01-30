@@ -438,12 +438,14 @@ export class ChatManager {
 
           const tierLabel = tierLabels[tier] || tierLabels.medium;
           tierSpan.textContent = tierLabel;
+          tierSpan.classList.add(tier); // tier 클래스 추가 (색상용)
           modelSpan.textContent = message.routing.modelId;
 
           // title에 상세 정보
           routingInfo.title = `${tierLabel} | ${message.routing.modelId}`;
           // data 속성으로 활성화 (CSS에서 호버 시 표시)
           routingInfo.dataset.active = 'true';
+          routingInfo.dataset.tier = tier;
         }
       }
 
@@ -964,6 +966,11 @@ export class ChatManager {
         timestamp: new Date(response.timestamp || Date.now()),
         routing: response.routing || null,
       });
+
+      // 대시보드 실시간 업데이트 (마지막 요청 정보)
+      if (response.tokenUsage) {
+        dashboardManager.updateLastRequest(response.tokenUsage);
+      }
 
       // 대시보드 통계 갱신
       dashboardManager.refresh();

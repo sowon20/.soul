@@ -24,6 +24,21 @@ class FTPStorage {
     this.connected = false;
     this._lock = false;
     this._queue = [];
+    this._idleTimeout = null;
+    this._idleMs = 30000; // 30초 미사용 시 연결 해제
+  }
+
+  // 아이들 타이머 리셋 (작업 완료 후 일정 시간 지나면 연결 해제)
+  _resetIdleTimer() {
+    if (this._idleTimeout) {
+      clearTimeout(this._idleTimeout);
+    }
+    this._idleTimeout = setTimeout(() => {
+      if (this.connected && !this._lock && this._queue.length === 0) {
+        console.log('[FTPStorage] Idle timeout, disconnecting...');
+        this.disconnect();
+      }
+    }, this._idleMs);
   }
 
   // 동시 접속 방지를 위한 락
@@ -38,6 +53,7 @@ class FTPStorage {
           reject(err);
         } finally {
           this._lock = false;
+          this._resetIdleTimer(); // 작업 완료 후 아이들 타이머 시작
           // 다음 대기 작업 실행
           if (this._queue.length > 0) {
             const next = this._queue.shift();
@@ -188,44 +204,48 @@ class FTPStorage {
   }
 
   async exists(filename) {
-    await this.connect();
-    const remotePath = `${this.config.basePath}/${filename}`;
-    
-    try {
-      const list = await this.client.list(this.config.basePath);
-      return list.some(f => f.name === filename);
-    } catch {
-      return false;
-    }
+    return this._withLock(async () => {
+      await this.connect();
+      try {
+        const list = await this.client.list(this.config.basePath);
+        return list.some(f => f.name === filename);
+      } catch {
+        return false;
+      }
+    });
   }
 
   async listFiles(subdir = '') {
-    await this.connect();
-    const remotePath = subdir
-      ? `${this.config.basePath}/${subdir}`
-      : this.config.basePath;
+    return this._withLock(async () => {
+      await this.connect();
+      const remotePath = subdir
+        ? `${this.config.basePath}/${subdir}`
+        : this.config.basePath;
 
-    try {
-      const list = await this.client.list(remotePath);
-      return list.map(f => ({
-        name: f.name,
-        type: f.type === 2 ? 'directory' : 'file',
-        size: f.size,
-        modifiedAt: f.modifiedAt
-      }));
-    } catch {
-      return [];
-    }
+      try {
+        const list = await this.client.list(remotePath);
+        return list.map(f => ({
+          name: f.name,
+          type: f.type === 2 ? 'directory' : 'file',
+          size: f.size,
+          modifiedAt: f.modifiedAt
+        }));
+      } catch {
+        return [];
+      }
+    });
   }
 
   /**
    * FTP 연결 테스트
    */
   async testConnection() {
-    await this.connect();
-    // 연결 성공하면 basePath 존재 확인
-    const list = await this.client.list(this.config.basePath);
-    return true;
+    return this._withLock(async () => {
+      await this.connect();
+      // 연결 성공하면 basePath 존재 확인
+      const list = await this.client.list(this.config.basePath);
+      return true;
+    });
   }
 }
 

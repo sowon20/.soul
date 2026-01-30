@@ -321,9 +321,13 @@ router.post('/memory/path', async (req, res) => {
 
     const memoryConfig = await configManager.setMemoryPath(storagePath);
 
-    // MemoryManager 인스턴스 리셋 (경로 변경 적용)
+    // 모든 인스턴스 리셋 (경로 변경 적용)
     const { resetMemoryManager } = require('../utils/memory-layers');
     const { resetConversationPipeline } = require('../utils/conversation-pipeline');
+    const { clearStorageConfigCache } = require('../utils/conversation-store');
+    const { resetArchiver } = require('../utils/conversation-archiver');
+    clearStorageConfigCache();
+    resetArchiver();
     resetMemoryManager();
     resetConversationPipeline();
 

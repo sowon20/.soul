@@ -69,7 +69,16 @@ class ShortTermMemory {
       }));
       this.totalTokens = this.messages.reduce((sum, m) => sum + m.tokens, 0);
       this.initialized = true;
-      console.log(`[ShortTermMemory] Loaded ${this.messages.length} messages (${this.totalTokens} tokens) from JSONL`);
+
+      // 로드된 메시지 timestamp 확인 로그
+      if (this.messages.length > 0) {
+        const first = this.messages[0];
+        const last = this.messages[this.messages.length - 1];
+        console.log(`[ShortTermMemory] Loaded ${this.messages.length} messages (${this.totalTokens} tokens)`);
+        console.log(`[ShortTermMemory] Time range: ${first.timestamp} ~ ${last.timestamp}`);
+      } else {
+        console.log(`[ShortTermMemory] No messages loaded`);
+      }
     } catch (error) {
       console.error('[ShortTermMemory] Failed to load from JSONL:', error.message);
       this.initialized = true;
@@ -109,27 +118,12 @@ class ShortTermMemory {
   }
 
   /**
-   * JSONL 파일에 메시지 저장
+   * DB 저장 (비활성화 - conversation-archiver.js로 통일)
+   * archiver가 JSON 아카이브에 저장하므로 여기선 스킵
    */
   async _saveToDb(message) {
-    try {
-      console.log('[ShortTermMemory] Saving message to JSONL:', message.role);
-      const ConversationStore = require('./conversation-store');
-      const store = new ConversationStore();
-      await store.saveMessage({
-        role: message.role,
-        content: message.content,
-        timestamp: message.timestamp,
-        tokens: message.tokens,
-        tags: message.tags || [],
-        thought: message.thought || null,
-        emotion: message.emotion || null
-      });
-      console.log('[ShortTermMemory] Message saved successfully');
-    } catch (error) {
-      console.error('[ShortTermMemory] _saveToDb error:', error);
-      throw error;
-    }
+    // conversation-archiver.js가 JSON 아카이브에 저장하므로 중복 저장 제거
+    // console.log('[ShortTermMemory] Skipping _saveToDb (using archiver instead)');
   }
   
   /**

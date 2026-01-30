@@ -12,6 +12,8 @@ class DashboardManager {
     this.currentCurrency = 'USD';
     this.exchangeRate = null;
     this.costInUSD = 0;
+    // 마지막 요청 비용 정보 저장 (통화 변경 시 재렌더링용)
+    this.lastRequestCost = null;
   }
 
   async init() {
@@ -21,11 +23,13 @@ class DashboardManager {
       this.setupPeriodTabs();
       this.setupDateRange();
       this.setupStatsActions();
+      this.setupBreakdownPanels();
       await this.loadCurrencyPreference();
       this.setupCurrencyDropdown();
       await this.fetchExchangeRate();
       await this.loadServerStatus();
       await this.loadRoutingStats();
+      await this.loadLastRequestFromStorage();
       this.initialized = true;
       console.log('Dashboard initialized');
 
@@ -34,6 +38,64 @@ class DashboardManager {
     } catch (error) {
       console.error('Dashboard initialization failed:', error);
     }
+  }
+
+  /**
+   * 마지막 요청 정보를 DB에서 불러오기
+   */
+  async loadLastRequestFromStorage() {
+    try {
+      const response = await fetch('/api/config/preferences');
+      const prefs = await response.json();
+      if (prefs.lastRequestTokenUsage) {
+        this.updateLastRequest(prefs.lastRequestTokenUsage, true); // skipSave = true
+      }
+    } catch (e) {
+      console.error('Failed to load last request from DB:', e);
+    }
+  }
+
+  /**
+   * 마지막 요청 정보를 DB에 저장
+   */
+  async saveLastRequestToStorage(tokenUsage) {
+    try {
+      await fetch('/api/config/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lastRequestTokenUsage: tokenUsage })
+      });
+    } catch (e) {
+      console.error('Failed to save last request to DB:', e);
+    }
+  }
+
+  /**
+   * 토큰 분류 패널 접기/펼치기 설정
+   */
+  setupBreakdownPanels() {
+    const headers = document.querySelectorAll('.breakdown-panel-header');
+    headers.forEach(header => {
+      header.addEventListener('click', () => {
+        const panel = header.closest('.breakdown-panel');
+        const targetId = header.dataset.target;
+        const content = document.getElementById(targetId);
+        const toggle = header.querySelector('.breakdown-toggle');
+
+        if (!content) return;
+
+        const isCollapsed = panel.classList.contains('collapsed');
+        if (isCollapsed) {
+          panel.classList.remove('collapsed');
+          content.style.display = 'block';
+          toggle.textContent = '▼';
+        } else {
+          panel.classList.add('collapsed');
+          content.style.display = 'none';
+          toggle.textContent = '▶';
+        }
+      });
+    });
   }
 
   /**
@@ -88,6 +150,7 @@ class DashboardManager {
 
         // 비용 업데이트
         this.updateCostDisplay();
+        this.updateLastRequestCost();
 
         // DB에 저장
         await this.saveCurrencyPreference(currency);
@@ -128,6 +191,8 @@ class DashboardManager {
             opt.classList.toggle('active', opt.dataset.currency === this.currentCurrency);
           });
         }
+        // 마지막 요청 비용도 통화에 맞게 초기화
+        this.updateLastRequestCost();
       }
     } catch (error) {
       console.error('통화 설정 불러오기 실패:', error);
@@ -147,6 +212,26 @@ class DashboardManager {
       console.error('환율 가져오기 실패:', error);
       this.exchangeRate = 1400; // 기본값
     }
+  }
+
+  /**
+   * 마지막 요청 비용 표시 업데이트 (통화 변경 시)
+   */
+  updateLastRequestCost() {
+    const costEl = document.getElementById('lastReqCost');
+    if (!costEl) return;
+
+    // 아직 요청이 없으면 기본값 표시
+    if (!this.lastRequestCost) {
+      costEl.textContent = this.currentCurrency === 'KRW' ? '₩0' : '$0.0000';
+      return;
+    }
+
+    const usd = this.lastRequestCost.usd || 0;
+    const krw = this.lastRequestCost.krw || 0;
+    costEl.textContent = this.currentCurrency === 'KRW'
+      ? `₩${krw.toLocaleString()}`
+      : `$${usd.toFixed(4)}`;
   }
 
   /**
@@ -307,6 +392,13 @@ class DashboardManager {
     const totalRequests = stats.totalRequests || 1;
     const tokensPerRequest = Math.round(totalTokens / totalRequests);
 
+    // 토큰 분류 정보
+    const breakdown = stats.tokenBreakdown || {};
+    const messageTokens = breakdown.messages || 0;
+    const systemTokens = breakdown.system || 0;
+    const toolTokens = breakdown.tools || 0;
+    const avgToolCount = breakdown.avgToolCount || 0;
+
     const totalEl = document.getElementById('stat-total-tokens');
     if (totalEl) {
       totalEl.textContent = this.formatNumber(totalTokens);
@@ -332,6 +424,9 @@ class DashboardManager {
       outputEl.textContent = this.formatNumber(outputTokens);
     }
 
+    // 토큰 분류별 표시
+    this.renderTokenBreakdown(messageTokens, systemTokens, toolTokens, avgToolCount, inputTokens);
+
     const perRequestEl = document.getElementById('stat-tokens-per-request');
     if (perRequestEl) {
       if (tokensPerRequest >= 10000) {
@@ -344,6 +439,153 @@ class DashboardManager {
         perRequestEl.classList.remove('high-usage');
         perRequestEl.innerHTML = `평균 <span>${this.formatNumber(tokensPerRequest)}</span> 토큰/요청`;
       }
+    }
+  }
+
+  /**
+   * 토큰 분류별 표시 (메시지/시스템/도구)
+   */
+  renderTokenBreakdown(messageTokens, systemTokens, toolTokens, avgToolCount, totalInput) {
+    const container = document.getElementById('token-breakdown');
+    if (!container) return;
+
+    // 비율 계산
+    const total = messageTokens + systemTokens + toolTokens;
+    if (total === 0) {
+      container.innerHTML = '<div class="no-data">분류 데이터 없음</div>';
+      return;
+    }
+
+    const msgPercent = ((messageTokens / total) * 100).toFixed(1);
+    const sysPercent = ((systemTokens / total) * 100).toFixed(1);
+    const toolPercent = ((toolTokens / total) * 100).toFixed(1);
+
+    container.innerHTML = `
+      <div class="breakdown-item">
+        <div class="breakdown-header">
+          <span class="breakdown-label">💬 메시지</span>
+          <span class="breakdown-value">${this.formatNumber(messageTokens)} (${msgPercent}%)</span>
+        </div>
+        <div class="breakdown-bar">
+          <div class="breakdown-fill messages" style="width: ${msgPercent}%"></div>
+        </div>
+      </div>
+      <div class="breakdown-item">
+        <div class="breakdown-header">
+          <span class="breakdown-label">⚙️ 시스템</span>
+          <span class="breakdown-value">${this.formatNumber(systemTokens)} (${sysPercent}%)</span>
+        </div>
+        <div class="breakdown-bar">
+          <div class="breakdown-fill system" style="width: ${sysPercent}%"></div>
+        </div>
+      </div>
+      <div class="breakdown-item">
+        <div class="breakdown-header">
+          <span class="breakdown-label">🔧 도구 (평균 ${avgToolCount}개)</span>
+          <span class="breakdown-value">${this.formatNumber(toolTokens)} (${toolPercent}%)</span>
+        </div>
+        <div class="breakdown-bar">
+          <div class="breakdown-fill tools" style="width: ${toolPercent}%"></div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * 마지막 요청 실시간 업데이트 (채팅 응답마다 호출)
+   * @param {Object} tokenUsage - chat.js에서 반환한 detailedTokenUsage
+   */
+  updateLastRequest(tokenUsage, skipSave = false) {
+    if (!tokenUsage) {
+      return;
+    }
+
+    // 로컬스토리지에 저장 (새로고침 시 복원용)
+    if (!skipSave) {
+      this.saveLastRequestToStorage(tokenUsage);
+    }
+
+    const { actual, breakdown, cost, meta } = tokenUsage;
+
+    // 모델 (전체 모델 ID, 길면 ... 처리)
+    const modelEl = document.getElementById('lastReqModel');
+    if (modelEl) {
+      modelEl.textContent = meta?.model || '-';
+      modelEl.title = meta?.model || '';
+    }
+
+    // Tier 배지
+    const tierEl = document.getElementById('lastReqTier');
+    if (tierEl) {
+      const tier = meta?.tier || '-';
+      const tierLabels = { light: '경량', medium: '중간', heavy: '고성능' };
+      tierEl.textContent = tierLabels[tier] || tier;
+      tierEl.className = 'last-req-tier-badge ' + tier;
+    }
+
+    // 입력/출력 토큰
+    const inputEl = document.getElementById('lastReqInput');
+    if (inputEl) {
+      inputEl.textContent = this.formatNumber(actual?.input || 0);
+    }
+
+    const outputEl = document.getElementById('lastReqOutput');
+    if (outputEl) {
+      outputEl.textContent = this.formatNumber(actual?.output || 0);
+    }
+
+    // 토큰 분류 바
+    const msgTokens = breakdown?.messages || 0;
+    const sysTokens = breakdown?.system || 0;
+    const toolTokens = breakdown?.tools || 0;
+    const toolCount = breakdown?.toolCount || 0;
+    const totalBreakdown = msgTokens + sysTokens + toolTokens;
+
+    if (totalBreakdown > 0) {
+      const msgPercent = (msgTokens / totalBreakdown) * 100;
+      const sysPercent = (sysTokens / totalBreakdown) * 100;
+      const toolPercent = (toolTokens / totalBreakdown) * 100;
+
+      const msgBar = document.getElementById('lastBreakdownMessages');
+      const sysBar = document.getElementById('lastBreakdownSystem');
+      const toolBar = document.getElementById('lastBreakdownTools');
+
+      if (msgBar) msgBar.style.width = `${msgPercent}%`;
+      if (sysBar) sysBar.style.width = `${sysPercent}%`;
+      if (toolBar) toolBar.style.width = `${toolPercent}%`;
+    }
+
+    // 레전드 값
+    const msgValEl = document.getElementById('lastBreakdownMessagesVal');
+    const sysValEl = document.getElementById('lastBreakdownSystemVal');
+    const toolValEl = document.getElementById('lastBreakdownToolsVal');
+    const toolCountEl = document.getElementById('lastBreakdownToolCount');
+
+    if (msgValEl) msgValEl.textContent = this.formatNumber(msgTokens);
+    if (sysValEl) sysValEl.textContent = this.formatNumber(sysTokens);
+    if (toolValEl) toolValEl.textContent = this.formatNumber(toolTokens);
+    if (toolCountEl) toolCountEl.textContent = toolCount;
+
+    // 비용 저장 (통화 변경 시 재렌더링용)
+    this.lastRequestCost = cost;
+    this.updateLastRequestCost();
+
+    // 응답시간
+    const latencyEl = document.getElementById('lastReqLatency');
+    if (latencyEl) {
+      const ms = meta?.latency || 0;
+      if (ms >= 1000) {
+        latencyEl.textContent = `${(ms / 1000).toFixed(1)}s`;
+      } else {
+        latencyEl.textContent = `${ms}ms`;
+      }
+    }
+
+    // 시간
+    const timeEl = document.getElementById('lastRequestTime');
+    if (timeEl && meta?.timestamp) {
+      const date = new Date(meta.timestamp);
+      timeEl.textContent = date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     }
   }
 

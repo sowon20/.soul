@@ -55,6 +55,14 @@ const usageStatsSchema = new mongoose.Schema({
     default: 0
   },
 
+  // 토큰 분류 (어디에 사용되었는지)
+  tokenBreakdown: {
+    messages: { type: Number, default: 0 },    // 대화 메시지
+    system: { type: Number, default: 0 },       // 시스템 프롬프트
+    tools: { type: Number, default: 0 },        // 도구 스키마
+    toolCount: { type: Number, default: 0 }     // 사용된 도구 개수
+  },
+
   // 비용 (USD)
   cost: {
     type: Number,
@@ -108,6 +116,12 @@ usageStatsSchema.statics.addUsage = async function(data) {
     inputTokens: data.inputTokens || 0,
     outputTokens: data.outputTokens || 0,
     totalTokens: data.totalTokens || 0,
+    tokenBreakdown: data.tokenBreakdown || {
+      messages: 0,
+      system: 0,
+      tools: 0,
+      toolCount: 0
+    },
     cost: data.cost || 0,
     latency: data.latency || 0,
     sessionId: data.sessionId || 'main-conversation',
@@ -172,6 +186,11 @@ usageStatsSchema.statics.getStatsByPeriod = async function(period = 'today', opt
         totalTokens: { $sum: '$totalTokens' },
         inputTokens: { $sum: '$inputTokens' },
         outputTokens: { $sum: '$outputTokens' },
+        // 토큰 분류별 합계
+        messageTokens: { $sum: '$tokenBreakdown.messages' },
+        systemTokens: { $sum: '$tokenBreakdown.system' },
+        toolTokens: { $sum: '$tokenBreakdown.tools' },
+        avgToolCount: { $avg: '$tokenBreakdown.toolCount' },
         totalCost: { $sum: '$cost' },
         avgLatency: { $avg: '$latency' },
         lightCount: {
@@ -221,6 +240,10 @@ usageStatsSchema.statics.getStatsByPeriod = async function(period = 'today', opt
     totalTokens: 0,
     inputTokens: 0,
     outputTokens: 0,
+    messageTokens: 0,
+    systemTokens: 0,
+    toolTokens: 0,
+    avgToolCount: 0,
     totalCost: 0,
     avgLatency: 0,
     lightCount: 0,
@@ -236,6 +259,13 @@ usageStatsSchema.statics.getStatsByPeriod = async function(period = 'today', opt
     totalTokens: stats.totalTokens,
     inputTokens: stats.inputTokens,
     outputTokens: stats.outputTokens,
+    // 토큰 분류
+    tokenBreakdown: {
+      messages: stats.messageTokens || 0,
+      system: stats.systemTokens || 0,
+      tools: stats.toolTokens || 0,
+      avgToolCount: Math.round(stats.avgToolCount || 0)
+    },
     totalCost: stats.totalCost,
     averageLatency: stats.avgLatency || 0,
     distribution: {

@@ -192,11 +192,15 @@ ${rulesText}</self_notes>\n\n`;
       systemPrompt
     });
 
+    // 3.5 도구 수 미리 확인 (토큰 예산 계산용)
+    const preloadedTools = await getCachedTools();
+    const estimatedToolCount = Math.min(preloadedTools.length, 12); // 최대 12개까지 선택됨
+
     // 4. 대화 메시지 구성
     const conversationData = await pipeline.buildConversationMessages(
       message,
       sessionId,
-      options
+      { ...options, toolCount: estimatedToolCount }
     );
 
     // 5. AI 응답 생성 (실제 AI 호출)
@@ -205,6 +209,8 @@ ${rulesText}</self_notes>\n\n`;
 
     let aiResponse;
     let actualUsage = {}; // 실제 API가 반환한 토큰 사용량
+    // 토큰 분류 정보 (대시보드용)
+    let tokenBreakdown = { messages: 0, system: 0, tools: 0, toolCount: 0 };
     try {
       // 활성화된 AI 서비스 조회 (UI에서 설정한 서비스)
       const activeService = await AIServiceModel.findOne({ isActive: true, apiKey: { $ne: null } }).select('+apiKey');
@@ -245,8 +251,8 @@ ${rulesText}</self_notes>\n\n`;
         console.log(`[Chat] System prompt preview: ${combinedSystemPrompt.substring(0, 200)}...`);
       }
 
-      // MCP 도구 로드 (캐시 사용으로 토큰 절약)
-      let allTools = await getCachedTools();
+      // MCP 도구 사용 (이미 캐시에서 로드됨)
+      let allTools = preloadedTools;
       console.log('[Chat] Total tools available:', allTools.length);
 
       // 로컬 임베딩으로 도구 선택 (토큰 절약)
@@ -357,7 +363,22 @@ ${rulesText}</self_notes>\n\n`;
 
       // AI 호출 (도구 포함) - 프로필 설정 적용
       const totalChars = chatMessages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
-      console.log(`[Chat] Sending to AI: ${chatMessages.length} messages, ~${totalChars} chars, ~${Math.ceil(totalChars/4)} tokens (estimate)`);
+      // 도구 토큰 추정: 도구당 약 500-800 토큰 (JSON 스키마 + 설명)
+      const toolsTokenEstimate = allTools.length * 700;
+      const systemPromptTokens = Math.ceil(combinedSystemPrompt.length / 4);
+      const messageTokens = Math.ceil(totalChars / 4);
+      const totalTokenEstimate = messageTokens + systemPromptTokens + toolsTokenEstimate;
+
+      // 토큰 분류 정보 저장 (대시보드용)
+      tokenBreakdown = {
+        messages: messageTokens,
+        system: systemPromptTokens,
+        tools: toolsTokenEstimate,
+        toolCount: allTools.length
+      };
+
+      console.log(`[Chat] Sending to AI: ${chatMessages.length} messages, ~${totalChars} chars`)
+      console.log(`[Chat] Token estimate: messages=${messageTokens}, system=${systemPromptTokens}, tools(${allTools.length})=${toolsTokenEstimate}, total=${totalTokenEstimate}`);
       console.log(`[Chat] System prompt: ${combinedSystemPrompt.length} chars`);
       
       // Tool Search 설정 로드
@@ -508,13 +529,21 @@ ${rulesText}</self_notes>\n\n`;
       englishExpected: options.englishExpected || false
     });
 
-    // 9. 응답 저장
-    await pipeline.handleResponse(message, finalResponse, sessionId);
-
-    // 10. 사용 통계 저장 (비동기, 응답 지연 없음)
-    // actualUsage: API가 반환한 실제 토큰 사용량 (input_tokens, output_tokens)
+    // 9. 사용 통계 준비
     const latency = Date.now() - startTime;
     const tier = determineTier(routingResult.modelId);
+
+    // 10. 응답 저장 (라우팅 정보 포함)
+    await pipeline.handleResponse(message, finalResponse, sessionId, {
+      routing: {
+        modelId: routingResult.modelId,
+        serviceId: routingResult.serviceId,
+        tier
+      }
+    });
+
+    // 11. 사용 통계 저장 (비동기, 응답 지연 없음)
+    // actualUsage: API가 반환한 실제 토큰 사용량 (input_tokens, output_tokens)
     const inputTokens = actualUsage.input_tokens || 0;
     const outputTokens = actualUsage.output_tokens || 0;
     const totalTokens = inputTokens + outputTokens;
@@ -545,6 +574,7 @@ ${rulesText}</self_notes>\n\n`;
       inputTokens,
       outputTokens,
       totalTokens,
+      tokenBreakdown, // 토큰 분류 정보
       cost,
       latency,
       sessionId,
@@ -558,6 +588,36 @@ ${rulesText}</self_notes>\n\n`;
         .catch(err => console.error('Weekly summary trigger error:', err));
     }).catch(err => console.error('Memory manager error:', err));
 
+    // 상세 토큰 사용량 (실시간 대시보드용)
+    const detailedTokenUsage = {
+      // 실제 API 사용량
+      actual: {
+        input: inputTokens,
+        output: outputTokens,
+        total: totalTokens
+      },
+      // 입력 토큰 분류 (어디에 사용됐는지)
+      breakdown: {
+        messages: tokenBreakdown.messages,
+        system: tokenBreakdown.system,
+        tools: tokenBreakdown.tools,
+        toolCount: tokenBreakdown.toolCount
+      },
+      // 비용 정보
+      cost: {
+        usd: cost,
+        krw: Math.round(cost * 1450) // 대략적인 환율
+      },
+      // 메타 정보
+      meta: {
+        model: routingResult.modelId,
+        service: routingResult.serviceId,
+        tier,
+        latency,
+        timestamp: new Date().toISOString()
+      }
+    };
+
     res.json({
       success: true,
       sessionId,
@@ -565,6 +625,7 @@ ${rulesText}</self_notes>\n\n`;
       reply: finalResponse, // 프론트엔드 호환성
       toolsUsed: executedTools, // 사용된 도구 목록
       usage: conversationData.usage,
+      tokenUsage: detailedTokenUsage, // 상세 토큰 사용량 (실시간용)
       compressed: conversationData.compressed,
       contextData: conversationData.contextData,
       routing: {
@@ -680,7 +741,9 @@ router.get('/history/:sessionId', async (req, res) => {
         id: m.id,
         role: m.role,
         content: m.text,
-        timestamp: m.timestamp
+        timestamp: m.timestamp,
+        // 라우팅 정보 (assistant 메시지용)
+        routing: m.routing || null
       })),
       total: messages.length
     });
