@@ -30,7 +30,7 @@ class ConfigManager {
         }
       },
       memory: {
-        storagePath: process.env.MEMORY_PATH || './memory',
+        storagePath: process.env.MEMORY_PATH || null, // 필수 설정 - UI에서 설정해야 함
         autoArchive: true,
         autoSave: true,
         autoInject: true,
@@ -38,7 +38,7 @@ class ConfigManager {
         compressionThreshold: 80
       },
       files: {
-        storagePath: process.env.FILES_PATH || './files'
+        storagePath: process.env.FILES_PATH || null // 필수 설정 - UI에서 설정해야 함
       },
       routing: {
         enabled: true,

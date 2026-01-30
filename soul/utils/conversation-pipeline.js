@@ -109,7 +109,11 @@ class ConversationPipeline {
       let contextData = null;
 
       // === 2단계: 대화 히스토리 (중간) ===
-      const remainingTokens = this.config.maxTokens - totalTokens - this._estimateTokens(userMessage);
+      // 도구 토큰 예산: 도구당 약 700 토큰 (JSON 스키마 + 설명)
+      // options.toolCount로 실제 도구 수 전달, 없으면 기본 10개 가정
+      const toolCount = options.toolCount || 10;
+      const estimatedToolTokens = toolCount * 700;
+      const remainingTokens = this.config.maxTokens - totalTokens - this._estimateTokens(userMessage) - estimatedToolTokens;
       const historyMessages = await this._getMessagesWithinTokenLimit(sessionId, remainingTokens);
 
       messages.push(...historyMessages);
@@ -359,6 +363,10 @@ class ConversationPipeline {
 
   /**
    * 응답 처리 및 저장
+   * @param {string} userMessage - 사용자 메시지
+   * @param {string} assistantResponse - AI 응답
+   * @param {string} sessionId - 세션 ID
+   * @param {Object} metadata - 메타데이터 (routing 포함)
    */
   async handleResponse(userMessage, assistantResponse, sessionId, metadata = {}) {
     try {
@@ -366,22 +374,31 @@ class ConversationPipeline {
         await this.initialize();
       }
 
-      // 0. Archiver 가져오기 (실시간 파일 저장)
+      // 0. 스토리지 경로 가져오기 (DB 설정 필수)
+      const configManager = require('./config');
+      const memoryConfig = await configManager.getMemoryConfig();
+      const storagePath = memoryConfig?.storagePath;
+      if (!storagePath) {
+        throw new Error('[Pipeline] memory.storagePath not configured. Please set it in Settings > Storage.');
+      }
+      console.log(`[Pipeline] Using storage path: ${storagePath}`);
+
+      // 0.1 Archiver 가져오기 (실시간 파일 저장)
       const { getArchiver } = require('./conversation-archiver');
-      const archiver = getArchiver(this.memoryConfig?.storagePath || './memory');
-      
-      // 0.1 PendingEvent 매니저 가져오기
+      const archiver = getArchiver(storagePath);
+
+      // 0.2 PendingEvent 매니저 가져오기
       const { getPendingEventManager } = require('./pending-event');
-      const pendingEventManager = await getPendingEventManager(this.memoryConfig?.storagePath || './memory');
-      
-      // 0.1.1 대화 흐름 추적
+      const pendingEventManager = await getPendingEventManager(storagePath);
+
+      // 0.2.1 대화 흐름 추적
       const { getConversationFlowTracker } = require('./conversation-flow');
       const flowTracker = getConversationFlowTracker();
       flowTracker.processMessage({ content: userMessage, role: 'user' });
-      
-      // 0.1.2 사용자 패턴 학습
+
+      // 0.2.2 사용자 패턴 학습
       const { getUserPatternLearner } = require('./user-pattern');
-      const patternLearner = await getUserPatternLearner(this.memoryConfig?.storagePath || './memory');
+      const patternLearner = await getUserPatternLearner(storagePath);
       await patternLearner.learnFromMessage({ content: userMessage, timestamp: new Date() });
       
       // 0.2 복귀 체크 (이전에 떠남 이벤트가 있었으면)
@@ -449,7 +466,7 @@ class ConversationPipeline {
       }, sessionId);
       
       // 2.1 어시스턴트 응답 파일 아카이브
-      const responseTime = metadata?.processingTime || 
+      const responseTime = metadata?.processingTime ||
         (assistantTimestamp.getTime() - userTimestamp.getTime()) / 1000;
       await archiver.archiveMessage({
         role: 'assistant',
@@ -464,7 +481,9 @@ class ConversationPipeline {
         metadata: {
           ...metadata,
           responseTime
-        }
+        },
+        // 라우팅 정보 (이전 메시지 표시용)
+        routing: metadata?.routing || null
       }, userTimestamp, timezone);
 
       return {
@@ -687,6 +706,7 @@ async function getConversationPipeline(config = {}) {
     };
 
     globalPipeline = new ConversationPipeline(mergedConfig);
+    globalPipeline.memoryConfig = memoryConfig; // memoryConfig를 인스턴스에 저장
     await globalPipeline.initialize();
   }
   return globalPipeline;

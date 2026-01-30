@@ -38,26 +38,22 @@ async function getStorageConfig() {
     const SystemConfig = require('../models/SystemConfig');
     const config = await SystemConfig.findOne({ configKey: 'memory' });
 
-    if (config?.value) {
+    if (config?.value?.storagePath) {
       storageConfig = {
         type: config.value.storageType || 'local',
-        path: config.value.storagePath || path.join(__dirname, '../memory'),
+        path: config.value.storagePath,
         ftp: config.value.ftp || null
       };
       storageConfigLoaded = true;
-      console.log('[ConversationStore] Storage config:', storageConfig.type);
+      console.log('[ConversationStore] Storage config:', storageConfig.type, storageConfig.path);
       return storageConfig;
     }
   } catch (e) {
     console.log('[ConversationStore] DB error:', e.message);
   }
 
-  storageConfig = {
-    type: 'local',
-    path: path.join(__dirname, '../memory')
-  };
-  storageConfigLoaded = true;
-  return storageConfig;
+  // 설정 없으면 에러
+  throw new Error('[ConversationStore] memory.storagePath not configured. Please set it in Settings > Storage.');
 }
 
 class ConversationStore {
@@ -274,8 +270,78 @@ class ConversationStore {
       return allMessages.slice(-limit);
     }
 
-    // 로컬: tail 알고리즘 사용
-    return this._tailReadLines(limit);
+    // 로컬: JSON 아카이브에서 로드 (JSONL 폐기, JSON으로 통일)
+    return this._loadFromJsonArchive(limit);
+  }
+
+  /**
+   * JSON 아카이브 파일에서 최근 메시지 로드
+   * conversations/YYYY-MM/YYYY-MM-DD.json 형식
+   */
+  async _loadFromJsonArchive(limit = 50) {
+    const config = await getStorageConfig();
+    const conversationsPath = path.join(config.path, 'conversations');
+
+    try {
+      // 월별 폴더 목록 (최신순)
+      const monthDirs = fs.readdirSync(conversationsPath)
+        .filter(d => /^\d{4}-\d{2}$/.test(d))
+        .sort()
+        .reverse();
+
+      const allMessages = [];
+
+      for (const monthDir of monthDirs) {
+        const monthPath = path.join(conversationsPath, monthDir);
+
+        // 일별 파일 목록 (최신순)
+        const dayFiles = fs.readdirSync(monthPath)
+          .filter(f => /^\d{4}-\d{2}-\d{2}\.json$/.test(f))
+          .sort()
+          .reverse();
+
+        for (const dayFile of dayFiles) {
+          const filePath = path.join(monthPath, dayFile);
+          const content = fs.readFileSync(filePath, 'utf-8');
+          const dayMessages = JSON.parse(content);
+
+          // JSON 아카이브 형식을 ConversationStore 형식으로 변환
+          const converted = dayMessages.map(m => ({
+            id: m.id || `${m.timestamp}_${m.role}`,
+            role: m.role,
+            text: m.content,
+            content: m.content,
+            timestamp: m.timestamp,
+            tags: m.tags || [],
+            tokens: m.tokens || 0,
+            metadata: m.metadata || {},
+            // 라우팅 정보 (assistant 메시지용)
+            routing: m.routing || null
+          }));
+
+          allMessages.unshift(...converted);
+
+          if (allMessages.length >= limit) {
+            break;
+          }
+        }
+
+        if (allMessages.length >= limit) {
+          break;
+        }
+      }
+
+      // 시간순 정렬 후 최근 limit개 반환
+      const sorted = allMessages.sort((a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+
+      console.log(`[ConversationStore] Loaded ${Math.min(sorted.length, limit)} messages from JSON archive`);
+      return sorted.slice(-limit);
+    } catch (e) {
+      console.log('[ConversationStore] No JSON archive found:', e.message);
+      return [];
+    }
   }
 
   /**

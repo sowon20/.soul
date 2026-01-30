@@ -1,23 +1,61 @@
 /**
  * conversation-archiver.js
  * 대화 실시간 저장 시스템 (Phase 1.5)
- * 
+ *
  * 역할:
  * - 메시지 올 때마다 실시간으로 JSON 파일에 저장
  * - 장기 메모리 = 영구 원문 보관 (절대 삭제/압축 안 함)
  * - 월별 폴더 / 일별 파일 구조
  * - 알바 연동: aiMemo, 태그 자동 생성
+ *
+ * 안전장치 (Phase 1.5.1):
+ * - 원격 폴더 연결 실패 시 로컬 캐시에 임시 저장
+ * - 재연결 시 로컬 캐시를 원격에 합치기 (덮어쓰기 아님!)
  */
 
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 const { getAlbaWorker } = require('./alba-worker');
 
+// 앱 기준 캐시 경로 (실행 위치와 무관하게 고정)
+const APP_ROOT = path.join(__dirname, '..');
+const LOCAL_CACHE_DIR = path.join(APP_ROOT, 'cache', 'archiver');
+
 class ConversationArchiver {
-  constructor(basePath = './memory') {
+  constructor(basePath) {
+    if (!basePath) {
+      throw new Error('[Archiver] basePath is required. Set memory.storagePath in settings.');
+    }
     this.basePath = basePath;
     this.conversationsPath = path.join(basePath, 'conversations');
+    this.cachePath = LOCAL_CACHE_DIR; // 앱 폴더 내 고정 경로
     this.initialized = false;
+    this.remoteAvailable = true;
+  }
+
+  /**
+   * 캐시 디렉토리 확보 (설정 폴더 내)
+   */
+  _ensureCacheDir() {
+    if (!fsSync.existsSync(this.cachePath)) {
+      fsSync.mkdirSync(this.cachePath, { recursive: true });
+    }
+  }
+
+  /**
+   * 원격 폴더 접근 가능 여부 테스트
+   */
+  async _testRemoteAccess() {
+    try {
+      await fs.access(this.basePath, fs.constants.W_OK);
+      this.remoteAvailable = true;
+      return true;
+    } catch (e) {
+      console.warn(`[Archiver] Remote path not accessible: ${this.basePath}`);
+      this.remoteAvailable = false;
+      return false;
+    }
   }
 
   /**
@@ -123,75 +161,201 @@ class ConversationArchiver {
 
   /**
    * 메시지 실시간 저장 (핵심 함수)
+   * 원격 실패 시 로컬 캐시에 저장, 재연결 시 합침
    */
   async archiveMessage(message, lastMessageTime = null, timezone = 'Asia/Seoul') {
     if (!this.initialized) {
       await this.initialize();
     }
 
-    try {
-      const timestamp = message.timestamp || new Date();
-      const { monthDir, filePath } = this.getFilePath(timestamp);
-      
-      // 월별 폴더 생성
-      await fs.mkdir(monthDir, { recursive: true });
-      
-      // 메타 정보 계산 (타임존 반영)
-      const meta = this.calculateMeta(timestamp, lastMessageTime, timezone);
-      
-      // 세션 메타 병합
-      if (message.sessionMeta) {
-        meta.sessionId = message.sessionMeta.sessionId;
-        meta.sessionDuration = message.sessionMeta.sessionDuration;
-        meta.sessionDurationFormatted = this._formatDuration(message.sessionMeta.sessionDuration);
-        meta.messageIndex = message.sessionMeta.messageIndex;
-      }
-      
-      // 이벤트 메타 병합 (복귀/떠남 이벤트)
-      if (message.eventMeta) {
-        meta.returnEvent = message.eventMeta.returnEvent;
-        meta.departureEvent = message.eventMeta.departureEvent;
-        meta.pendingTimeContext = message.eventMeta.timeContext;
-      }
-      
-      // 저장할 메시지 객체
-      const archiveEntry = {
-        role: message.role,
-        content: message.content,
-        timestamp: new Date(timestamp).toISOString(),
-        tokens: message.tokens || 0,
-        meta,
-        aiMemo: message.aiMemo || null,
-        tags: message.tags || [],
-        metadata: message.metadata || {}
-      };
+    const timestamp = message.timestamp || new Date();
 
-      // 기존 파일 읽기 또는 새로 생성
-      let dayMessages = [];
+    // 메타 정보 계산 (타임존 반영)
+    const meta = this.calculateMeta(timestamp, lastMessageTime, timezone);
+
+    // 세션 메타 병합
+    if (message.sessionMeta) {
+      meta.sessionId = message.sessionMeta.sessionId;
+      meta.sessionDuration = message.sessionMeta.sessionDuration;
+      meta.sessionDurationFormatted = this._formatDuration(message.sessionMeta.sessionDuration);
+      meta.messageIndex = message.sessionMeta.messageIndex;
+    }
+
+    // 이벤트 메타 병합 (복귀/떠남 이벤트)
+    if (message.eventMeta) {
+      meta.returnEvent = message.eventMeta.returnEvent;
+      meta.departureEvent = message.eventMeta.departureEvent;
+      meta.pendingTimeContext = message.eventMeta.timeContext;
+    }
+
+    // 저장할 메시지 객체
+    const archiveEntry = {
+      role: message.role,
+      content: message.content,
+      timestamp: new Date(timestamp).toISOString(),
+      tokens: message.tokens || 0,
+      meta,
+      aiMemo: message.aiMemo || null,
+      tags: message.tags || [],
+      metadata: message.metadata || {},
+      // 라우팅 정보 (assistant 메시지용)
+      routing: message.routing || null
+    };
+
+    // 원격 폴더 접근 시도
+    const remoteOk = await this._testRemoteAccess();
+
+    if (remoteOk) {
+      // 재연결 시 로컬 캐시 합치기 시도
+      await this._syncCacheToRemote();
+
+      // 원격에 저장
       try {
-        const existing = await fs.readFile(filePath, 'utf-8');
-        dayMessages = JSON.parse(existing);
-      } catch (e) {
-        // 파일 없으면 새로 시작
+        const result = await this._saveToRemote(archiveEntry, timestamp);
+        return result;
+      } catch (error) {
+        console.warn('[Archiver] Remote save failed, falling back to cache:', error.message);
+        this.remoteAvailable = false;
+        return this._saveToLocalCache(archiveEntry, timestamp);
       }
-      
-      // 메시지 추가
-      dayMessages.push(archiveEntry);
-      
-      // 파일 저장
-      await fs.writeFile(filePath, JSON.stringify(dayMessages, null, 2), 'utf-8');
-      
-      console.log(`[Archiver] Saved to ${filePath} (${dayMessages.length} messages)`);
-      
-      // 알바 작업: assistant 메시지일 때 aiMemo, 태그 생성 (비동기)
-      if (message.role === 'assistant' && dayMessages.length >= 2) {
-        this._scheduleAlbaWork(filePath, dayMessages);
+    } else {
+      // 로컬 캐시에 저장
+      return this._saveToLocalCache(archiveEntry, timestamp);
+    }
+  }
+
+  /**
+   * 원격에 저장 (기존 로직)
+   */
+  async _saveToRemote(archiveEntry, timestamp) {
+    const { monthDir, filePath } = this.getFilePath(timestamp);
+
+    // 월별 폴더 생성
+    await fs.mkdir(monthDir, { recursive: true });
+
+    // 기존 파일 읽기 또는 새로 생성
+    let dayMessages = [];
+    try {
+      const existing = await fs.readFile(filePath, 'utf-8');
+      dayMessages = JSON.parse(existing);
+    } catch (e) {
+      // 파일 없으면 새로 시작
+    }
+
+    // 메시지 추가
+    dayMessages.push(archiveEntry);
+
+    // 파일 저장
+    await fs.writeFile(filePath, JSON.stringify(dayMessages, null, 2), 'utf-8');
+
+    console.log(`[Archiver] Saved to ${filePath} (${dayMessages.length} messages)`);
+
+    // 알바 작업: assistant 메시지일 때 aiMemo, 태그 생성 (비동기)
+    if (archiveEntry.role === 'assistant' && dayMessages.length >= 2) {
+      this._scheduleAlbaWork(filePath, dayMessages);
+    }
+
+    return archiveEntry;
+  }
+
+  /**
+   * 로컬 캐시에 저장 (원격 실패 시)
+   */
+  async _saveToLocalCache(archiveEntry, timestamp) {
+    this._ensureCacheDir();
+
+    const date = new Date(timestamp);
+    const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+    const cacheFile = path.join(this.cachePath, `${dateStr}.json`);
+
+    // 기존 캐시 읽기
+    let cached = [];
+    try {
+      const existing = await fs.readFile(cacheFile, 'utf-8');
+      cached = JSON.parse(existing);
+    } catch (e) {
+      // 파일 없으면 새로 시작
+    }
+
+    cached.push(archiveEntry);
+
+    await fs.writeFile(cacheFile, JSON.stringify(cached, null, 2), 'utf-8');
+    console.log(`[Archiver] Saved to LOCAL CACHE: ${cacheFile} (${cached.length} messages, waiting for sync)`);
+
+    return archiveEntry;
+  }
+
+  /**
+   * 로컬 캐시를 원격에 합치기 (재연결 시)
+   * 중요: 덮어쓰기가 아니라 합치기!
+   */
+  async _syncCacheToRemote() {
+    this._ensureCacheDir();
+
+    let cacheFiles;
+    try {
+      cacheFiles = await fs.readdir(this.cachePath);
+    } catch (e) {
+      return; // 캐시 폴더 없으면 패스
+    }
+
+    const jsonFiles = cacheFiles.filter(f => f.endsWith('.json'));
+    if (jsonFiles.length === 0) return;
+
+    console.log(`[Archiver] Syncing ${jsonFiles.length} cached files to remote...`);
+
+    for (const cacheFileName of jsonFiles) {
+      const cacheFilePath = path.join(this.cachePath, cacheFileName);
+
+      try {
+        // 캐시 파일 읽기
+        const cacheContent = await fs.readFile(cacheFilePath, 'utf-8');
+        const cachedMessages = JSON.parse(cacheContent);
+
+        if (cachedMessages.length === 0) {
+          await fs.unlink(cacheFilePath);
+          continue;
+        }
+
+        // 날짜 추출 (YYYY-MM-DD.json → timestamp)
+        const dateStr = cacheFileName.replace('.json', '');
+        const timestamp = new Date(dateStr);
+
+        const { monthDir, filePath } = this.getFilePath(timestamp);
+
+        // 원격 월별 폴더 생성
+        await fs.mkdir(monthDir, { recursive: true });
+
+        // 원격 기존 파일 읽기
+        let remoteMessages = [];
+        try {
+          const existing = await fs.readFile(filePath, 'utf-8');
+          remoteMessages = JSON.parse(existing);
+        } catch (e) {
+          // 파일 없으면 새로 시작
+        }
+
+        // 중복 제거하며 합치기 (timestamp 기준)
+        const existingTimestamps = new Set(remoteMessages.map(m => m.timestamp));
+        const newMessages = cachedMessages.filter(m => !existingTimestamps.has(m.timestamp));
+
+        if (newMessages.length > 0) {
+          // 합친 후 시간순 정렬
+          const merged = [...remoteMessages, ...newMessages].sort(
+            (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+
+          await fs.writeFile(filePath, JSON.stringify(merged, null, 2), 'utf-8');
+          console.log(`[Archiver] Synced ${newMessages.length} messages to ${filePath} (total: ${merged.length})`);
+        }
+
+        // 캐시 파일 삭제
+        await fs.unlink(cacheFilePath);
+        console.log(`[Archiver] Cache file removed: ${cacheFileName}`);
+      } catch (error) {
+        console.error(`[Archiver] Failed to sync cache file ${cacheFileName}:`, error.message);
+        // 실패해도 다음 파일 계속 처리
       }
-      
-      return archiveEntry;
-    } catch (error) {
-      console.error('[Archiver] Save failed:', error.message);
-      throw error;
     }
   }
 
@@ -284,8 +448,44 @@ function resetArchiver() {
   archiverInstance = null;
 }
 
+/**
+ * 수동 동기화 트리거 (API용)
+ */
+async function triggerSync() {
+  if (archiverInstance) {
+    await archiverInstance._syncCacheToRemote();
+    return { success: true, message: 'Sync triggered' };
+  }
+  return { success: false, message: 'No archiver instance' };
+}
+
+/**
+ * 캐시 상태 확인
+ */
+function getCacheStatus() {
+  if (!archiverInstance) {
+    return { hasPendingData: false, files: [], error: 'No archiver instance' };
+  }
+  try {
+    const cachePath = archiverInstance.cachePath;
+    if (!fsSync.existsSync(cachePath)) {
+      return { hasPendingData: false, files: [] };
+    }
+    const files = fsSync.readdirSync(cachePath).filter(f => f.endsWith('.json'));
+    return {
+      hasPendingData: files.length > 0,
+      files,
+      cacheDir: cachePath
+    };
+  } catch (e) {
+    return { hasPendingData: false, files: [], error: e.message };
+  }
+}
+
 module.exports = {
   ConversationArchiver,
   getArchiver,
-  resetArchiver
+  resetArchiver,
+  triggerSync,
+  getCacheStatus
 };

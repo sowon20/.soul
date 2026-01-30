@@ -98,33 +98,57 @@
   height: 16px;
 }
 
-/* 라우팅 정보 (호버 시 표시) - 생각과정 스타일 */
-.routing-info {
-  display: none !important;
+/* 라우팅 정보 (호버 시 표시) */
+.message-actions .routing-info {
+  display: none;
   align-items: center;
   gap: 6px;
   font-size: 0.7rem;
-  color: #6b6560;
+  color: #9a9590;
   cursor: default;
-  background: rgba(74, 69, 64, 0.08);
-  padding: 3px 8px;
-  border-radius: 10px;
-  margin-left: 4px;
+  margin-left: auto;
+  padding-left: 8px;
 }
 
 /* assistant 메시지 호버 시 라우팅 정보 표시 */
-.chat-message.assistant:hover .routing-info[data-active="true"] {
-  display: inline-flex !important;
+.chat-message.assistant:hover .message-actions .routing-info[data-active="true"] {
+  display: inline-flex;
 }
 
+/* tier 배지 (작은 박스) */
 .routing-info .routing-tier {
-  font-size: 0.65rem;
-  opacity: 0.8;
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
+/* tier 색상 */
+.routing-info .routing-tier.light,
+.routing-info[data-tier="light"] .routing-tier {
+  background: rgba(74, 222, 128, 0.2);
+  color: #22c55e;
+}
+
+.routing-info .routing-tier.medium,
+.routing-info[data-tier="medium"] .routing-tier {
+  background: rgba(251, 191, 36, 0.2);
+  color: #f59e0b;
+}
+
+.routing-info .routing-tier.heavy,
+.routing-info[data-tier="heavy"] .routing-tier {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+/* 모델명 (사용자 메시지 시간과 같은 스타일) */
 .routing-info .routing-model {
-  font-size: 0.65rem;
-  max-width: 120px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

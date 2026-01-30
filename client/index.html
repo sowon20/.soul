@@ -121,7 +121,55 @@
             <div class="token-per-request" id="stat-tokens-per-request">
               평균 <span>0</span> 토큰/요청
             </div>
+            <!-- 입력 토큰 분류 (누적 + 마지막 요청) -->
+            <div class="token-breakdown-section">
+              <!-- 마지막 요청 -->
+              <div class="breakdown-panel" id="lastRequestPanel">
+                <div class="breakdown-panel-header" data-target="lastRequestContent">
+                  <h5 class="breakdown-title">마지막 요청</h5>
+                  <span class="breakdown-time" id="lastRequestTime">-</span>
+                  <span class="breakdown-toggle">▼</span>
+                </div>
+                <div class="breakdown-panel-content" id="lastRequestContent">
+                  <div class="last-request-model-row">
+                    <span class="last-req-tier-badge" id="lastReqTier">-</span>
+                    <span class="last-req-model-name" id="lastReqModel">-</span>
+                  </div>
+                  <div class="last-request-stats">
+                    <span class="last-stat">입력 <strong id="lastReqInput">-</strong></span>
+                    <span class="last-stat">출력 <strong id="lastReqOutput">-</strong></span>
+                    <span class="last-stat" id="lastReqCost">-</span>
+                    <span class="last-stat" id="lastReqLatency">-</span>
+                  </div>
+                  <div class="breakdown-bar-container">
+                    <div class="breakdown-bar">
+                      <div class="breakdown-segment messages" id="lastBreakdownMessages" style="width: 0%"></div>
+                      <div class="breakdown-segment system" id="lastBreakdownSystem" style="width: 0%"></div>
+                      <div class="breakdown-segment tools" id="lastBreakdownTools" style="width: 0%"></div>
+                    </div>
+                    <div class="breakdown-legend">
+                      <span class="legend-item"><span class="legend-dot messages"></span>메시지 <span id="lastBreakdownMessagesVal">0</span></span>
+                      <span class="legend-item"><span class="legend-dot system"></span>시스템 <span id="lastBreakdownSystemVal">0</span></span>
+                      <span class="legend-item"><span class="legend-dot tools"></span>도구(<span id="lastBreakdownToolCount">0</span>) <span id="lastBreakdownToolsVal">0</span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- 누적 -->
+              <div class="breakdown-panel collapsed" id="cumulativePanel">
+                <div class="breakdown-panel-header" data-target="cumulativeContent">
+                  <h5 class="breakdown-title">누적</h5>
+                  <span class="breakdown-toggle">▶</span>
+                </div>
+                <div class="breakdown-panel-content" id="cumulativeContent" style="display: none;">
+                  <div id="token-breakdown" class="token-breakdown">
+                    <div class="no-data">분류 데이터 없음</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
+
           <!-- 모델별 사용량 -->
           <div class="model-usage-section">
             <h4 class="model-usage-title">모델별 사용량</h4>
