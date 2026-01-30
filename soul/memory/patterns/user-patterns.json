@@ -1,12 +1,16 @@
 {
   "hourlyActivity": {
-    "4": 2
+    "4": 2,
+    "21": 5,
+    "22": 20,
+    "23": 3
   },
   "dailyActivity": {
-    "2": 2
+    "2": 2,
+    "4": 28
   },
   "weekendActivity": 0,
-  "weekdayActivity": 2,
+  "weekdayActivity": 30,
   "eventDurations": {
     "sleep": {
       "samples": [
@@ -17,10 +21,10 @@
       "max": 21
     }
   },
-  "totalMessages": 2,
-  "lastMessageTime": "2026-01-26T19:49:25.762Z",
+  "totalMessages": 30,
+  "lastMessageTime": "2026-01-29T14:20:01.530Z",
   "createdAt": "2026-01-26T19:48:59.097Z",
-  "lastActiveHour": 4,
-  "lastActiveDay": 2,
-  "updatedAt": "2026-01-26T19:49:25.763Z"
+  "lastActiveHour": 23,
+  "lastActiveDay": 4,
+  "updatedAt": "2026-01-29T14:20:01.530Z"
 }
