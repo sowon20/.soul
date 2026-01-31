@@ -71,6 +71,16 @@ class SoulApp {
     // Initialize managers
     // Vite 프록시를 통해 /api 요청이 백엔드로 전달됨
     this.apiClient = new APIClient('/api');
+
+    // 부트스트랩 상태 확인
+    const bootstrapComplete = await this.checkBootstrap();
+    if (!bootstrapComplete) {
+      console.log('🔧 부트스트랩 미완료 - 초기 설정 필요');
+      // 초기 설정이 필요하면 설정 페이지로
+      this.showBootstrapSetup();
+      return;
+    }
+
     this.themeManager = new ThemeManager();
     this.chatManager = new ChatManager(this.apiClient);
     this.panelManager = new PanelManager(this.apiClient);
@@ -104,6 +114,85 @@ class SoulApp {
     await this.socketClient.init();
 
     console.log('✅ Soul UI 초기화 완료!');
+  }
+
+  /**
+   * 부트스트랩 상태 확인
+   */
+  async checkBootstrap() {
+    try {
+      const response = await this.apiClient.get('/bootstrap/status');
+      return response.completed === true;
+    } catch (error) {
+      console.error('Bootstrap check failed:', error);
+      // API 실패 시 계속 진행 (이전 버전 호환)
+      return true;
+    }
+  }
+
+  /**
+   * 부트스트랩 초기 설정 화면 표시
+   */
+  showBootstrapSetup() {
+    const mainContent = document.getElementById('main-content') || document.body;
+    mainContent.innerHTML = `
+      <div class="bootstrap-setup">
+        <div class="bootstrap-container">
+          <div class="bootstrap-header">
+            <h1>✨ Soul AI 초기 설정</h1>
+            <p>처음 사용하시네요! 몇 가지 설정이 필요합니다.</p>
+          </div>
+
+          <div class="bootstrap-form">
+            <div class="bootstrap-field">
+              <label>저장소 타입</label>
+              <select id="bootstrapStorageType">
+                <option value="local" selected>💾 로컬 저장소</option>
+                <option value="ftp">🌐 FTP/NAS</option>
+                <option value="oracle">☁️ Oracle Cloud</option>
+                <option value="notion">📝 Notion</option>
+              </select>
+            </div>
+
+            <div class="bootstrap-field" id="localPathField">
+              <label>저장 경로</label>
+              <input type="text" id="bootstrapPath" value="~/.soul" placeholder="~/.soul">
+              <small>대화 기록, 기억, 파일이 저장될 위치</small>
+            </div>
+
+            <div class="bootstrap-actions">
+              <button class="bootstrap-btn primary" id="completeBootstrap">
+                설정 완료
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // 이벤트 리스너
+    document.getElementById('completeBootstrap').addEventListener('click', async () => {
+      const storageType = document.getElementById('bootstrapStorageType').value;
+      const storagePath = document.getElementById('bootstrapPath').value || '~/.soul';
+
+      try {
+        await this.apiClient.post('/bootstrap/complete', {
+          storageType,
+          storagePath
+        });
+
+        // 페이지 새로고침
+        window.location.reload();
+      } catch (error) {
+        alert('설정 저장에 실패했습니다: ' + error.message);
+      }
+    });
+
+    // 저장소 타입 변경 시 경로 필드 표시/숨김
+    document.getElementById('bootstrapStorageType').addEventListener('change', (e) => {
+      const localPathField = document.getElementById('localPathField');
+      localPathField.style.display = e.target.value === 'local' ? 'block' : 'none';
+    });
   }
 
   async loadUserProfile() {
