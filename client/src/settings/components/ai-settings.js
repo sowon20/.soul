@@ -10,6 +10,11 @@ export class AISettings {
     this.apiClient = null;
     this.availableModels = [];
     this.routingConfig = {
+      mode: '',  // '', 'single', 또는 'auto' (빈 문자열 = 미선택)
+      singleModel: null,
+      singleThinking: false,
+      manager: 'server',
+      managerModel: null,
       light: 'claude-3-5-haiku-20241022',
       medium: 'claude-3-5-sonnet-20241022',
       heavy: 'claude-3-opus-20240229',
@@ -138,13 +143,14 @@ export class AISettings {
                     </svg>
                   </div>
                 </div>
+                <div class="section-empty-hint">AI의 이름과 역할을 설정해보세요</div>
                 <div class="timeline-body">
                   <div class="neu-field-group">
                     <div class="neu-field">
-                      <input type="text" class="neu-field-input timeline-field" data-section="identity" placeholder="이름" value="${this.agentProfile?.name || ''}" />
+                      <input type="text" class="neu-field-input timeline-field" data-section="identity" data-field="name" placeholder="이름" value="${this.agentProfile?.name && this.agentProfile.name !== 'Soul' ? this.agentProfile.name : ''}" />
                     </div>
                     <div class="neu-field">
-                      <input type="text" class="neu-field-input timeline-field" data-section="identity" placeholder="역할 (예: 비서, 친구, 선생님)" value="${this.agentProfile?.role || ''}" />
+                      <input type="text" class="neu-field-input timeline-field" data-section="identity" data-field="role" placeholder="역할 (예: 비서, 친구, 선생님)" value="${this.agentProfile?.role && this.agentProfile.role !== 'AI 어시스턴트' ? this.agentProfile.role : ''}" />
                     </div>
                   </div>
                 </div>
@@ -161,7 +167,10 @@ export class AISettings {
               <div class="timeline-main">
                 <div class="timeline-header">
                   <div class="timeline-content">
-                    <div class="timeline-title">성격 <span class="timeline-subtitle">말투와 스타일</span></div>
+                    <div class="timeline-title">성격 <span class="timeline-subtitle">시스템 프롬프트</span></div>
+                    <div class="timeline-summary timeline-summary--personality">
+                      <div><span class="summary-label">프롬프트</span><span class="summary-text">${this.agentProfile?.description ? (this.agentProfile.description.length > 20 ? this.agentProfile.description.substring(0, 20) + '...' : this.agentProfile.description) : '-'}</span></div>
+                    </div>
                   </div>
                   <div class="timeline-progress">
                     <svg width="24" height="24" viewBox="0 0 24 24">
@@ -173,46 +182,47 @@ export class AISettings {
                     </svg>
                   </div>
                 </div>
+                <div class="section-empty-hint">AI의 성격과 말투를 설정해보세요</div>
                 <div class="timeline-body">
                   <div class="neu-field-group">
                     <div class="neu-field">
-                      <textarea class="neu-field-input neu-field-textarea timeline-field" data-section="personality" data-field="description" placeholder="성격 (시스템 프롬프트)">${this.agentProfile?.description || ''}</textarea>
+                      <textarea class="neu-field-input neu-field-textarea timeline-field" data-section="personality" data-field="description" placeholder="AI의 성격과 말투를 정의하는 시스템 프롬프트를 입력하세요">${this.agentProfile?.description && !this.agentProfile.description.includes('당신은') ? this.agentProfile.description : ''}</textarea>
                     </div>
                   </div>
                   <!-- 대화 스타일 슬라이더 -->
                   <div class="timeline-sliders">
                     <div class="timeline-slider-item">
                       <div class="slider-labels">
-                        <span>🎉 캐주얼</span>
-                        <span>🎩 격식</span>
+                        <span>캐주얼</span>
+                        <span>격식</span>
                       </div>
                       <input type="range" class="timeline-range" data-field="formality" min="0" max="1" step="0.1" value="${this.agentProfile?.personality?.communication?.formality ?? 0.5}">
                     </div>
                     <div class="timeline-slider-item">
                       <div class="slider-labels">
-                        <span>⚡ 간결</span>
-                        <span>📚 상세</span>
+                        <span>간결</span>
+                        <span>상세</span>
                       </div>
                       <input type="range" class="timeline-range" data-field="verbosity" min="0" max="1" step="0.1" value="${this.agentProfile?.personality?.communication?.verbosity ?? 0.5}">
                     </div>
                     <div class="timeline-slider-item">
                       <div class="slider-labels">
-                        <span>😐 진지</span>
-                        <span>😊 유머</span>
+                        <span>진지</span>
+                        <span>유머</span>
                       </div>
                       <input type="range" class="timeline-range" data-field="humor" min="0" max="1" step="0.1" value="${this.agentProfile?.personality?.communication?.humor ?? 0.3}">
                     </div>
                     <div class="timeline-slider-item">
                       <div class="slider-labels">
-                        <span>🤖 기계적</span>
-                        <span>💕 공감적</span>
+                        <span>기계적</span>
+                        <span>공감적</span>
                       </div>
                       <input type="range" class="timeline-range" data-field="empathy" min="0" max="1" step="0.1" value="${this.agentProfile?.personality?.traits?.empathetic ?? 0.6}">
                     </div>
                     <div class="timeline-slider-item">
                       <div class="slider-labels">
-                        <span>🎯 정확</span>
-                        <span>🎨 창의</span>
+                        <span>정확</span>
+                        <span>창의</span>
                       </div>
                       <input type="range" class="timeline-range" data-field="temperature" min="0" max="1" step="0.1" value="${this.agentProfile?.temperature ?? 0.7}">
                     </div>
@@ -235,6 +245,7 @@ export class AISettings {
                 <div class="timeline-header">
                   <div class="timeline-content">
                     <div class="timeline-title">두뇌 <span class="timeline-subtitle">AI 모델 & 라우팅</span></div>
+                    <div class="timeline-summary timeline-summary--brain"></div>
                   </div>
                   <div class="timeline-progress">
                     <svg width="24" height="24" viewBox="0 0 24 24">
@@ -246,69 +257,168 @@ export class AISettings {
                     </svg>
                   </div>
                 </div>
+                <div class="section-empty-hint">AI 모델과 라우팅을 설정해보세요</div>
                 <div class="timeline-body">
-                  <!-- 스마트 라우팅 설정 -->
-                  <div class="brain-routing-section">
-                    <div class="brain-routing-item">
-                      <div class="brain-routing-header">
-                        <span class="routing-tier">라우팅</span>
-                        <span class="routing-desc">복잡도 분석 담당</span>
+                  <!-- 브레인 위자드 (가로 스텝) -->
+                  <div class="brain-wizard" data-mode="${this.routingConfig.mode || ''}" data-router="${this.routingConfig.manager || 'server'}" data-confirmed="${this.routingConfig.confirmed ? 'true' : 'false'}">
+
+                    <!-- 가로 스텝 인디케이터 -->
+                    <div class="brain-wizard-steps">
+                      <div class="brain-wizard-step" data-step="1">
+                        <div class="brain-wizard-dot"><span>1</span></div>
+                        <span class="brain-wizard-label">모드</span>
                       </div>
-                      <div class="brain-routing-controls">
-                        <select class="brain-routing-select" id="routingManager">
-                          <option value="server" ${!this.routingConfig.manager || this.routingConfig.manager === 'server' ? 'selected' : ''}>서버 (SmartRouter)</option>
-                          <option value="ai" ${this.routingConfig.manager === 'ai' ? 'selected' : ''}>AI 모델</option>
-                          <option value="fixed" ${this.routingConfig.manager === 'fixed' ? 'selected' : ''}>고정 (중간만)</option>
-                        </select>
-                        <select class="brain-routing-select" id="routingManagerModel" ${!this.routingConfig.manager || this.routingConfig.manager !== 'ai' ? 'disabled' : ''}>
-                          ${this.renderModelOptions(this.routingConfig.managerModel)}
-                        </select>
+                      <div class="brain-wizard-line"></div>
+                      <div class="brain-wizard-step brain-wizard-step--step2" data-step="2">
+                        <div class="brain-wizard-dot"><span>2</span></div>
+                        <span class="brain-wizard-label brain-wizard-label--single">모델</span>
+                        <span class="brain-wizard-label brain-wizard-label--auto">라우팅</span>
+                        <span class="brain-wizard-label brain-wizard-label--none">설정</span>
+                      </div>
+                      <div class="brain-wizard-line brain-wizard-line--step3"></div>
+                      <div class="brain-wizard-step brain-wizard-step--step3" data-step="3">
+                        <div class="brain-wizard-dot"><span>3</span></div>
+                        <span class="brain-wizard-label brain-wizard-label--router">라우터</span>
+                        <span class="brain-wizard-label brain-wizard-label--tiers">티어별</span>
+                      </div>
+                      <div class="brain-wizard-line brain-wizard-line--step4"></div>
+                      <div class="brain-wizard-step brain-wizard-step--step4" data-step="4">
+                        <div class="brain-wizard-dot"><span>4</span></div>
+                        <span class="brain-wizard-label">티어별</span>
+                      </div>
+                      <div class="brain-wizard-line brain-wizard-line--final"></div>
+                      <div class="brain-wizard-step brain-wizard-step--final" data-step="final">
+                        <div class="brain-wizard-dot"><span>✓</span></div>
+                        <span class="brain-wizard-label">완성</span>
                       </div>
                     </div>
 
-                    <div class="brain-routing-item">
-                      <div class="brain-routing-header">
-                        <span class="routing-tier">경량</span>
-                        <span class="routing-desc">간단한 질문, 번역</span>
-                      </div>
-                      <div class="brain-routing-controls">
-                        <select class="brain-routing-select" id="routingLight">
-                          ${this.renderModelOptions(this.routingConfig.light)}
-                        </select>
-                        ${this.renderThinkingToggle('Light', this.routingConfig.light, this.routingConfig.lightThinking)}
-                      </div>
-                    </div>
+                    <!-- 완성 후 수정 버튼 -->
+                    <button type="button" class="brain-wizard-edit">수정하기</button>
 
-                    <div class="brain-routing-item">
-                      <div class="brain-routing-header">
-                        <span class="routing-tier">중간</span>
-                        <span class="routing-desc">코드, 분석</span>
-                      </div>
-                      <div class="brain-routing-controls">
-                        <select class="brain-routing-select" id="routingMedium">
-                          ${this.renderModelOptions(this.routingConfig.medium)}
-                        </select>
-                        ${this.renderThinkingToggle('Medium', this.routingConfig.medium, this.routingConfig.mediumThinking)}
-                      </div>
-                    </div>
+                    <!-- 스텝 컨텐츠 -->
+                    <div class="brain-wizard-body">
 
-                    <div class="brain-routing-item">
-                      <div class="brain-routing-header">
-                        <span class="routing-tier">고성능</span>
-                        <span class="routing-desc">설계, 연구</span>
+                      <!-- Step 1: 모드 선택 -->
+                      <div class="brain-wizard-panel" data-panel="1">
+                        <div class="brain-wizard-options">
+                          <label class="brain-wizard-card ${this.routingConfig.mode === 'single' ? 'selected' : ''}">
+                            <input type="radio" name="brainMode" value="single" ${this.routingConfig.mode === 'single' ? 'checked' : ''}>
+                            <span class="card-title">단일 모델</span>
+                            <span class="card-desc">하나의 모델 사용</span>
+                          </label>
+                          <label class="brain-wizard-card ${this.routingConfig.mode === 'auto' ? 'selected' : ''}">
+                            <input type="radio" name="brainMode" value="auto" ${this.routingConfig.mode === 'auto' ? 'checked' : ''}>
+                            <span class="card-title">자동 라우팅</span>
+                            <span class="card-desc">복잡도별 자동 선택</span>
+                          </label>
+                        </div>
+                        <div class="brain-wizard-hint">모드를 선택해주세요</div>
                       </div>
-                      <div class="brain-routing-controls">
-                        <select class="brain-routing-select" id="routingHeavy">
-                          ${this.renderModelOptions(this.routingConfig.heavy)}
-                        </select>
-                        ${this.renderThinkingToggle('Heavy', this.routingConfig.heavy, this.routingConfig.heavyThinking)}
-                      </div>
-                    </div>
 
+                      <!-- Step 2a: 단일 모델 선택 -->
+                      <div class="brain-wizard-panel brain-wizard-panel--single" data-panel="2a">
+                        <div class="brain-wizard-form">
+                          <select class="brain-routing-select" id="routingSingleModel">
+                            ${this.renderModelOptions(this.routingConfig.singleModel || this.routingConfig.medium)}
+                          </select>
+                        </div>
+                        <button type="button" class="brain-wizard-confirm" data-confirm="single">확인</button>
+                      </div>
+
+                      <!-- Step 2b: 라우팅 담당 선택 -->
+                      <div class="brain-wizard-panel brain-wizard-panel--auto" data-panel="2b">
+                        <div class="brain-wizard-options">
+                          <label class="brain-wizard-card ${!this.routingConfig.manager || this.routingConfig.manager === 'server' ? 'selected' : ''}">
+                            <input type="radio" name="routerType" value="server" ${!this.routingConfig.manager || this.routingConfig.manager === 'server' ? 'checked' : ''}>
+                            <span class="card-title">서버</span>
+                            <span class="card-desc">Smart Router</span>
+                          </label>
+                          <label class="brain-wizard-card ${this.routingConfig.manager === 'ai' ? 'selected' : ''}">
+                            <input type="radio" name="routerType" value="ai" ${this.routingConfig.manager === 'ai' ? 'checked' : ''}>
+                            <span class="card-title">라우터 AI</span>
+                            <span class="card-desc">AI가 라우팅 결정</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <!-- Step 3a: 라우터 모델 선택 (AI 선택 시만) -->
+                      <div class="brain-wizard-panel brain-wizard-panel--router" data-panel="3a">
+                        <div class="brain-wizard-form">
+                          <span class="form-label">라우터 모델</span>
+                          <select class="brain-routing-select" id="routingRouter">
+                            ${this.renderModelOptions(this.routingConfig.managerModel)}
+                          </select>
+                        </div>
+                      </div>
+
+                      <!-- Step 3/4: 티어별 모델 -->
+                      <div class="brain-wizard-panel brain-wizard-panel--tiers" data-panel="tiers">
+                        <div class="brain-tier-list">
+                          <div class="brain-tier-row">
+                            <span class="tier-badge tier-badge--light">경량</span>
+                            <select class="brain-routing-select" id="routingLight">
+                              ${this.renderModelOptions(this.routingConfig.light)}
+                            </select>
+                            ${this.renderThinkingToggle('Light', this.routingConfig.lightThinking)}
+                          </div>
+                          <div class="brain-tier-row">
+                            <span class="tier-badge tier-badge--medium">중간</span>
+                            <select class="brain-routing-select" id="routingMedium">
+                              ${this.renderModelOptions(this.routingConfig.medium)}
+                            </select>
+                            ${this.renderThinkingToggle('Medium', this.routingConfig.mediumThinking)}
+                          </div>
+                          <div class="brain-tier-row">
+                            <span class="tier-badge tier-badge--heavy">고성능</span>
+                            <select class="brain-routing-select" id="routingHeavy">
+                              ${this.renderModelOptions(this.routingConfig.heavy)}
+                            </select>
+                            ${this.renderThinkingToggle('Heavy', this.routingConfig.heavyThinking)}
+                          </div>
+                        </div>
+                        <div class="brain-wizard-note">생각 기능은 모델별로 지원 여부가 다를 수 있습니다</div>
+                        <button type="button" class="brain-wizard-confirm" data-confirm="tiers">확인</button>
+                      </div>
+
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
+
+            <!-- 알바 -->
+            <div class="timeline-item" data-section="alba">
+              <div class="timeline-icon" style="background: linear-gradient(145deg, #8a9aaa, #7a8a9a);">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4a5a6a" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                  <circle cx="9" cy="7" r="4"/>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+              </div>
+              <div class="timeline-main">
+                <div class="timeline-header">
+                  <div class="timeline-content">
+                    <div class="timeline-title">알바 <span class="timeline-subtitle">전문 AI 워커</span></div>
+                    <div class="alba-status">${this.renderAlbaStatus()}</div>
+                  </div>
+                </div>
+                <div class="timeline-body">
+                  <div class="alba-list">
+                    ${this.renderAlbaList()}
+                  </div>
+                  <button type="button" class="alba-add-btn" id="addAlbaBtn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="12" y1="5" x2="12" y2="19"/>
+                      <line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    알바 추가
+                  </button>
+                </div>
+              </div>
+            </div>
+
           </div>
 
           <!-- 온보딩 카드 섹션 (기존) -->
@@ -466,13 +576,6 @@ export class AISettings {
             </div>
           </div>
 
-          <!-- 알바 설정 -->
-          <section class="settings-section">
-            <h3 class="settings-section-title">알바</h3>
-            <p class="settings-section-desc">전문 AI 알바들이 각자의 역할에 맞게 작업을 수행합니다.</p>
-            ${this.renderAgentChainSettings()}
-          </section>
-
           <!-- 메모리 설정 -->
           <section class="settings-section">
             <h3 class="settings-section-title">메모리 설정</h3>
@@ -545,9 +648,9 @@ export class AISettings {
     this.services.forEach(service => {
       // Vertex AI는 projectId로, Ollama는 API 키 선택적(있으면 사용, 없어도 OK), 나머지는 apiKey 필수
       let hasKey;
-      if (service.type === 'vertex') {
+      if (service.type === 'vertex' || service.serviceId === 'vertex') {
         hasKey = !!service.projectId;
-      } else if (service.type === 'ollama') {
+      } else if (service.type === 'ollama' || service.serviceId === 'ollama') {
         hasKey = true; // 로컬 서버는 API 키 선택적 (없어도 연결 시도)
       } else {
         hasKey = service.hasApiKey;
@@ -580,7 +683,7 @@ export class AISettings {
     if (this.availableModels.length === 0) {
       this.availableModels.push({
         id: '',
-        name: '(API 키를 설정하고 모델 새로고침을 해주세요)',
+        name: '(위에서 API 서비스를 추가해주세요)',
         service: '-',
         type: 'none',
         disabled: true
@@ -620,9 +723,14 @@ export class AISettings {
     try {
       // 서버에서 라우팅 설정 로드
       const response = await this.apiClient.get('/config/routing');
-      if (response && response.light) {
-        // 새 형식 (serviceId + thinking 포함) 또는 이전 형식 (modelId만)
+      if (response && (response.light || response.singleModel)) {
+        // 새 형식 (mode + serviceId + thinking 포함) 또는 이전 형식
         this.routingConfig = {
+          // 모드 (단일/자동)
+          mode: response.mode || '',
+          // 단일 모델 설정
+          singleModel: response.singleModel?.modelId || null,
+          singleThinking: response.singleModel?.thinking || false,
           // 라우팅 담당
           manager: response.manager || 'server',
           managerModel: response.managerModel?.modelId || null,
@@ -637,7 +745,9 @@ export class AISettings {
           // thinking 설정
           lightThinking: response.light?.thinking || false,
           mediumThinking: response.medium?.thinking || false,
-          heavyThinking: response.heavy?.thinking || false
+          heavyThinking: response.heavy?.thinking || false,
+          // 완성 상태
+          confirmed: response.confirmed || false
         };
       }
     } catch (error) {
@@ -798,7 +908,7 @@ export class AISettings {
    * 생각 토글 렌더링
    * 모든 모델에 표시, 지원 모델에서만 동작
    */
-  renderThinkingToggle(tier, modelId, isEnabled) {
+  renderThinkingToggle(tier, isEnabled) {
     return `
       <div class="thinking-toggle-wrapper">
         <label class="thinking-toggle">
@@ -808,7 +918,6 @@ export class AISettings {
           <span class="thinking-toggle-slider"></span>
           <span class="thinking-toggle-label">생각</span>
         </label>
-        <span class="thinking-hint">미지원 모델은 생각과정 없이 응답</span>
       </div>
     `;
   }
@@ -892,7 +1001,57 @@ export class AISettings {
   }
 
   /**
-   * 알바 설정 렌더링 (간소화)
+   * 알바 리스트 렌더링 (타임라인용)
+   */
+  renderAlbaList() {
+    if (this.availableRoles.length === 0) {
+      return '<div class="alba-empty-hint">등록된 알바가 없습니다</div>';
+    }
+    return this.availableRoles.map(role => this.renderAlbaCompactItem(role)).join('');
+  }
+
+  /**
+   * 알바 현황 렌더링
+   */
+  renderAlbaStatus() {
+    const total = this.availableRoles.length;
+    const active = this.availableRoles.filter(r => r.active).length;
+    const inactive = total - active;
+
+    if (total === 0) {
+      return '';
+    }
+
+    return `
+      <span class="alba-status-item"><span class="alba-status-box">알바 수</span><span class="alba-status-num">${total}</span></span>
+      <span class="alba-status-item"><span class="alba-status-box">고용</span><span class="alba-status-num">${active}</span></span>
+      <span class="alba-status-item"><span class="alba-status-box">휴직</span><span class="alba-status-num">${inactive}</span></span>
+    `;
+  }
+
+  /**
+   * 알바 간략 아이템 렌더링 (타임라인용)
+   */
+  renderAlbaCompactItem(role) {
+    return `
+      <div class="alba-compact-item ${role.active ? '' : 'inactive'}" data-role-id="${role.roleId}" data-action="edit-alba">
+        <div class="alba-compact-info">
+          <span class="alba-compact-name">${role.name}</span>
+          <span class="alba-compact-desc">${role.description || '설명 없음'}</span>
+        </div>
+        <label class="toggle-switch toggle-switch-xs" onclick="event.stopPropagation()">
+          <input type="checkbox"
+                 data-role-id="${role.roleId}"
+                 data-action="toggle-alba-active"
+                 ${role.active ? 'checked' : ''}>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    `;
+  }
+
+  /**
+   * 알바 설정 렌더링 (간소화) - 기존 섹션용
    */
   renderAgentChainSettings() {
     const hasRoles = this.availableRoles.length > 0;
@@ -937,7 +1096,7 @@ export class AISettings {
               <span class="alba-desc">${role.description}</span>
             </div>
           </div>
-          <div class="alba-status">
+          <div class="alba-item-status">
             <span class="alba-mode-badge">${this.getModeLabel(role.mode || 'single')}</span>
             <label class="toggle-switch toggle-switch-sm" onclick="event.stopPropagation()">
               <input type="checkbox"
@@ -1128,8 +1287,8 @@ export class AISettings {
         <div class="alba-detail-row">
           <label class="alba-label">사용 모델</label>
           <select class="alba-model-select" data-role-id="${role.roleId}">
-            <option value="">자동 선택</option>
-            ${this.renderModelOptions(role.preferredModel)}
+            <option value="" ${!role.preferredModel ? 'selected' : ''}>자동 선택</option>
+            ${this.renderModelOptions(role.preferredModel, false)}
           </select>
         </div>
       `;
@@ -1417,24 +1576,36 @@ export class AISettings {
 
         <!-- Oracle 설정 -->
         <div class="storage-panel" id="oracleStoragePanel" style="display: ${currentType === 'oracle' ? 'block' : 'none'};">
+          <!-- Wallet 업로드 -->
+          <div class="oracle-wallet-section">
+            <label>Wallet (인증서)</label>
+            <div class="oracle-wallet-row">
+              <input type="file" id="oracleWalletFile" accept=".zip" style="display:none">
+              <button class="settings-btn settings-btn-outline" id="uploadWalletBtn">📁 Wallet.zip 업로드</button>
+              <span class="wallet-status" id="walletStatus">${this.storageConfig.oracle?.walletUploaded ? '✅ 업로드됨' : '⚪ 미설정'}</span>
+            </div>
+            <small class="oracle-hint">Oracle Cloud에서 다운로드한 Wallet zip 파일</small>
+          </div>
+
           <div class="oracle-config-grid">
             <div class="oracle-field">
               <label>연결 문자열</label>
-              <input type="text" id="oracleConnectionString" class="storage-input"
-                     value="${this.storageConfig.oracle?.connectionString || ''}"
-                     placeholder="(description=(address=...))">
+              <select id="oracleConnectionString" class="storage-input">
+                <option value="">-- Wallet 업로드 후 선택 --</option>
+              </select>
+              <small class="oracle-hint">Wallet 업로드 시 자동으로 TNS 목록이 표시됩니다</small>
             </div>
             <div class="oracle-field">
               <label>사용자</label>
               <input type="text" id="oracleUser" class="storage-input"
-                     value="${this.storageConfig.oracle?.user || ''}" placeholder="username">
+                     value="${this.storageConfig.oracle?.user || ''}" placeholder="ADMIN">
             </div>
             <div class="oracle-field">
               <label>비밀번호</label>
               <input type="password" id="oraclePassword" class="storage-input" placeholder="********">
             </div>
             <div class="oracle-field">
-              <label>암호화 키</label>
+              <label>암호화 키 (선택)</label>
               <input type="password" id="oracleEncryptionKey" class="storage-input"
                      placeholder="데이터 암호화용 키">
             </div>
@@ -2173,10 +2344,15 @@ export class AISettings {
   /**
    * 모델 옵션 렌더링 헬퍼 (서비스별 그룹화)
    */
-  renderModelOptions(selectedValue) {
+  renderModelOptions(selectedValue, includePlaceholder = true) {
+    // 기본 placeholder 옵션
+    const placeholder = includePlaceholder
+      ? `<option value="" ${!selectedValue ? 'selected' : ''} disabled>모델을 선택해주세요</option>`
+      : '';
+
     // 모델이 없거나 플레이스홀더만 있는 경우
     if (!this.modelsByService || Object.keys(this.modelsByService).length === 0) {
-      return this.availableModels.map(model => `
+      return placeholder + this.availableModels.map(model => `
         <option value="${model.id}"
                 ${model.id === selectedValue ? 'selected' : ''}
                 ${model.disabled ? 'disabled' : ''}>
@@ -2188,7 +2364,7 @@ export class AISettings {
     // 서비스명 알파벳순 정렬
     const sortedServices = Object.keys(this.modelsByService).sort((a, b) => a.localeCompare(b));
 
-    return sortedServices.map(serviceName => {
+    return placeholder + sortedServices.map(serviceName => {
       const models = this.modelsByService[serviceName];
       return `
         <optgroup label="${serviceName}">
@@ -2599,8 +2775,20 @@ export class AISettings {
         const value = parseFloat(e.target.value);
         const section = e.target.closest('.timeline-item')?.dataset.section;
 
-        // 실시간 UI 피드백 (필요시)
-        // 저장은 change 이벤트에서 처리
+        // 실시간 UI 피드백 - 슬라이더 라벨 표시
+        const sliderLabels = {
+          formality: { left: '캐주얼', right: '격식' },
+          verbosity: { left: '간결', right: '상세' },
+          humor: { left: '진지', right: '유머' },
+          empathy: { left: '기계적', right: '공감적' },
+          temperature: { left: '정확', right: '창의' }
+        };
+        const labels = sliderLabels[field];
+        if (labels) {
+          const percent = Math.round(value * 100);
+          const label = value < 0.4 ? labels.left : value > 0.6 ? labels.right : '균형';
+          this.showSaveStatus(`${label} (${percent}%)`, 'info');
+        }
       }
     }, { signal });
 
@@ -2612,6 +2800,11 @@ export class AISettings {
         const section = e.target.closest('.timeline-item')?.dataset.section;
         await this.saveTimelineSliderValue(section, field, value);
         this.updateTimelineProgress(section);
+        // 성격 섹션: 슬라이더 조절 시 요약에 "세밀조절" 표시
+        if (section === 'personality') {
+          this.updatePersonalitySummary();
+        }
+        this.showSaveStatus('조절 완료', 'success');
         return;
       }
 
@@ -2661,6 +2854,12 @@ export class AISettings {
         if (input.classList.contains('timeline-field')) {
           const section = input.dataset.section;
           this.updateTimelineProgress(section);
+          // 성격 섹션: 프롬프트 입력 시 요약 업데이트
+          if (section === 'personality') {
+            const desc = input.value.trim();
+            this.agentProfile.description = desc;
+            this.updatePersonalitySummary();
+          }
         }
       }
     }, { signal });
@@ -2759,25 +2958,27 @@ export class AISettings {
       }
     }, { signal });
 
-    // 타임라인 프로그레스(체크버튼) 클릭 시 다시 펼치기
+    // 타임라인 프로그레스(체크버튼) 클릭 시 접기/펼치기 토글
     container.addEventListener('click', (e) => {
       const progress = e.target.closest('.timeline-progress');
       if (progress) {
+        e.stopPropagation(); // 헤더 클릭 이벤트 방지
         const item = progress.closest('.timeline-item');
-        if (item && !item.classList.contains('expanded')) {
-          // 편집 모드로 전환 중 플래그 설정
+        if (!item) return;
+
+        if (item.classList.contains('expanded')) {
+          // 접기
+          item.classList.remove('expanded');
+          this.adjustCapsuleHeight(item, false);
+        } else {
+          // 펼치기
           item.dataset.expanding = 'true';
           item.classList.add('expanded');
-          // 첫 번째 필드에 포커스 및 캡슐 높이 조절
           setTimeout(() => {
             const firstField = item.querySelector('.timeline-field');
             if (firstField) firstField.focus();
-            // 펼쳐진 상태로 캡슐 높이 조절
             this.adjustCapsuleHeight(item, true);
-            // 플래그 해제
-            setTimeout(() => {
-              delete item.dataset.expanding;
-            }, 200);
+            setTimeout(() => delete item.dataset.expanding, 200);
           }, 100);
         }
       }
@@ -2849,7 +3050,6 @@ export class AISettings {
     });
 
     // 라우팅 설정 - 드롭다운 변경 시 자동 저장
-    const routingManagerSelect = container.querySelector('#routingManager');
     const routingManagerModelSelect = container.querySelector('#routingManagerModel');
     const routingSelects = container.querySelectorAll('.brain-routing-select');
     const thinkingToggles = container.querySelectorAll('[id^="thinking"]');
@@ -2859,6 +3059,8 @@ export class AISettings {
       select.addEventListener('change', () => {
         this.saveRoutingSettings();
         this.updateTimelineProgress('brain');
+        // 두뇌 요약 업데이트
+        updateBrainWizard();
       });
     });
 
@@ -2870,17 +3072,232 @@ export class AISettings {
       });
     });
 
-    // 라우팅 담당 변경 시 모델 드롭다운 활성화/비활성화
-    if (routingManagerSelect && routingManagerModelSelect) {
-      routingManagerSelect.addEventListener('change', (e) => {
-        const isAI = e.target.value === 'ai';
-        routingManagerModelSelect.disabled = !isAI;
-        if (!isAI) {
-          routingManagerModelSelect.value = '';
+    // 브레인 위자드 관리
+    const brainWizard = container.querySelector('.brain-wizard');
+    const brainModeRadios = container.querySelectorAll('input[name="brainMode"]');
+    const routerTypeRadios = container.querySelectorAll('input[name="routerType"]');
+    const brainCards = container.querySelectorAll('.brain-wizard-card');
+
+    // 카드 선택 시 UI 업데이트
+    brainCards.forEach(card => {
+      const radio = card.querySelector('input[type="radio"]');
+      if (radio) {
+        radio.addEventListener('change', () => {
+          // 같은 그룹의 다른 카드들 선택 해제
+          const name = radio.name;
+          container.querySelectorAll(`input[name="${name}"]`).forEach(r => {
+            r.closest('.brain-wizard-card')?.classList.remove('selected');
+          });
+          // 현재 카드 선택
+          card.classList.add('selected');
+        });
+      }
+    });
+
+    // 위자드 상태 업데이트 함수
+    const updateBrainWizard = () => {
+      const modeRadio = container.querySelector('input[name="brainMode"]:checked');
+      const mode = modeRadio?.value || '';  // 미선택 시 빈 문자열
+      const routerType = container.querySelector('input[name="routerType"]:checked')?.value || 'server';
+
+      // data-mode, data-router 속성 업데이트 (CSS에서 패널 표시 제어)
+      if (brainWizard) {
+        brainWizard.dataset.mode = mode;
+        brainWizard.dataset.router = routerType;
+      }
+
+      // 두뇌 요약 업데이트
+      const brainSummary = container.querySelector('.timeline-summary--brain');
+      const brainHint = container.querySelector('.timeline-item[data-section="brain"] .section-empty-hint');
+      if (brainSummary) {
+        let summaryHtml = '';
+        if (mode === 'single') {
+          const singleSelect = container.querySelector('#routingSingleModel');
+          const modelName = singleSelect?.selectedOptions[0]?.text || '';
+          summaryHtml = `<div><span class="summary-label">단일</span><span class="summary-text">${modelName || '-'}</span></div>`;
+        } else if (mode === 'auto') {
+          if (routerType === 'server') {
+            summaryHtml = `<div><span class="summary-label">자동</span><span class="summary-text">서버</span></div>`;
+          } else if (routerType === 'ai') {
+            const routerSelect = container.querySelector('#routingRouter');
+            const routerModelName = routerSelect?.selectedOptions[0]?.text || '';
+            const displayName = routerModelName ? `라우터 AI ${routerModelName}` : '라우터 AI';
+            summaryHtml = `<div><span class="summary-label">자동</span><span class="summary-text">${displayName}</span></div>`;
+          }
+        }
+        brainSummary.innerHTML = summaryHtml;
+
+        // 모드가 선택되면 힌트 숨김
+        if (brainHint) {
+          brainHint.style.display = mode ? 'none' : '';
+        }
+      }
+
+      // 스텝 인디케이터 상태 업데이트
+      const steps = container.querySelectorAll('.brain-wizard-step');
+      const lines = container.querySelectorAll('.brain-wizard-line');
+
+      steps.forEach(step => {
+        const stepNum = step.dataset.step;
+        step.removeAttribute('data-done');
+        step.removeAttribute('data-active');
+
+        if (stepNum === '1') {
+          // 모드 선택 전: active, 선택 후: done
+          if (!mode) {
+            step.dataset.active = 'true';
+          } else {
+            step.dataset.done = 'true';
+          }
+        } else if (stepNum === '2') {
+          if (!mode) {
+            // 모드 미선택 시 비활성
+          } else if (mode === 'single') {
+            // 단일 모델: step 2가 마지막
+            step.dataset.done = 'true';
+          } else {
+            // 자동 라우팅: step 2 완료 (서버든 AI든)
+            step.dataset.done = 'true';
+          }
+        } else if (stepNum === '3') {
+          if (mode === 'auto' && routerType === 'server') {
+            // 자동+서버: step 3가 마지막 (티어별)
+            step.dataset.done = 'true';
+          } else if (mode === 'auto' && routerType === 'ai') {
+            // 자동+AI: step 3 완료 (라우터 모델)
+            step.dataset.done = 'true';
+          }
+        } else if (stepNum === '4') {
+          if (mode === 'auto' && routerType === 'ai') {
+            // 자동+AI: step 4 완료 (티어별)
+            step.dataset.done = 'true';
+          }
+        } else if (stepNum === 'final') {
+          // 완성 단계는 confirmed일 때만 done
+          // CSS에서 처리하므로 여기서는 패스
+        }
+      });
+
+      // 라인 활성화
+      lines.forEach((line, idx) => {
+        line.removeAttribute('data-active');
+        if (mode && idx === 0) {
+          // step 1 -> step 2 라인
+          line.dataset.active = 'true';
+        }
+        if (mode === 'single' && idx === 1) {
+          // 단일모델: step 2 -> final 라인
+          line.dataset.active = 'true';
+        }
+        if (mode === 'auto' && idx === 1) {
+          // step 2 -> step 3 라인
+          line.dataset.active = 'true';
+        }
+        if (mode === 'auto' && routerType === 'server' && idx === 2) {
+          // 자동+서버: step 3 -> final 라인
+          line.dataset.active = 'true';
+        }
+        if (mode === 'auto' && routerType === 'ai' && idx === 2) {
+          // step 3 -> step 4 라인
+          line.dataset.active = 'true';
+        }
+        if (mode === 'auto' && routerType === 'ai' && idx === 3) {
+          // 자동+AI: step 4 -> final 라인
+          line.dataset.active = 'true';
+        }
+      });
+    };
+
+    // 초기 상태 설정
+    updateBrainWizard();
+    this.updatePersonalitySummary();
+
+    // 모드 변경 시
+    brainModeRadios.forEach(radio => {
+      radio.addEventListener('change', () => {
+        updateBrainWizard();
+        this.saveRoutingSettings();
+        this.updateTimelineProgress('brain');
+      });
+    });
+
+    // 라우팅 담당 변경 시
+    routerTypeRadios.forEach(radio => {
+      radio.addEventListener('change', () => {
+        updateBrainWizard();
+        this.saveRoutingSettings();
+        this.updateTimelineProgress('brain');
+      });
+    });
+
+    // 확인 버튼 클릭 시
+    const confirmBtns = container.querySelectorAll('.brain-wizard-confirm');
+    confirmBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (brainWizard) {
+          // 모드별 필수 모델 검증 (DOM에서 직접 값 읽기)
+          const mode = this.routingConfig.mode;
+          const manager = this.routingConfig.manager;
+
+          if (mode === 'single') {
+            // 단일 모델: DOM에서 직접 확인
+            const singleModelValue = document.getElementById('routingSingleModel')?.value;
+            if (!singleModelValue) {
+              this.showSaveStatus('모델을 선택해주세요', 'error');
+              return;
+            }
+          } else if (mode === 'auto') {
+            // 라우터 AI: 라우터 모델 필수 (먼저 체크)
+            const isRouterAI = manager === 'ai' || manager === 'router';
+            const routerModelValue = document.getElementById('routingRouter')?.value;
+            if (isRouterAI && !routerModelValue) {
+              this.showSaveStatus('라우터 모델을 선택해주세요', 'error');
+              return;
+            }
+            // 자동 라우팅: 티어별 모델 전부 필수
+            const missingTiers = [];
+            if (!document.getElementById('routingLight')?.value) missingTiers.push('경량');
+            if (!document.getElementById('routingMedium')?.value) missingTiers.push('중간');
+            if (!document.getElementById('routingHeavy')?.value) missingTiers.push('고성능');
+            if (missingTiers.length > 0) {
+              this.showSaveStatus(`${missingTiers.join(', ')} 모델을 선택해주세요`, 'error');
+              return;
+            }
+          }
+
+          brainWizard.dataset.confirmed = 'true';
+          this.routingConfig.confirmed = true;
+          this.saveRoutingSettings();
+          this.updateTimelineProgress('brain');
+        }
+      });
+    });
+
+    // 수정하기 버튼 클릭 시
+    const editBtn = container.querySelector('.brain-wizard-edit');
+    if (editBtn) {
+      editBtn.addEventListener('click', () => {
+        if (brainWizard) {
+          brainWizard.dataset.confirmed = 'false';
+          this.routingConfig.confirmed = false;
+          this.saveRoutingSettings();
         }
       });
     }
 
+    // 모드나 라우터 변경 시 confirmed 리셋
+    const resetConfirmed = () => {
+      if (brainWizard) {
+        brainWizard.dataset.confirmed = 'false';
+        this.routingConfig.confirmed = false;
+      }
+    };
+    brainModeRadios.forEach(radio => {
+      radio.addEventListener('change', resetConfirmed);
+    });
+    routerTypeRadios.forEach(radio => {
+      radio.addEventListener('change', resetConfirmed);
+    });
 
     // 메모리 설정 버튼
     const saveMemoryBtn = container.querySelector('#saveMemoryBtn');
@@ -2941,6 +3358,8 @@ export class AISettings {
     const testFtpBtn = container.querySelector('#testFtpBtn');
     const testOracleBtn = container.querySelector('#testOracleBtn');
     const testNotionBtn = container.querySelector('#testNotionBtn');
+    const uploadWalletBtn = container.querySelector('#uploadWalletBtn');
+    const oracleWalletFile = container.querySelector('#oracleWalletFile');
 
     if (testFtpBtn) {
       testFtpBtn.addEventListener('click', () => this.testFtpConnection());
@@ -2950,6 +3369,10 @@ export class AISettings {
     }
     if (testNotionBtn) {
       testNotionBtn.addEventListener('click', () => this.testNotionConnection());
+    }
+    if (uploadWalletBtn && oracleWalletFile) {
+      uploadWalletBtn.addEventListener('click', () => oracleWalletFile.click());
+      oracleWalletFile.addEventListener('change', (e) => this.uploadOracleWallet(e.target.files[0]));
     }
 
     if (saveStorageBtn) {
@@ -2985,6 +3408,9 @@ export class AISettings {
 
     // 스토리지 타입 로드
     this.loadStorageTypes();
+
+    // Oracle Wallet 상태 로드
+    this.loadOracleWalletStatus();
 
     // 초기 타임라인 상태 설정 (저장된 값 반영)
     setTimeout(() => {
@@ -3033,6 +3459,33 @@ export class AISettings {
     if (addAlbaBtn) {
       addAlbaBtn.addEventListener('click', () => this.addAlba());
     }
+
+    // 알바 활성화 토글 (타임라인용)
+    container.querySelectorAll('[data-action="toggle-alba-active"]').forEach(checkbox => {
+      checkbox.addEventListener('change', async (e) => {
+        const roleId = e.target.dataset.roleId;
+        await this.toggleAlbaActive(roleId, e.target.checked);
+      });
+    });
+
+    // 알바 수정 버튼 (타임라인용)
+    container.querySelectorAll('[data-action="edit-alba"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const roleId = e.target.closest('[data-role-id]').dataset.roleId;
+        this.editAlba(roleId);
+      });
+    });
+
+    // 알바 삭제 버튼 (타임라인용)
+    container.querySelectorAll('[data-action="delete-alba"]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const roleId = e.target.closest('[data-role-id]').dataset.roleId;
+        const role = this.availableRoles.find(r => r.roleId === roleId);
+        if (role && confirm(`"${role.name}" 알바를 삭제하시겠습니까?`)) {
+          await this.deleteAlba(roleId);
+        }
+      });
+    });
 
     // 알바 헤더 클릭 (확장/축소)
     container.querySelectorAll('.alba-header').forEach(header => {
@@ -3180,19 +3633,6 @@ export class AISettings {
       checkbox.addEventListener('change', (e) => {
         const roleId = e.target.dataset.roleId;
         this.toggleAlbaActive(roleId, e.target.checked);
-      });
-    });
-
-    // 알바 편집/삭제 버튼
-    container.querySelectorAll('[data-action="edit-alba"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.editAlba(btn.dataset.roleId);
-      });
-    });
-
-    container.querySelectorAll('[data-action="delete-alba"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this.deleteAlba(btn.dataset.roleId);
       });
     });
 
@@ -3561,12 +4001,35 @@ export class AISettings {
    * 라우팅 드롭다운 모델 목록 갱신
    */
   updateRoutingDropdowns() {
+    const singleSelect = document.getElementById('routingSingleModel');
+    const routerSelect = document.getElementById('routingRouter');
     const lightSelect = document.getElementById('routingLight');
     const mediumSelect = document.getElementById('routingMedium');
     const heavySelect = document.getElementById('routingHeavy');
 
     const hasModels = this.availableModels.length > 0 && !this.availableModels[0].disabled;
 
+    // 단일 모델 드롭다운 갱신
+    if (singleSelect) {
+      const savedValue = this.routingConfig.singleModel;
+      singleSelect.innerHTML = this.renderModelOptions(savedValue);
+      singleSelect.disabled = !hasModels;
+      if (savedValue && singleSelect.querySelector(`option[value="${savedValue}"]`)) {
+        singleSelect.value = savedValue;
+      }
+    }
+
+    // 라우터 모델 드롭다운 갱신
+    if (routerSelect) {
+      const savedValue = this.routingConfig.managerModel;
+      routerSelect.innerHTML = this.renderModelOptions(savedValue);
+      routerSelect.disabled = !hasModels;
+      if (savedValue && routerSelect.querySelector(`option[value="${savedValue}"]`)) {
+        routerSelect.value = savedValue;
+      }
+    }
+
+    // 티어별 모델 드롭다운 갱신
     [lightSelect, mediumSelect, heavySelect].forEach((select, idx) => {
       if (!select) return;
 
@@ -3695,16 +4158,25 @@ export class AISettings {
    */
   async saveRoutingSettings() {
     try {
-      const light = document.getElementById('routingLight')?.value;
-      const medium = document.getElementById('routingMedium')?.value;
-      const heavy = document.getElementById('routingHeavy')?.value;
+      // 모드 확인 (단일/자동)
+      const modeRadio = document.querySelector('input[name="brainMode"]:checked');
+      const mode = modeRadio?.value || 'auto';
 
-      // 라우팅 담당 가져오기 (드롭다운 방식)
-      const managerSelect = document.getElementById('routingManager');
-      const manager = managerSelect?.value || 'server';
+      // 단일 모델 설정 (빈 문자열은 null로)
+      const singleModel = document.getElementById('routingSingleModel')?.value || null;
+      const singleThinking = document.getElementById('thinkingSingle')?.checked || false;
 
-      // 라우팅 담당 모델 (AI 선택 시)
-      const managerModel = document.getElementById('routingManagerModel')?.value || null;
+      // 자동 라우팅 설정 (빈 문자열은 null로)
+      const light = document.getElementById('routingLight')?.value || null;
+      const medium = document.getElementById('routingMedium')?.value || null;
+      const heavy = document.getElementById('routingHeavy')?.value || null;
+
+      // 라우팅 담당 가져오기 (라디오 방식)
+      const routerTypeRadio = document.querySelector('input[name="routerType"]:checked');
+      const manager = routerTypeRadio?.value || 'server';
+
+      // 라우터 모델 (AI 선택 시, 빈 문자열은 null로)
+      const managerModel = document.getElementById('routingRouter')?.value || null;
 
       // 생각 토글 상태 가져오기
       const lightThinking = document.getElementById('thinkingLight')?.checked || false;
@@ -3712,19 +4184,26 @@ export class AISettings {
       const heavyThinking = document.getElementById('thinkingHeavy')?.checked || false;
 
       // 각 모델의 서비스 정보 찾기
+      const singleService = singleModel ? this.findServiceByModelId(singleModel) : null;
       const lightService = this.findServiceByModelId(light);
       const mediumService = this.findServiceByModelId(medium);
       const heavyService = this.findServiceByModelId(heavy);
       const managerService = managerModel ? this.findServiceByModelId(managerModel) : null;
 
-      // 서버에 저장할 데이터 (modelId + serviceId + thinking 형식)
+      // 서버에 저장할 데이터
       const routingData = {
         enabled: true,
-        manager,  // 라우팅 담당: server, ai, fixed
-        managerModel: manager === 'ai' ? { modelId: managerModel, serviceId: managerService?.serviceId || null } : null,
-        light: { modelId: light, serviceId: lightService?.serviceId || null, thinking: lightThinking },
-        medium: { modelId: medium, serviceId: mediumService?.serviceId || null, thinking: mediumThinking },
-        heavy: { modelId: heavy, serviceId: heavyService?.serviceId || null, thinking: heavyThinking }
+        mode,  // 'single' 또는 'auto'
+        // 단일 모델 설정
+        singleModel: mode === 'single' ? { modelId: singleModel, serviceId: singleService?.serviceId || null, thinking: singleThinking } : null,
+        // 자동 라우팅 설정
+        manager: mode === 'auto' ? manager : null,  // 라우팅 담당: server, ai
+        managerModel: mode === 'auto' && manager === 'ai' ? { modelId: managerModel, serviceId: managerService?.serviceId || null } : null,
+        light: light ? { modelId: light, serviceId: lightService?.serviceId || null, thinking: lightThinking } : null,
+        medium: medium ? { modelId: medium, serviceId: mediumService?.serviceId || null, thinking: mediumThinking } : null,
+        heavy: heavy ? { modelId: heavy, serviceId: heavyService?.serviceId || null, thinking: heavyThinking } : null,
+        // 완성 상태
+        confirmed: this.routingConfig.confirmed || false
       };
 
       // 서버 API로 저장
@@ -3732,13 +4211,17 @@ export class AISettings {
 
       // 로컬 상태 업데이트
       this.routingConfig = {
+        mode,
+        singleModel,
+        singleThinking,
         manager,
         managerModel,
         light, medium, heavy,
         lightThinking, mediumThinking, heavyThinking,
         lightService: lightService?.serviceId,
         mediumService: mediumService?.serviceId,
-        heavyService: heavyService?.serviceId
+        heavyService: heavyService?.serviceId,
+        confirmed: this.routingConfig.confirmed || false
       };
 
       // localStorage에도 백업 저장
@@ -3758,17 +4241,70 @@ export class AISettings {
     const item = document.querySelector(`.timeline-item[data-section="${section}"]`);
     if (!item) return;
 
-    // 두뇌 섹션은 별도 처리 (드롭다운 기반)
+    // 두뇌 섹션은 별도 처리 (단계별 진행률)
     if (section === 'brain') {
-      const selects = item.querySelectorAll('.brain-routing-select');
-      let filledCount = 0;
-      selects.forEach(select => {
-        if (select.value && !select.disabled) filledCount++;
-      });
+      const mode = this.routingConfig.mode || '';
+      // manager 값: 'server' 또는 'ai' (HTML radio value와 일치)
+      const manager = this.routingConfig.manager || 'server';
+      const isRouterAI = manager === 'ai' || manager === 'router'; // 둘 다 지원
+      const isConfirmed = this.routingConfig.confirmed === true;
 
-      // 최소 3개(경량/중간/고성능) 선택되면 100%
-      const progress = filledCount >= 3 ? 1 : filledCount / 3;
+      let currentStep = 0;
+      let totalSteps = 3; // 기본: 단일모델 (모드 → 모델선택 → 확인)
+
+      if (mode === 'single') {
+        // 단일모델: 모드선택(1) → 모델선택(2) → 확인(3)
+        totalSteps = 3;
+        currentStep = 1; // 모드 선택됨
+        if (this.routingConfig.defaultModel) {
+          currentStep = 2; // 모델 선택됨
+        }
+        if (isConfirmed) {
+          currentStep = 3; // 확인됨
+        }
+      } else if (mode === 'auto') {
+        // 티어 모델 개수 카운트 (전부 채워야 완료)
+        let tierCount = 0;
+        if (this.routingConfig.light) tierCount++;
+        if (this.routingConfig.medium) tierCount++;
+        if (this.routingConfig.heavy) tierCount++;
+        const allTiersFilled = tierCount === 3;
+
+        if (!isRouterAI) {
+          // 자동+서버: 모드선택(1) → 라우팅방식(2) → 티어별모델(3) → 확인(4)
+          totalSteps = 4;
+          currentStep = 2; // 모드 + 라우팅방식 선택됨
+          if (allTiersFilled) {
+            currentStep = 3; // 티어별 모델 전부 선택됨
+          }
+          if (isConfirmed) {
+            currentStep = 4; // 확인됨
+          }
+        } else {
+          // 자동+라우터AI: 모드선택(1) → 라우팅방식(2) → 라우터모델(3) → 티어별모델(4) → 확인(5)
+          totalSteps = 5;
+          currentStep = 2; // 모드 + 라우팅방식 선택됨
+
+          const hasRouter = !!this.routingConfig.managerModel;
+
+          if (hasRouter) {
+            currentStep = 3; // 라우터 모델 선택됨
+          }
+          if (hasRouter && allTiersFilled) {
+            currentStep = 4; // 라우터 + 티어 전부 선택됨
+          }
+          if (isConfirmed) {
+            currentStep = 5; // 확인됨
+          }
+        }
+      } else {
+        // 모드 미선택 상태
+        totalSteps = 1;
+        currentStep = 0;
+      }
+
       const circumference = 62.83;
+      const progress = totalSteps > 0 ? currentStep / totalSteps : 0;
       const offset = circumference * (1 - progress);
 
       const progressRing = item.querySelector('.progress-ring');
@@ -3778,8 +4314,10 @@ export class AISettings {
         progressRing.style.strokeDashoffset = offset;
       }
       if (checkIcon) {
-        checkIcon.style.opacity = progress >= 1 ? '1' : '0';
+        // 체크 아이콘은 확인 완료 시에만 표시
+        checkIcon.style.opacity = isConfirmed ? '1' : '0';
       }
+
       return;
     }
 
@@ -3812,8 +4350,29 @@ export class AISettings {
       checkIcon.style.opacity = progress >= 1 ? '1' : '0';
     }
 
+    // 섹션 힌트 표시/숨김
+    let hasTextValue = false;
+    fields.forEach(field => {
+      if (field.value.trim()) hasTextValue = true;
+    });
+    const sectionHint = item.querySelector('.section-empty-hint');
+
+    // 성격 섹션은 별도 처리 (updatePersonalitySummary에서 관리)
+    if (section === 'personality') {
+      // 프롬프트 입력 또는 슬라이더 변경 시 힌트 숨김
+      const hasSliderChanged = this.hasPersonalitySliderChanged();
+      if (sectionHint) {
+        sectionHint.style.display = (hasTextValue || hasSliderChanged) ? 'none' : '';
+      }
+      return;
+    }
+
+    if (sectionHint) {
+      sectionHint.style.display = hasTextValue ? 'none' : '';
+    }
+
     // 값들 수집 (입력 중에도 실시간 표시 - 모든 필드 포함)
-    const summaryEl = item.querySelector('.timeline-summary');
+    const summaryEl = item.querySelector('.timeline-summary:not(.timeline-summary--personality):not(.timeline-summary--brain)');
     const allFieldValues = [];
     let hasAnyValue = false;
     fields.forEach(field => {
@@ -3989,6 +4548,60 @@ export class AISettings {
     } catch (error) {
       console.error('Failed to save timeline slider value:', error);
     }
+  }
+
+  /**
+   * 성격 요약 업데이트
+   */
+  updatePersonalitySummary() {
+    const summary = document.querySelector('.timeline-summary--personality');
+    if (!summary) return;
+
+    const description = this.agentProfile?.description || '';
+    const hasSliderChanged = this.hasPersonalitySliderChanged();
+
+    let html = '';
+    // 프롬프트 행
+    if (description) {
+      const shortDesc = description.length > 20 ? description.substring(0, 20) + '...' : description;
+      html += `<div><span class="summary-label">프롬프트</span><span class="summary-text">${shortDesc}</span></div>`;
+    } else {
+      html += `<div><span class="summary-label">프롬프트</span><span class="summary-text">-</span></div>`;
+    }
+
+    // 세밀조절 행
+    if (hasSliderChanged) {
+      html += `<div><span class="summary-label">세밀조절</span><span class="summary-text">확인</span></div>`;
+    }
+
+    summary.innerHTML = html;
+  }
+
+  /**
+   * 성격 슬라이더가 기본값에서 변경되었는지 확인
+   * 화면의 실제 슬라이더 값으로 체크
+   */
+  hasPersonalitySliderChanged() {
+    const defaults = {
+      formality: 0.5,
+      verbosity: 0.5,
+      humor: 0.3,
+      empathy: 0.6,
+      temperature: 0.7
+    };
+
+    const round = (v) => Math.round(v * 10) / 10;
+
+    // 화면의 슬라이더 값 직접 확인
+    const sliders = document.querySelectorAll('.timeline-item[data-section="personality"] .timeline-range');
+    for (const slider of sliders) {
+      const field = slider.dataset.field;
+      const value = round(parseFloat(slider.value));
+      if (defaults[field] !== undefined && value !== defaults[field]) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -4275,6 +4888,95 @@ export class AISettings {
         resultEl.textContent = '❌ ' + error.message;
         resultEl.className = 'test-result error';
       }
+    }
+  }
+
+  /**
+   * Oracle Wallet 업로드
+   */
+  async uploadOracleWallet(file) {
+    if (!file) return;
+
+    const statusEl = document.getElementById('walletStatus');
+    if (statusEl) statusEl.textContent = '⏳ 업로드 중...';
+
+    try {
+      const formData = new FormData();
+      formData.append('wallet', file);
+
+      const response = await fetch('/api/storage/upload-oracle-wallet', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        if (statusEl) statusEl.textContent = '✅ 업로드됨';
+        this.storageConfig.oracle = {
+          ...this.storageConfig.oracle,
+          walletUploaded: true
+        };
+
+        // TNS 드롭다운 업데이트
+        this.updateTnsDropdown(result.tnsNames || []);
+
+        if (result.tnsNames?.length > 0) {
+          this.showSaveStatus(`Wallet 업로드 완료. 사용 가능한 TNS: ${result.tnsNames.join(', ')}`, 'success');
+        } else {
+          this.showSaveStatus('Wallet 업로드 완료', 'success');
+        }
+      } else {
+        throw new Error(result.message || '업로드 실패');
+      }
+    } catch (error) {
+      console.error('Wallet upload failed:', error);
+      if (statusEl) statusEl.textContent = '❌ 실패';
+      this.showSaveStatus('Wallet 업로드 실패: ' + error.message, 'error');
+    }
+
+    // 파일 입력 초기화
+    const fileInput = document.getElementById('oracleWalletFile');
+    if (fileInput) fileInput.value = '';
+  }
+
+  /**
+   * TNS 드롭다운 업데이트
+   */
+  updateTnsDropdown(tnsNames, selectedValue = null) {
+    const select = document.getElementById('oracleConnectionString');
+    if (!select) return;
+
+    const currentValue = selectedValue || this.storageConfig.oracle?.connectionString || '';
+
+    select.innerHTML = tnsNames.length === 0
+      ? '<option value="">-- Wallet 업로드 후 선택 --</option>'
+      : '<option value="">-- 선택하세요 --</option>' +
+        tnsNames.map(name => {
+          const label = name.includes('_high') ? `${name} (고성능)` :
+                        name.includes('_medium') ? `${name} (일반)` :
+                        name.includes('_low') ? `${name} (저비용)` :
+                        name.includes('_tp') ? `${name} (트랜잭션)` : name;
+          return `<option value="${name}" ${name === currentValue ? 'selected' : ''}>${label}</option>`;
+        }).join('');
+  }
+
+  /**
+   * Oracle Wallet 상태 로드
+   */
+  async loadOracleWalletStatus() {
+    try {
+      const response = await fetch('/api/storage/oracle-wallet-status');
+      const result = await response.json();
+
+      if (result.success && result.uploaded) {
+        const statusEl = document.getElementById('walletStatus');
+        if (statusEl) statusEl.textContent = '✅ 업로드됨';
+
+        this.updateTnsDropdown(result.tnsNames || [], this.storageConfig.oracle?.connectionString);
+      }
+    } catch (error) {
+      console.error('Failed to load wallet status:', error);
     }
   }
 
@@ -4794,14 +5496,286 @@ export class AISettings {
     const role = this.availableRoles.find(r => r.roleId === roleId);
     if (!role) return;
 
-    const name = prompt('알바 이름:', role.name);
-    if (name === null) return;
+    // 기존 모달 제거
+    const existingModal = document.querySelector('.alba-modal-overlay');
+    if (existingModal) existingModal.remove();
 
-    const description = prompt('설명:', role.description);
-    if (description === null) return;
+    // 체인/병렬 데이터 파싱
+    let chainSteps = [];
+    let parallelModels = [];
+    try {
+      if (role.chainSteps) chainSteps = typeof role.chainSteps === 'string' ? JSON.parse(role.chainSteps) : role.chainSteps;
+      if (role.parallelModels) parallelModels = typeof role.parallelModels === 'string' ? JSON.parse(role.parallelModels) : role.parallelModels;
+    } catch (e) {}
+
+    const mode = role.mode || 'single';
+
+    const modalHtml = `
+      <div class="alba-modal-overlay">
+        <div class="alba-modal">
+          <div class="alba-modal-header">
+            <h3>알바 수정</h3>
+            <button type="button" class="alba-modal-close">&times;</button>
+          </div>
+          <div class="alba-modal-body">
+            <div class="alba-modal-field">
+              <label>이름</label>
+              <input type="text" id="albaName" value="${role.name || ''}" placeholder="예: 문서 요약가, 코드 리뷰어" />
+            </div>
+            <div class="alba-modal-field">
+              <label>설명</label>
+              <input type="text" id="albaDesc" value="${role.description || ''}" placeholder="예: 긴 문서를 핵심만 간결하게 요약" />
+            </div>
+            <div class="alba-modal-field">
+              <label>작동 방식</label>
+              <div class="alba-modal-radios">
+                <label class="alba-modal-radio">
+                  <input type="radio" name="albaMode" value="single" ${mode === 'single' ? 'checked' : ''} />
+                  <span>단일 모델</span>
+                </label>
+                <label class="alba-modal-radio">
+                  <input type="radio" name="albaMode" value="chain" ${mode === 'chain' ? 'checked' : ''} />
+                  <span>체인 (순차 진행)</span>
+                </label>
+                <label class="alba-modal-radio">
+                  <input type="radio" name="albaMode" value="parallel" ${mode === 'parallel' ? 'checked' : ''} />
+                  <span>병렬 (동시 진행)</span>
+                </label>
+              </div>
+            </div>
+            <div class="alba-modal-field alba-mode-single-field" style="${mode !== 'single' ? 'display:none' : ''}">
+              <label>사용 모델</label>
+              <select id="albaModel" class="alba-modal-select">
+                ${this.renderModelOptions(role.preferredModel, true)}
+              </select>
+            </div>
+            <div class="alba-modal-field alba-mode-single-prompt" style="${mode !== 'single' ? 'display:none' : ''}">
+              <label>업무 (시스템 프롬프트)</label>
+              <textarea id="albaPrompt" rows="4" placeholder="예: 당신은 문서 요약 전문가입니다.">${role.systemPrompt || ''}</textarea>
+            </div>
+            <div class="alba-modal-field alba-mode-chain-field" style="${mode !== 'chain' ? 'display:none' : ''}">
+              <label>체인 단계 <span class="field-hint">(순서대로 실행)</span></label>
+              <div class="alba-chain-steps" id="albaChainSteps">
+                ${chainSteps.length > 0 ? chainSteps.map((step, idx) => `
+                  <div class="alba-chain-step">
+                    <div class="step-header">
+                      <span class="step-num">${idx + 1}</span>
+                      <select class="alba-modal-select alba-chain-model">${this.renderModelOptions(step.model, true)}</select>
+                      <button type="button" class="alba-chain-remove" ${chainSteps.length <= 1 ? 'disabled' : ''}>&times;</button>
+                    </div>
+                    <input type="text" class="alba-chain-role" value="${step.role || ''}" placeholder="예: 초안 작성자" />
+                    <textarea class="alba-chain-prompt" rows="2" placeholder="예: 주어진 주제로 초안을 작성하세요">${step.prompt || ''}</textarea>
+                  </div>
+                `).join('') : `
+                  <div class="alba-chain-step">
+                    <div class="step-header">
+                      <span class="step-num">1</span>
+                      <select class="alba-modal-select alba-chain-model">${this.renderModelOptions(null, true)}</select>
+                      <button type="button" class="alba-chain-remove" disabled>&times;</button>
+                    </div>
+                    <input type="text" class="alba-chain-role" placeholder="예: 초안 작성자" />
+                    <textarea class="alba-chain-prompt" rows="2" placeholder="예: 주어진 주제로 초안을 작성하세요"></textarea>
+                  </div>
+                `}
+              </div>
+              <button type="button" class="alba-chain-add-btn" id="addChainStep">+ 단계 추가</button>
+            </div>
+            <div class="alba-modal-field alba-mode-parallel-field" style="${mode !== 'parallel' ? 'display:none' : ''}">
+              <label>병렬 모델 <span class="field-hint">(동시에 실행 후 결과 종합)</span></label>
+              <div class="alba-parallel-models" id="albaParallelModels">
+                ${parallelModels.length > 0 ? parallelModels.map(pm => `
+                  <div class="alba-parallel-item">
+                    <div class="parallel-header">
+                      <span class="parallel-icon">+</span>
+                      <select class="alba-modal-select alba-parallel-model">${this.renderModelOptions(pm.model, true)}</select>
+                      <button type="button" class="alba-parallel-remove" ${parallelModels.length <= 1 ? 'disabled' : ''}>&times;</button>
+                    </div>
+                    <input type="text" class="alba-parallel-role" value="${pm.role || ''}" placeholder="예: 창의적 관점" />
+                    <textarea class="alba-parallel-prompt" rows="2" placeholder="예: 창의적이고 독창적인 아이디어를 제시하세요">${pm.prompt || ''}</textarea>
+                  </div>
+                `).join('') : `
+                  <div class="alba-parallel-item">
+                    <div class="parallel-header">
+                      <span class="parallel-icon">+</span>
+                      <select class="alba-modal-select alba-parallel-model">${this.renderModelOptions(null, true)}</select>
+                      <button type="button" class="alba-parallel-remove" disabled>&times;</button>
+                    </div>
+                    <input type="text" class="alba-parallel-role" placeholder="예: 창의적 관점" />
+                    <textarea class="alba-parallel-prompt" rows="2" placeholder="예: 창의적이고 독창적인 아이디어를 제시하세요"></textarea>
+                  </div>
+                `}
+              </div>
+              <button type="button" class="alba-parallel-add-btn" id="addParallelModel">+ 모델 추가</button>
+            </div>
+            <div class="alba-modal-row">
+              <div class="alba-modal-field alba-trigger-field">
+                <label>트리거 키워드 <span class="field-hint">(쉼표/엔터)</span></label>
+                <input type="text" id="albaTriggers" value="${(role.triggers || []).join(', ')}" placeholder="예: 요약, summarize, 정리" />
+              </div>
+              <div class="alba-modal-field alba-tokens-field">
+                <label>Max Tokens</label>
+                <input type="number" id="albaMaxTokens" value="${role.maxTokens || 4096}" min="256" max="32000" />
+              </div>
+            </div>
+          </div>
+          <div class="alba-modal-footer alba-modal-footer-edit">
+            <button type="button" class="alba-modal-btn alba-modal-delete" data-role-id="${roleId}">삭제</button>
+            <div class="alba-modal-footer-right">
+              <button type="button" class="alba-modal-btn alba-modal-cancel">취소</button>
+              <button type="button" class="alba-modal-btn alba-modal-confirm">확인</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    this.attachEditAlbaModalEvents(roleId);
+  }
+
+  /**
+   * 수정 모달 이벤트 연결
+   */
+  attachEditAlbaModalEvents(roleId) {
+    const overlay = document.querySelector('.alba-modal-overlay');
+    const closeBtn = overlay.querySelector('.alba-modal-close');
+    const cancelBtn = overlay.querySelector('.alba-modal-cancel');
+    const confirmBtn = overlay.querySelector('.alba-modal-confirm');
+    const deleteBtn = overlay.querySelector('.alba-modal-delete');
+    const modeRadios = overlay.querySelectorAll('input[name="albaMode"]');
+    const addChainBtn = overlay.querySelector('#addChainStep');
+    const addParallelBtn = overlay.querySelector('#addParallelModel');
+
+    // 닫기
+    const closeModal = () => overlay.remove();
+    closeBtn.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+
+    // 삭제
+    deleteBtn.addEventListener('click', async () => {
+      if (confirm('이 알바를 삭제하시겠습니까?')) {
+        await this.deleteAlba(roleId);
+        overlay.remove();
+      }
+    });
+
+    // 모드 변경
+    modeRadios.forEach(radio => {
+      radio.addEventListener('change', () => {
+        const mode = radio.value;
+        overlay.querySelector('.alba-mode-single-field').style.display = mode === 'single' ? '' : 'none';
+        overlay.querySelector('.alba-mode-single-prompt').style.display = mode === 'single' ? '' : 'none';
+        overlay.querySelector('.alba-mode-chain-field').style.display = mode === 'chain' ? '' : 'none';
+        overlay.querySelector('.alba-mode-parallel-field').style.display = mode === 'parallel' ? '' : 'none';
+      });
+    });
+
+    // 체인 단계 추가
+    addChainBtn.addEventListener('click', () => {
+      const container = overlay.querySelector('#albaChainSteps');
+      const stepNum = container.children.length + 1;
+      const stepHtml = `
+        <div class="alba-chain-step">
+          <div class="step-header">
+            <span class="step-num">${stepNum}</span>
+            <select class="alba-modal-select alba-chain-model">${this.renderModelOptions(null, true)}</select>
+            <button type="button" class="alba-chain-remove">&times;</button>
+          </div>
+          <input type="text" class="alba-chain-role" placeholder="예: 검토자" />
+          <textarea class="alba-chain-prompt" rows="2" placeholder="이 단계의 업무를 설명하세요..."></textarea>
+        </div>
+      `;
+      container.insertAdjacentHTML('beforeend', stepHtml);
+      this.updateChainRemoveButtons(container);
+    });
+
+    // 병렬 모델 추가
+    addParallelBtn.addEventListener('click', () => {
+      const container = overlay.querySelector('#albaParallelModels');
+      const itemHtml = `
+        <div class="alba-parallel-item">
+          <div class="parallel-header">
+            <span class="parallel-icon">+</span>
+            <select class="alba-modal-select alba-parallel-model">${this.renderModelOptions(null, true)}</select>
+            <button type="button" class="alba-parallel-remove">&times;</button>
+          </div>
+          <input type="text" class="alba-parallel-role" placeholder="예: 비판적 관점" />
+          <textarea class="alba-parallel-prompt" rows="2" placeholder="이 모델의 업무를 설명하세요..."></textarea>
+        </div>
+      `;
+      container.insertAdjacentHTML('beforeend', itemHtml);
+      this.updateParallelRemoveButtons(container);
+    });
+
+    // 삭제 버튼 위임
+    overlay.addEventListener('click', (e) => {
+      if (e.target.classList.contains('alba-chain-remove')) {
+        const step = e.target.closest('.alba-chain-step');
+        const container = step.parentElement;
+        step.remove();
+        this.renumberChainSteps(container);
+        this.updateChainRemoveButtons(container);
+      }
+      if (e.target.classList.contains('alba-parallel-remove')) {
+        const item = e.target.closest('.alba-parallel-item');
+        const container = item.parentElement;
+        item.remove();
+        this.updateParallelRemoveButtons(container);
+      }
+    });
+
+    // 확인 (수정 저장)
+    confirmBtn.addEventListener('click', () => this.submitEditAlbaModal(overlay, roleId));
+  }
+
+  /**
+   * 수정 모달 제출
+   */
+  async submitEditAlbaModal(overlay, roleId) {
+    const name = overlay.querySelector('#albaName').value.trim();
+    const description = overlay.querySelector('#albaDesc').value.trim();
+    const mode = overlay.querySelector('input[name="albaMode"]:checked').value;
+    const systemPrompt = overlay.querySelector('#albaPrompt').value.trim();
+    const maxTokens = parseInt(overlay.querySelector('#albaMaxTokens').value) || 4096;
+    const triggersRaw = overlay.querySelector('#albaTriggers').value;
+    const triggers = triggersRaw.split(/[,\n]/).map(t => t.trim()).filter(t => t);
+
+    if (!name) {
+      this.showSaveStatus('이름을 입력해주세요.', 'error');
+      return;
+    }
+
+    const updateData = {
+      name,
+      description,
+      mode,
+      systemPrompt: mode === 'single' ? systemPrompt : null,
+      maxTokens,
+      triggers
+    };
+
+    // 모드별 추가 데이터
+    if (mode === 'single') {
+      updateData.preferredModel = overlay.querySelector('#albaModel').value;
+    } else if (mode === 'chain') {
+      const chainSteps = Array.from(overlay.querySelectorAll('.alba-chain-step')).map(step => ({
+        model: step.querySelector('.alba-chain-model').value,
+        role: step.querySelector('.alba-chain-role').value.trim(),
+        prompt: step.querySelector('.alba-chain-prompt').value.trim()
+      })).filter(s => s.model);
+      updateData.chainSteps = JSON.stringify(chainSteps);
+    } else if (mode === 'parallel') {
+      const parallelModels = Array.from(overlay.querySelectorAll('.alba-parallel-item')).map(item => ({
+        model: item.querySelector('.alba-parallel-model').value,
+        role: item.querySelector('.alba-parallel-role').value.trim(),
+        prompt: item.querySelector('.alba-parallel-prompt').value.trim()
+      })).filter(p => p.model);
+      updateData.parallelModels = JSON.stringify(parallelModels);
+    }
 
     try {
-      await this.apiClient.patch(`/roles/${roleId}`, { name, description });
+      await this.apiClient.patch(`/roles/${roleId}`, updateData);
+      overlay.remove();
       await this.loadAvailableRoles();
       const container = document.querySelector('.ai-settings-panel').parentElement;
       await this.render(container, this.apiClient);
@@ -4819,10 +5793,6 @@ export class AISettings {
     const role = this.availableRoles.find(r => r.roleId === roleId);
     if (!role) return;
 
-    if (!confirm(`"${role.name}" 알바를 삭제하시겠습니까?`)) {
-      return;
-    }
-
     try {
       await this.apiClient.delete(`/roles/${roleId}`);
       await this.loadAvailableRoles();
@@ -4836,28 +5806,265 @@ export class AISettings {
   }
 
   /**
-   * 알바 추가
+   * 알바 추가 모달 열기
    */
-  async addAlba() {
-    const name = prompt('새 알바 이름을 입력하세요:');
-    if (!name) return;
+  addAlba() {
+    // 기존 모달 제거
+    const existingModal = document.querySelector('.alba-modal-overlay');
+    if (existingModal) existingModal.remove();
 
-    const description = prompt('알바 설명을 입력하세요:');
-    if (description === null) return;
+    const modalHtml = `
+      <div class="alba-modal-overlay">
+        <div class="alba-modal">
+          <div class="alba-modal-header">
+            <h3>새 알바 추가</h3>
+            <button type="button" class="alba-modal-close">&times;</button>
+          </div>
+          <div class="alba-modal-body">
+            <div class="alba-modal-field">
+              <label>이름</label>
+              <input type="text" id="albaName" placeholder="예: 문서 요약가, 코드 리뷰어" />
+            </div>
+            <div class="alba-modal-field">
+              <label>설명</label>
+              <input type="text" id="albaDesc" placeholder="예: 긴 문서를 핵심만 간결하게 요약" />
+            </div>
+            <div class="alba-modal-field">
+              <label>작동 방식</label>
+              <div class="alba-modal-radios">
+                <label class="alba-modal-radio">
+                  <input type="radio" name="albaMode" value="single" checked />
+                  <span>단일 모델</span>
+                </label>
+                <label class="alba-modal-radio">
+                  <input type="radio" name="albaMode" value="chain" />
+                  <span>체인 (순차 진행)</span>
+                </label>
+                <label class="alba-modal-radio">
+                  <input type="radio" name="albaMode" value="parallel" />
+                  <span>병렬 (동시 진행)</span>
+                </label>
+              </div>
+            </div>
+            <div class="alba-modal-field alba-mode-single-field">
+              <label>사용 모델</label>
+              <select id="albaModel" class="alba-modal-select">
+                ${this.renderModelOptions(null, true)}
+              </select>
+            </div>
+            <div class="alba-modal-field alba-mode-single-prompt">
+              <label>업무 (시스템 프롬프트)</label>
+              <textarea id="albaPrompt" rows="4" placeholder="예: 당신은 문서 요약 전문가입니다.&#10;- 핵심 포인트 3-5개로 정리&#10;- 불필요한 세부사항 제거&#10;- 명확하고 이해하기 쉽게"></textarea>
+            </div>
+            <div class="alba-modal-field alba-mode-chain-field" style="display:none;">
+              <label>체인 단계 <span class="field-hint">(순서대로 실행)</span></label>
+              <div class="alba-chain-steps" id="albaChainSteps">
+                <div class="alba-chain-step">
+                  <div class="step-header">
+                    <span class="step-num">1</span>
+                    <select class="alba-modal-select alba-chain-model">${this.renderModelOptions(null, true)}</select>
+                    <button type="button" class="alba-chain-remove" disabled>&times;</button>
+                  </div>
+                  <input type="text" class="alba-chain-role" placeholder="예: 초안 작성자" />
+                  <textarea class="alba-chain-prompt" rows="2" placeholder="예: 주어진 주제로 초안을 작성하세요"></textarea>
+                </div>
+              </div>
+              <button type="button" class="alba-chain-add-btn" id="addChainStep">+ 단계 추가</button>
+            </div>
+            <div class="alba-modal-field alba-mode-parallel-field" style="display:none;">
+              <label>병렬 모델 <span class="field-hint">(동시에 실행 후 결과 종합)</span></label>
+              <div class="alba-parallel-models" id="albaParallelModels">
+                <div class="alba-parallel-item">
+                  <div class="parallel-header">
+                    <span class="parallel-icon">+</span>
+                    <select class="alba-modal-select alba-parallel-model">${this.renderModelOptions(null, true)}</select>
+                    <button type="button" class="alba-parallel-remove" disabled>&times;</button>
+                  </div>
+                  <input type="text" class="alba-parallel-role" placeholder="예: 창의적 관점" />
+                  <textarea class="alba-parallel-prompt" rows="2" placeholder="예: 창의적이고 독창적인 아이디어를 제시하세요"></textarea>
+                </div>
+              </div>
+              <button type="button" class="alba-parallel-add-btn" id="addParallelModel">+ 모델 추가</button>
+            </div>
+            <div class="alba-modal-row">
+              <div class="alba-modal-field alba-trigger-field">
+                <label>트리거 키워드 <span class="field-hint">(쉼표/엔터)</span></label>
+                <input type="text" id="albaTriggers" placeholder="예: 요약, summarize, 정리" />
+              </div>
+              <div class="alba-modal-field alba-tokens-field">
+                <label>Max Tokens</label>
+                <input type="number" id="albaMaxTokens" value="4096" min="256" max="32000" />
+              </div>
+            </div>
+          </div>
+          <div class="alba-modal-footer">
+            <button type="button" class="alba-modal-btn alba-modal-cancel">취소</button>
+            <button type="button" class="alba-modal-btn alba-modal-confirm">확인</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    this.attachAlbaModalEvents();
+  }
+
+  /**
+   * 알바 모달 이벤트 연결
+   */
+  attachAlbaModalEvents() {
+    const overlay = document.querySelector('.alba-modal-overlay');
+    const closeBtn = overlay.querySelector('.alba-modal-close');
+    const cancelBtn = overlay.querySelector('.alba-modal-cancel');
+    const confirmBtn = overlay.querySelector('.alba-modal-confirm');
+    const modeRadios = overlay.querySelectorAll('input[name="albaMode"]');
+    const addChainBtn = overlay.querySelector('#addChainStep');
+    const addParallelBtn = overlay.querySelector('#addParallelModel');
+
+    // 닫기 (X 버튼, 취소 버튼만)
+    const closeModal = () => overlay.remove();
+    closeBtn.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+
+    // 모드 변경
+    modeRadios.forEach(radio => {
+      radio.addEventListener('change', () => {
+        const mode = radio.value;
+        overlay.querySelector('.alba-mode-single-field').style.display = mode === 'single' ? '' : 'none';
+        overlay.querySelector('.alba-mode-single-prompt').style.display = mode === 'single' ? '' : 'none';
+        overlay.querySelector('.alba-mode-chain-field').style.display = mode === 'chain' ? '' : 'none';
+        overlay.querySelector('.alba-mode-parallel-field').style.display = mode === 'parallel' ? '' : 'none';
+      });
+    });
+
+    // 체인 단계 추가
+    addChainBtn.addEventListener('click', () => {
+      const container = overlay.querySelector('#albaChainSteps');
+      const stepNum = container.children.length + 1;
+      const stepHtml = `
+        <div class="alba-chain-step">
+          <div class="step-header">
+            <span class="step-num">${stepNum}</span>
+            <select class="alba-modal-select alba-chain-model">${this.renderModelOptions(null, true)}</select>
+            <button type="button" class="alba-chain-remove">&times;</button>
+          </div>
+          <input type="text" class="alba-chain-role" placeholder="역할 (예: 검토자)" />
+          <textarea class="alba-chain-prompt" rows="2" placeholder="이 단계의 업무를 설명하세요..."></textarea>
+        </div>
+      `;
+      container.insertAdjacentHTML('beforeend', stepHtml);
+      this.updateChainRemoveButtons(container);
+    });
+
+    // 병렬 모델 추가
+    addParallelBtn.addEventListener('click', () => {
+      const container = overlay.querySelector('#albaParallelModels');
+      const itemHtml = `
+        <div class="alba-parallel-item">
+          <div class="parallel-header">
+            <span class="parallel-icon">+</span>
+            <select class="alba-modal-select alba-parallel-model">${this.renderModelOptions(null, true)}</select>
+            <button type="button" class="alba-parallel-remove">&times;</button>
+          </div>
+          <input type="text" class="alba-parallel-role" placeholder="역할 (예: 비판적 관점)" />
+          <textarea class="alba-parallel-prompt" rows="2" placeholder="이 모델의 업무를 설명하세요..."></textarea>
+        </div>
+      `;
+      container.insertAdjacentHTML('beforeend', itemHtml);
+      this.updateParallelRemoveButtons(container);
+    });
+
+    // 삭제 버튼 위임
+    overlay.addEventListener('click', (e) => {
+      if (e.target.classList.contains('alba-chain-remove')) {
+        const step = e.target.closest('.alba-chain-step');
+        const container = step.parentElement;
+        step.remove();
+        this.renumberChainSteps(container);
+        this.updateChainRemoveButtons(container);
+      }
+      if (e.target.classList.contains('alba-parallel-remove')) {
+        const item = e.target.closest('.alba-parallel-item');
+        const container = item.parentElement;
+        item.remove();
+        this.updateParallelRemoveButtons(container);
+      }
+    });
+
+    // 확인
+    confirmBtn.addEventListener('click', () => this.submitAlbaModal(overlay));
+  }
+
+  updateChainRemoveButtons(container) {
+    const btns = container.querySelectorAll('.alba-chain-remove');
+    btns.forEach(btn => btn.disabled = btns.length <= 1);
+  }
+
+  updateParallelRemoveButtons(container) {
+    const btns = container.querySelectorAll('.alba-parallel-remove');
+    btns.forEach(btn => btn.disabled = btns.length <= 1);
+  }
+
+  renumberChainSteps(container) {
+    container.querySelectorAll('.alba-chain-step').forEach((step, idx) => {
+      step.querySelector('.step-num').textContent = idx + 1;
+    });
+  }
+
+  /**
+   * 알바 모달 제출
+   */
+  async submitAlbaModal(overlay) {
+    const name = overlay.querySelector('#albaName').value.trim();
+    const description = overlay.querySelector('#albaDesc').value.trim();
+    const mode = overlay.querySelector('input[name="albaMode"]:checked').value;
+    const systemPrompt = overlay.querySelector('#albaPrompt').value.trim();
+    const maxTokens = parseInt(overlay.querySelector('#albaMaxTokens').value) || 4096;
+    const triggersRaw = overlay.querySelector('#albaTriggers').value;
+    const triggers = triggersRaw.split(/[,\n]/).map(t => t.trim()).filter(t => t);
+
+    if (!name) {
+      this.showSaveStatus('이름을 입력해주세요.', 'error');
+      return;
+    }
 
     const roleId = `custom-${Date.now()}`;
+    const roleData = {
+      roleId,
+      name,
+      description,
+      mode,
+      systemPrompt: systemPrompt || `당신은 ${name}입니다.\n${description}`,
+      maxTokens,
+      triggers: triggers.length > 0 ? triggers : [name.toLowerCase()],
+      createdBy: 'user',
+      category: 'other'
+    };
+
+    // 모드별 추가 데이터
+    if (mode === 'single') {
+      roleData.preferredModel = overlay.querySelector('#albaModel').value;
+    } else if (mode === 'chain') {
+      const chainSteps = Array.from(overlay.querySelectorAll('.alba-chain-step')).map(step => ({
+        model: step.querySelector('.alba-chain-model').value,
+        role: step.querySelector('.alba-chain-role').value.trim(),
+        prompt: step.querySelector('.alba-chain-prompt').value.trim()
+      })).filter(s => s.model);
+      roleData.chainSteps = chainSteps;
+      roleData.systemPrompt = null; // 체인 모드는 각 단계별 프롬프트 사용
+    } else if (mode === 'parallel') {
+      const parallelModels = Array.from(overlay.querySelectorAll('.alba-parallel-item')).map(item => ({
+        model: item.querySelector('.alba-parallel-model').value,
+        role: item.querySelector('.alba-parallel-role').value.trim(),
+        prompt: item.querySelector('.alba-parallel-prompt').value.trim()
+      })).filter(p => p.model);
+      roleData.parallelModels = parallelModels;
+      roleData.systemPrompt = null; // 병렬 모드는 각 모델별 프롬프트 사용
+    }
 
     try {
-      await this.apiClient.post('/roles', {
-        roleId,
-        name,
-        description,
-        systemPrompt: `당신은 ${name}입니다.\n${description}`,
-        triggers: [name.toLowerCase()],
-        createdBy: 'user',
-        category: 'other'
-      });
-
+      await this.apiClient.post('/roles', roleData);
+      overlay.remove();
       await this.loadAvailableRoles();
       const container = document.querySelector('.ai-settings-panel').parentElement;
       await this.render(container, this.apiClient);

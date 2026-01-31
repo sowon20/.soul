@@ -19,9 +19,9 @@ const AgentProfileModel = require('../models/AgentProfile');
 class AgentProfile {
   constructor(options) {
     this.id = options.id || 'default';
-    this.name = options.name || 'Soul';
-    this.role = options.role || 'AI Assistant';
-    this.description = options.description || '당신의 AI 동반자';
+    this.name = options.name || '';
+    this.role = options.role || '';
+    this.description = options.description || '';
 
     // AI 동작 설정
     this.defaultModel = options.defaultModel || '';

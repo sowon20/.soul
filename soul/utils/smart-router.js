@@ -6,7 +6,7 @@
  *
  * 기능:
  * - 태스크 복잡도 분석
- * - 자동 모델 선택 (Haiku/Sonnet/Opus)
+ * - 자동 모델 선택 (경량/중간/고성능)
  * - 비용 최적화
  * - 성능 모니터링
  */
@@ -14,22 +14,22 @@
 const { estimateTokens } = require('./token-counter');
 
 /**
- * 모델 정보
+ * 티어별 모델 설정 (UI에서 설정 필수 - 하드코딩 없음)
  */
-const MODELS = {
-  HAIKU: {
-    id: 'claude-3-haiku-20240307',
-    name: 'Claude 3 Haiku',
+const TIERS = {
+  LIGHT: {
+    id: null,  // UI에서 설정 필수
+    name: '경량 모델',
     tier: 'fast',
-    costPerMToken: 0.25, // $0.25 per million tokens (input)
-    costPerMTokenOutput: 1.25, // $1.25 per million tokens (output)
+    costPerMToken: 0.25,
+    costPerMTokenOutput: 1.25,
     strengths: ['speed', 'simple_tasks', 'cost_effective'],
     maxTokens: 200000,
     description: '빠르고 효율적인 응답, 간단한 작업에 최적'
   },
-  SONNET: {
-    id: 'claude-sonnet-4-20250514',
-    name: 'Claude Sonnet 4',
+  MEDIUM: {
+    id: null,  // UI에서 설정 필수
+    name: '중간 모델',
     tier: 'balanced',
     costPerMToken: 3.0,
     costPerMTokenOutput: 15.0,
@@ -37,9 +37,9 @@ const MODELS = {
     maxTokens: 200000,
     description: '균형잡힌 성능, 대부분의 작업에 최적'
   },
-  OPUS: {
-    id: 'claude-3-opus-20240229',
-    name: 'Claude 3 Opus',
+  HEAVY: {
+    id: null,  // UI에서 설정 필수
+    name: '고성능 모델',
     tier: 'premium',
     costPerMToken: 15.0,
     costPerMTokenOutput: 75.0,
@@ -53,19 +53,19 @@ const MODELS = {
  * 태스크 유형
  */
 const TASK_TYPES = {
-  // Simple tasks (Haiku)
+  // 경량 티어 (간단한 작업)
   SIMPLE_QUESTION: { complexity: 1, requiresReasoning: false },
   TRANSLATION: { complexity: 1, requiresReasoning: false },
   SUMMARIZATION: { complexity: 2, requiresReasoning: false },
   FORMATTING: { complexity: 1, requiresReasoning: false },
 
-  // Medium tasks (Sonnet)
+  // 중간 티어 (일반 작업)
   CODE_GENERATION: { complexity: 5, requiresReasoning: true },
   CODE_REVIEW: { complexity: 4, requiresReasoning: true },
   DATA_ANALYSIS: { complexity: 5, requiresReasoning: true },
   PROBLEM_SOLVING: { complexity: 6, requiresReasoning: true },
 
-  // Complex tasks (Opus)
+  // 고성능 티어 (복잡한 작업)
   ARCHITECTURE_DESIGN: { complexity: 8, requiresReasoning: true },
   COMPLEX_DEBUGGING: { complexity: 7, requiresReasoning: true },
   RESEARCH: { complexity: 7, requiresReasoning: true },
@@ -80,12 +80,14 @@ const TASK_TYPES = {
 class SmartRouter {
   constructor(config = {}) {
     this.config = {
-      defaultModel: config.defaultModel || MODELS.SONNET.id,
+      defaultModel: config.defaultModel || TIERS.MEDIUM.id,
       enableAutoRouting: config.enableAutoRouting !== false,
       costPriority: config.costPriority || 0.3, // 0 = performance, 1 = cost
       enableMonitoring: config.enableMonitoring !== false,
       forceModel: config.forceModel || null, // 강제 모델 지정
-      manager: config.manager || 'server', // 라우팅 담당: server, ai, fixed
+      mode: config.mode || 'auto', // 'single' 또는 'auto'
+      singleModel: config.singleModel || null, // 단일 모델 설정 { modelId, serviceId, thinking }
+      manager: config.manager || 'server', // 라우팅 담당: server, ai
       managerModel: config.managerModel || null // AI 라우팅 시 사용할 모델
     };
 
@@ -120,16 +122,15 @@ class SmartRouter {
       };
     }
 
-    // 2. 라우팅 담당에 따른 처리
-    if (this.config.manager === 'fixed') {
-      // 고정 모델: 항상 중간 모델 사용
-      this.stats.routingDecisions.medium++;
+    // 1.5. 단일 모델 모드
+    if (this.config.mode === 'single' && this.config.singleModel) {
+      this.stats.routingDecisions.medium++; // 단일 모델은 medium으로 통계 집계
       return {
-        modelId: MODELS.SONNET.id,
-        serviceId: MODELS.SONNET.serviceId || null,
-        thinking: MODELS.SONNET.thinking || false,
-        modelName: MODELS.SONNET.name,
-        reason: 'Fixed routing (always medium)',
+        modelId: this.config.singleModel.modelId,
+        serviceId: this.config.singleModel.serviceId || null,
+        thinking: this.config.singleModel.thinking || false,
+        modelName: 'Single Model',
+        reason: 'Single model mode',
         confidence: 1.0
       };
     }
@@ -229,18 +230,18 @@ class SmartRouter {
   selectModel(analysis) {
     const { complexity, requiresExpertise, totalTokens } = analysis;
 
-    // 1. Opus: 복잡도 7+, 전문성 요구
+    // 1. 고성능: 복잡도 7+, 전문성 요구
     if (complexity >= 7 || requiresExpertise) {
-      return MODELS.OPUS;
+      return TIERS.HEAVY;
     }
 
-    // 2. Haiku: 복잡도 3 이하, 간단한 작업
+    // 2. 경량: 복잡도 3 이하, 간단한 작업
     if (complexity <= 3 && !analysis.requiresReasoning) {
-      return MODELS.HAIKU;
+      return TIERS.LIGHT;
     }
 
-    // 3. Sonnet: 기본값, 대부분의 작업
-    return MODELS.SONNET;
+    // 3. 중간: 기본값, 대부분의 작업
+    return TIERS.MEDIUM;
   }
 
   /**
@@ -587,58 +588,58 @@ function updateModelsFromConfig(routingConfig) {
   if (routingConfig.light && routingConfig.light !== 'auto') {
     // 새 형식 또는 이전 형식 모두 지원
     if (typeof routingConfig.light === 'object') {
-      MODELS.HAIKU.id = routingConfig.light.modelId;
-      MODELS.HAIKU.serviceId = routingConfig.light.serviceId;
-      MODELS.HAIKU.thinking = routingConfig.light.thinking || false;
+      TIERS.LIGHT.id = routingConfig.light.modelId;
+      TIERS.LIGHT.serviceId = routingConfig.light.serviceId;
+      TIERS.LIGHT.thinking = routingConfig.light.thinking || false;
       // 모델 ID에서 표시 이름 생성
-      MODELS.HAIKU.name = getModelDisplayName(routingConfig.light.modelId);
+      TIERS.LIGHT.name = getModelDisplayName(routingConfig.light.modelId);
     } else {
-      MODELS.HAIKU.id = routingConfig.light;
-      MODELS.HAIKU.name = getModelDisplayName(routingConfig.light);
+      TIERS.LIGHT.id = routingConfig.light;
+      TIERS.LIGHT.name = getModelDisplayName(routingConfig.light);
     }
   }
   // lightThinking 별도 키 지원
   if (routingConfig.lightThinking !== undefined) {
-    MODELS.HAIKU.thinking = routingConfig.lightThinking;
+    TIERS.LIGHT.thinking = routingConfig.lightThinking;
   }
 
   if (routingConfig.medium && routingConfig.medium !== 'auto') {
     if (typeof routingConfig.medium === 'object') {
-      MODELS.SONNET.id = routingConfig.medium.modelId;
-      MODELS.SONNET.serviceId = routingConfig.medium.serviceId;
-      MODELS.SONNET.thinking = routingConfig.medium.thinking || false;
-      MODELS.SONNET.name = getModelDisplayName(routingConfig.medium.modelId);
+      TIERS.MEDIUM.id = routingConfig.medium.modelId;
+      TIERS.MEDIUM.serviceId = routingConfig.medium.serviceId;
+      TIERS.MEDIUM.thinking = routingConfig.medium.thinking || false;
+      TIERS.MEDIUM.name = getModelDisplayName(routingConfig.medium.modelId);
     } else {
-      MODELS.SONNET.id = routingConfig.medium;
-      MODELS.SONNET.name = getModelDisplayName(routingConfig.medium);
+      TIERS.MEDIUM.id = routingConfig.medium;
+      TIERS.MEDIUM.name = getModelDisplayName(routingConfig.medium);
     }
   }
   // mediumThinking 별도 키 지원
   if (routingConfig.mediumThinking !== undefined) {
-    MODELS.SONNET.thinking = routingConfig.mediumThinking;
+    TIERS.MEDIUM.thinking = routingConfig.mediumThinking;
   }
 
   if (routingConfig.heavy && routingConfig.heavy !== 'auto') {
     if (typeof routingConfig.heavy === 'object') {
-      MODELS.OPUS.id = routingConfig.heavy.modelId;
-      MODELS.OPUS.serviceId = routingConfig.heavy.serviceId;
-      MODELS.OPUS.thinking = routingConfig.heavy.thinking || false;
-      MODELS.OPUS.name = getModelDisplayName(routingConfig.heavy.modelId);
+      TIERS.HEAVY.id = routingConfig.heavy.modelId;
+      TIERS.HEAVY.serviceId = routingConfig.heavy.serviceId;
+      TIERS.HEAVY.thinking = routingConfig.heavy.thinking || false;
+      TIERS.HEAVY.name = getModelDisplayName(routingConfig.heavy.modelId);
     } else {
-      MODELS.OPUS.id = routingConfig.heavy;
-      MODELS.OPUS.name = getModelDisplayName(routingConfig.heavy);
+      TIERS.HEAVY.id = routingConfig.heavy;
+      TIERS.HEAVY.name = getModelDisplayName(routingConfig.heavy);
     }
   }
   // heavyThinking 별도 키 지원
   if (routingConfig.heavyThinking !== undefined) {
-    MODELS.OPUS.thinking = routingConfig.heavyThinking;
+    TIERS.HEAVY.thinking = routingConfig.heavyThinking;
   }
   
   console.log('[SmartRouter] Models updated from config:', {
     manager: routingConfig.manager || 'server',
-    light: { modelId: MODELS.HAIKU.id, serviceId: MODELS.HAIKU.serviceId, thinking: MODELS.HAIKU.thinking },
-    medium: { modelId: MODELS.SONNET.id, serviceId: MODELS.SONNET.serviceId, thinking: MODELS.SONNET.thinking },
-    heavy: { modelId: MODELS.OPUS.id, serviceId: MODELS.OPUS.serviceId, thinking: MODELS.OPUS.thinking }
+    light: { modelId: TIERS.LIGHT.id, serviceId: TIERS.LIGHT.serviceId, thinking: TIERS.LIGHT.thinking },
+    medium: { modelId: TIERS.MEDIUM.id, serviceId: TIERS.MEDIUM.serviceId, thinking: TIERS.MEDIUM.thinking },
+    heavy: { modelId: TIERS.HEAVY.id, serviceId: TIERS.HEAVY.serviceId, thinking: TIERS.HEAVY.thinking }
   });
 
   // manager 설정 반환 (getSmartRouter에서 사용)
@@ -651,20 +652,24 @@ function updateModelsFromConfig(routingConfig) {
 async function getSmartRouter(config = {}) {
   if (!globalRouter) {
     // 설정에서 라우팅 정보 로드
+    let mode = 'auto';
+    let singleModel = null;
     let manager = 'server';
     let managerModel = null;
     try {
       const configManager = require('./config');
       const routingConfig = await configManager.getRoutingConfig();
       console.log('[SmartRouter] Loading routing config from DB:', JSON.stringify(routingConfig, null, 2));
+      mode = routingConfig.mode || 'auto';
+      singleModel = routingConfig.singleModel || null;
       manager = updateModelsFromConfig(routingConfig);
       managerModel = routingConfig.managerModel || null;
     } catch (err) {
       console.warn('[SmartRouter] Could not load routing config:', err.message);
       console.warn('[SmartRouter] Using default hardcoded models - this should be fixed!');
     }
-    globalRouter = new SmartRouter({ ...config, manager, managerModel });
-    console.log('[SmartRouter] Router initialized with manager:', manager, 'managerModel:', managerModel);
+    globalRouter = new SmartRouter({ ...config, mode, singleModel, manager, managerModel });
+    console.log('[SmartRouter] Router initialized with mode:', mode, 'manager:', manager);
   }
   return globalRouter;
 }
@@ -673,14 +678,18 @@ async function getSmartRouter(config = {}) {
  * SmartRouter 인스턴스 리셋 (설정 변경 시)
  */
 function resetSmartRouter(routingConfig = null) {
+  let mode = 'auto';
+  let singleModel = null;
   let manager = 'server';
   let managerModel = null;
   if (routingConfig) {
+    mode = routingConfig.mode || 'auto';
+    singleModel = routingConfig.singleModel || null;
     manager = updateModelsFromConfig(routingConfig);
     managerModel = routingConfig.managerModel || null;
   }
-  globalRouter = new SmartRouter({ manager, managerModel });
-  console.log('[SmartRouter] Router reset with manager:', manager, 'managerModel:', managerModel);
+  globalRouter = new SmartRouter({ mode, singleModel, manager, managerModel });
+  console.log('[SmartRouter] Router reset with mode:', mode, 'manager:', manager);
   return globalRouter;
 }
 
@@ -688,6 +697,6 @@ module.exports = {
   SmartRouter,
   getSmartRouter,
   resetSmartRouter,
-  MODELS,
+  TIERS,
   TASK_TYPES
 };

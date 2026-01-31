@@ -356,14 +356,17 @@ router.post('/', async (req, res) => {
       triggers,
       category,
       tags,
-      createdBy = 'user'
+      createdBy = 'user',
+      mode = 'single',
+      chainSteps,
+      parallelModels
     } = req.body;
 
-    // 필수 필드 검증
-    if (!roleId || !name || !description || !systemPrompt) {
+    // 필수 필드 검증 (체인/병렬 모드는 systemPrompt 없어도 됨)
+    if (!roleId || !name) {
       return res.status(400).json({
         success: false,
-        error: 'roleId, name, description, and systemPrompt are required'
+        error: 'roleId and name are required'
       });
     }
 
@@ -376,21 +379,32 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // 역할 생성
-    const role = await Role.create({
+    // 역할 생성 데이터
+    const roleData = {
       roleId,
       name,
-      description,
-      preferredModel: preferredModel || 'claude-3-5-sonnet-20241022',
-      fallbackModel: fallbackModel || 'gpt-4o',
-      systemPrompt,
+      description: description || '',
+      preferredModel: preferredModel || null,
+      fallbackModel: fallbackModel || null,
+      systemPrompt: systemPrompt || '',
       maxTokens: maxTokens || 4096,
       temperature: temperature !== undefined ? temperature : 0.7,
       triggers: triggers || [],
       category: category || 'other',
       tags: tags || [],
-      createdBy
-    });
+      createdBy,
+      mode
+    };
+
+    // 모드별 추가 데이터
+    if (mode === 'chain' && chainSteps) {
+      roleData.chainSteps = JSON.stringify(chainSteps);
+    }
+    if (mode === 'parallel' && parallelModels) {
+      roleData.parallelModels = JSON.stringify(parallelModels);
+    }
+
+    const role = await Role.create(roleData);
 
     res.status(201).json({
       success: true,
@@ -425,6 +439,12 @@ router.patch('/:roleId', async (req, res) => {
     delete updates.roleId;
     delete updates.stats;
     delete updates.createdBy;
+
+    // active → isActive 변환 (DB 컬럼명 is_active)
+    if ('active' in updates) {
+      updates.isActive = updates.active ? 1 : 0;
+      delete updates.active;
+    }
 
     const role = await Role.findOneAndUpdate(
       { roleId },
@@ -523,13 +543,14 @@ router.delete('/:roleId', async (req, res) => {
 
     if (permanent === 'true') {
       // 완전 삭제
-      const role = await Role.findOneAndDelete({ roleId });
+      const role = await Role.findOne({ roleId });
       if (!role) {
         return res.status(404).json({
           success: false,
           error: `Role not found: ${roleId}`
         });
       }
+      await Role.deleteOne({ roleId });
 
       res.json({
         success: true,
@@ -539,7 +560,7 @@ router.delete('/:roleId', async (req, res) => {
       // 비활성화 (소프트 삭제)
       const role = await Role.findOneAndUpdate(
         { roleId },
-        { $set: { active: false } },
+        { $set: { is_active: false } },
         { new: true }
       );
 
