@@ -3747,3 +3747,107 @@ body {
 .legend-dot.tools {
   background: #f59e0b;
 }
+
+/* ==================== Bootstrap Setup ==================== */
+.bootstrap-setup {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%);
+  padding: 2rem;
+}
+
+.bootstrap-container {
+  width: 100%;
+  max-width: 480px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 20px;
+  padding: 2.5rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.bootstrap-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.bootstrap-header h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #1e1e2e;
+  margin: 0 0 0.5rem;
+}
+
+.bootstrap-header p {
+  font-size: 1rem;
+  color: #666;
+  margin: 0;
+}
+
+.bootstrap-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.bootstrap-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.bootstrap-field label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.bootstrap-field select,
+.bootstrap-field input {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  font-size: 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  background: white;
+  color: #333;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.bootstrap-field select:focus,
+.bootstrap-field input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.bootstrap-field small {
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.bootstrap-actions {
+  margin-top: 1rem;
+}
+
+.bootstrap-btn {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.bootstrap-btn.primary {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+}
+
+.bootstrap-btn.primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+}
