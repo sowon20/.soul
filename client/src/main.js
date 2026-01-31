@@ -837,15 +837,10 @@ class SoulApp {
               <span class="server-name">MongoDB</span>
               <span class="server-port">:27017</span>
             </div>
-            <div class="server-item" data-service="chroma">
+            <div class="server-item" data-service="oracle">
               <span class="server-indicator"></span>
-              <span class="server-name">ChromaDB</span>
-              <span class="server-port">:8000</span>
-            </div>
-            <div class="server-item" data-service="ftp">
-              <span class="server-indicator"></span>
-              <span class="server-name">FTP</span>
-              <span class="server-port">:21</span>
+              <span class="server-name">Oracle DB</span>
+              <span class="server-port">대화저장</span>
             </div>
             <div class="server-item" data-service="websocket">
               <span class="server-indicator" id="socketIndicator"></span>
@@ -1339,12 +1334,22 @@ class SoulApp {
             ${servers.map(s => `
               <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 12px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <div>
-                    <div style="font-weight: 600;">${s.type === 'built-in' ? 'Soul MCP' : s.name}</div>
-                    <div style="font-size: 0.8rem; opacity: 0.7;">${s.description || ''}</div>
-                    <span style="display: inline-block; margin-top: 6px; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: ${s.type === 'built-in' ? 'rgba(74, 222, 128, 0.2)' : 'rgba(251, 191, 36, 0.2)'}; color: ${s.type === 'built-in' ? '#4ade80' : '#fbbf24'};">
-                      ${s.type === 'built-in' ? '기본 내장' : '외부'}
-                    </span>
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    ${s.type !== 'built-in' ? `
+                    <!-- 활성화 토글 (외부 MCP만) -->
+                    <label style="position: relative; width: 40px; height: 22px; cursor: pointer; flex-shrink: 0;">
+                      <input type="checkbox" class="mcp-enable-toggle" data-id="${s.id}" ${s.enabled !== false ? 'checked' : ''} style="opacity: 0; width: 0; height: 0;">
+                      <span style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: ${s.enabled !== false ? '#8b5cf6' : '#4b5563'}; border-radius: 22px; transition: 0.3s;"></span>
+                      <span style="position: absolute; top: 2px; left: ${s.enabled !== false ? '20px' : '2px'}; width: 18px; height: 18px; background: white; border-radius: 50%; transition: 0.3s;"></span>
+                    </label>
+                    ` : ''}
+                    <div>
+                      <div style="font-weight: 600; opacity: ${s.type === 'built-in' || s.enabled !== false ? '1' : '0.5'};">${s.type === 'built-in' ? 'Soul MCP' : s.name}</div>
+                      <div style="font-size: 0.8rem; opacity: 0.7;">${s.description || ''}</div>
+                      <span style="display: inline-block; margin-top: 6px; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: ${s.type === 'built-in' ? 'rgba(74, 222, 128, 0.2)' : 'rgba(251, 191, 36, 0.2)'}; color: ${s.type === 'built-in' ? '#4ade80' : '#fbbf24'};">
+                        ${s.type === 'built-in' ? '기본 내장' : '외부'}
+                      </span>
+                    </div>
                   </div>
                   ${s.type !== 'built-in' ? `
                   <div style="display: flex; gap: 8px; align-items: center;">
@@ -1362,6 +1367,36 @@ class SoulApp {
           </div>
         </div>
       `;
+
+      // 활성화 토글 이벤트
+      container.querySelectorAll('.mcp-enable-toggle').forEach(toggle => {
+        toggle.addEventListener('change', async (e) => {
+          const serverId = toggle.dataset.id;
+          const enabled = toggle.checked;
+          const card = toggle.closest('div[style*="background: rgba"]');
+          const slider = toggle.nextElementSibling;
+          const circle = slider?.nextElementSibling;
+          const nameDiv = card?.querySelector('div[style*="font-weight: 600"]');
+
+          // UI 즉시 업데이트
+          if (slider) slider.style.background = enabled ? '#8b5cf6' : '#4b5563';
+          if (circle) circle.style.left = enabled ? '20px' : '2px';
+          if (nameDiv) nameDiv.style.opacity = enabled ? '1' : '0.5';
+
+          // API 호출
+          try {
+            await fetch(`/api/mcp/servers/${serverId}/enable`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ enabled })
+            });
+          } catch (err) {
+            console.error('MCP enable toggle failed:', err);
+            // 실패시 롤백
+            toggle.checked = !enabled;
+          }
+        });
+      });
 
       // 편집 버튼 이벤트
       container.querySelectorAll('.canvas-mcp-edit').forEach(btn => {

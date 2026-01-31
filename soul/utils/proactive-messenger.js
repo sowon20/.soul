@@ -12,7 +12,10 @@ const fs = require('fs').promises;
 const path = require('path');
 
 class ProactiveMessenger {
-  constructor(io, basePath = './memory') {
+  constructor(io, basePath) {
+    if (!basePath) {
+      throw new Error('[ProactiveMessenger] basePath is required. Use getProactiveMessenger() instead.');
+    }
     this.io = io;
     this.basePath = basePath;
     this.configPath = path.join(basePath, 'proactive-config.json');
@@ -439,8 +442,17 @@ class ProactiveMessenger {
 // 싱글톤
 let globalMessenger = null;
 
-async function getProactiveMessenger(io, basePath = './memory') {
+async function getProactiveMessenger(io, basePath = null) {
   if (!globalMessenger) {
+    // basePath가 없으면 DB 설정에서 가져오기
+    if (!basePath) {
+      const configManager = require('./config');
+      const memoryConfig = await configManager.getMemoryConfig();
+      basePath = memoryConfig?.storagePath;
+      if (!basePath) {
+        throw new Error('[ProactiveMessenger] memory.storagePath not configured');
+      }
+    }
     globalMessenger = new ProactiveMessenger(io, basePath);
     await globalMessenger.initialize();
   }

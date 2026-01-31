@@ -33,9 +33,8 @@ class StorageManager {
     return [
       { type: 'local', name: '로컬 저장소', icon: '💻', available: true },
       { type: 'ftp', name: 'FTP/NAS', icon: '🗄️', available: true },
-      { type: 'google-drive', name: 'Google Drive', icon: '☁️', available: false, comingSoon: true },
-      { type: 'notion', name: 'Notion', icon: '📝', available: false, comingSoon: true },
-      { type: 's3', name: 'AWS S3', icon: '📦', available: false, comingSoon: true }
+      { type: 'notion', name: 'Notion', icon: '📝', available: true },
+      { type: 'oracle', name: 'Oracle DB', icon: '🔶', available: true }
     ];
   }
 

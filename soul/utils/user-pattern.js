@@ -13,7 +13,10 @@ const fs = require('fs').promises;
 const path = require('path');
 
 class UserPatternLearner {
-  constructor(basePath = './memory') {
+  constructor(basePath) {
+    if (!basePath) {
+      throw new Error('[UserPatternLearner] basePath is required. Use getUserPatternLearner() instead.');
+    }
     this.basePath = basePath;
     this.patternPath = path.join(basePath, 'patterns');
     this.patterns = null;
@@ -281,8 +284,17 @@ class UserPatternLearner {
 // 싱글톤
 let globalPatternLearner = null;
 
-async function getUserPatternLearner(basePath = './memory') {
+async function getUserPatternLearner(basePath = null) {
   if (!globalPatternLearner) {
+    // basePath가 없으면 DB 설정에서 가져오기
+    if (!basePath) {
+      const configManager = require('./config');
+      const memoryConfig = await configManager.getMemoryConfig();
+      basePath = memoryConfig?.storagePath;
+      if (!basePath) {
+        throw new Error('[UserPatternLearner] memory.storagePath not configured');
+      }
+    }
     globalPatternLearner = new UserPatternLearner(basePath);
     await globalPatternLearner.initialize();
   }

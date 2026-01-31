@@ -1,11 +1,12 @@
 /**
  * JSONL 기반 대화 저장/로드 유틸리티
- * 로컬 파일 또는 FTP 스토리지 지원
+ * 로컬 파일, FTP, Oracle 스토리지 지원
  * FTP 연결 실패 시 로컬 캐시에 저장 후 자동 동기화
  */
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { OracleStorage } = require('./oracle-storage');
 
 // 스토리지 설정 캐시 (서버 재시작 시 초기화됨)
 let storageConfig = null;
@@ -38,11 +39,36 @@ async function getStorageConfig() {
     const SystemConfig = require('../models/SystemConfig');
     const config = await SystemConfig.findOne({ configKey: 'memory' });
 
+    // FTP 설정이 있으면 FTP 사용 (storagePath 불필요)
+    if (config?.value?.storageType === 'ftp' && config?.value?.ftp) {
+      storageConfig = {
+        type: 'ftp',
+        path: null,
+        ftp: config.value.ftp
+      };
+      storageConfigLoaded = true;
+      console.log('[ConversationStore] Storage config: FTP', config.value.ftp.host);
+      return storageConfig;
+    }
+
+    // Oracle 설정
+    if (config?.value?.storageType === 'oracle') {
+      storageConfig = {
+        type: 'oracle',
+        path: config.value.storagePath || null,
+        oracle: config.value.oracle || {}
+      };
+      storageConfigLoaded = true;
+      console.log('[ConversationStore] Storage config: Oracle DB');
+      return storageConfig;
+    }
+
+    // 로컬 저장소
     if (config?.value?.storagePath) {
       storageConfig = {
         type: config.value.storageType || 'local',
         path: config.value.storagePath,
-        ftp: config.value.ftp || null
+        ftp: null
       };
       storageConfigLoaded = true;
       console.log('[ConversationStore] Storage config:', storageConfig.type, storageConfig.path);
@@ -53,7 +79,7 @@ async function getStorageConfig() {
   }
 
   // 설정 없으면 에러
-  throw new Error('[ConversationStore] memory.storagePath not configured. Please set it in Settings > Storage.');
+  throw new Error('[ConversationStore] memory storage not configured. Please set memory.storagePath or memory.ftp in Settings > Storage.');
 }
 
 class ConversationStore {
@@ -63,6 +89,8 @@ class ConversationStore {
     this.storageType = 'local';
     this.ftpStorage = null;
     this.ftpConnected = false;
+    this.oracleStorage = null;
+    this.oracleConnected = false;
   }
 
   async init() {
@@ -88,6 +116,21 @@ class ConversationStore {
         console.log('[ConversationStore] FTP not available, using local cache:', e.message);
       }
 
+      this.initialized = true;
+      return;
+    }
+
+    // Oracle 스토리지
+    if (this.storageType === 'oracle') {
+      this.oracleStorage = new OracleStorage(config.oracle || {});
+      try {
+        await this.oracleStorage.initialize();
+        this.oracleConnected = true;
+        console.log('[ConversationStore] Oracle connected');
+      } catch (e) {
+        this.oracleConnected = false;
+        console.error('[ConversationStore] Oracle connection failed:', e.message);
+      }
       this.initialized = true;
       return;
     }
@@ -201,7 +244,28 @@ class ConversationStore {
       metadata: message.metadata || {}
     });
 
-    if (this.storageType === 'ftp') {
+    if (this.storageType === 'oracle') {
+      // Oracle DB 저장
+      if (this.oracleConnected && this.oracleStorage) {
+        try {
+          await this.oracleStorage.saveMessage({
+            id,
+            role: message.role,
+            content: text,
+            timestamp,
+            tags: message.tags || [],
+            metadata: message.metadata || {}
+          });
+        } catch (e) {
+          console.error('[ConversationStore] Oracle save failed:', e.message);
+          // 로컬 캐시에 백업
+          this._saveToLocalCache(line);
+        }
+      } else {
+        console.error('[ConversationStore] Oracle not connected, saving to local cache');
+        this._saveToLocalCache(line);
+      }
+    } else if (this.storageType === 'ftp') {
       // FTP 연결 안 되어 있으면 재연결 시도
       if (!this.ftpConnected) {
         await this._tryReconnectFTP();
@@ -233,6 +297,29 @@ class ConversationStore {
    */
   async getRecentMessages(limit = 50) {
     await this.init();
+
+    // Oracle 모드
+    if (this.storageType === 'oracle') {
+      if (this.oracleConnected && this.oracleStorage) {
+        try {
+          const messages = await this.oracleStorage.getRecentMessages(limit);
+          // ConversationStore 형식으로 변환
+          return messages.map(m => ({
+            id: m.id,
+            role: m.role,
+            text: m.content,
+            content: m.content,
+            timestamp: m.timestamp,
+            tags: m.tags || [],
+            metadata: m.metadata || {}
+          }));
+        } catch (e) {
+          console.error('[ConversationStore] Oracle read failed:', e.message);
+          return [];
+        }
+      }
+      return [];
+    }
 
     // FTP 모드
     if (this.storageType === 'ftp') {
@@ -530,6 +617,27 @@ class ConversationStore {
   async readAllLines() {
     await this.init();
 
+    // Oracle 모드
+    if (this.storageType === 'oracle') {
+      if (this.oracleConnected && this.oracleStorage) {
+        try {
+          const messages = await this.oracleStorage.getRecentMessages(1000);
+          return messages.map(m => JSON.stringify({
+            id: m.id,
+            role: m.role,
+            text: m.content,
+            timestamp: m.timestamp,
+            tags: m.tags || [],
+            metadata: m.metadata || {}
+          }));
+        } catch (e) {
+          console.error('[ConversationStore] Oracle read failed:', e.message);
+          return [];
+        }
+      }
+      return [];
+    }
+
     if (this.storageType === 'ftp') {
       // FTP 연결 안 되어 있으면 재연결 시도
       if (!this.ftpConnected) {
@@ -618,11 +726,12 @@ class ConversationStore {
   }
 
   /**
-   * FTP 연결 상태 확인
+   * 연결 상태 확인
    */
   isConnected() {
-    if (this.storageType !== 'ftp') return true;
-    return this.ftpConnected;
+    if (this.storageType === 'ftp') return this.ftpConnected;
+    if (this.storageType === 'oracle') return this.oracleConnected;
+    return true;
   }
 
   /**

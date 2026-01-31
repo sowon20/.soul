@@ -140,16 +140,25 @@ async function executeBuiltinTool(toolName, input) {
 }
 
 /**
- * 외부 MCP 서버에서 도구 목록 가져오기
+ * 외부 MCP 서버에서 도구 목록 가져오기 (3초 타임아웃)
  */
 async function fetchExternalTools(serverInfo) {
   try {
     const baseUrl = serverInfo.url.replace(/\/sse\/?$/, '');
-    const res = await fetch(baseUrl + '/tools', { timeout: 5000 });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+
+    const res = await fetch(baseUrl + '/tools', { signal: controller.signal });
+    clearTimeout(timeout);
+
     const data = await res.json();
     return data.tools || [];
   } catch (e) {
-    console.error(`[MCP] Failed to fetch tools from ${serverInfo.url}:`, e.message);
+    if (e.name === 'AbortError') {
+      console.error(`[MCP] Timeout fetching tools from ${serverInfo.url}`);
+    } else {
+      console.error(`[MCP] Failed to fetch tools from ${serverInfo.url}:`, e.message);
+    }
     return [];
   }
 }

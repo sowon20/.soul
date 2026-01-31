@@ -28,6 +28,11 @@ export class AISettings {
       memoryPath: './memory',
       filesPath: './files'
     };
+    // 저장소 변경 추적용 (초기 설정 저장)
+    this.originalStorageTypes = {
+      memory: null,
+      files: null
+    };
     this.agentChains = [];
     this.availableRoles = [];  // 알바(Role) 목록
     this.expandedRoleId = null;  // 확장된 알바 ID
@@ -1382,6 +1387,25 @@ export class AISettings {
                 <button class="browse-btn" id="browseMemoryBtn" title="폴더 선택">📁</button>
               </div>
             </div>
+
+            <!-- Oracle 설정 -->
+            <div class="oracle-settings" id="memoryOracleSettings" style="display: none;">
+              <div class="oracle-config-grid">
+                <div class="oracle-field">
+                  <label>DB 비밀번호</label>
+                  <input type="password" id="memoryOraclePassword" class="storage-input" placeholder="********">
+                </div>
+                <div class="oracle-field">
+                  <label>암호화 키</label>
+                  <input type="password" id="memoryOracleEncryptionKey" class="storage-input" placeholder="데이터 암호화용 키">
+                </div>
+              </div>
+              <div class="oracle-info">
+                <small>🔒 비밀번호는 macOS 키체인에 안전하게 저장됩니다</small>
+              </div>
+              <button class="settings-btn settings-btn-outline oracle-test-btn" id="testMemoryOracleBtn">🔌 연결 테스트</button>
+              <span class="oracle-test-result" id="memoryOracleTestResult"></span>
+            </div>
           </div>
         </div>
 
@@ -1465,6 +1489,65 @@ export class AISettings {
           </div>
         </div>
       </div>
+
+      <!-- 저장소 변경 옵션 모달 -->
+      <div class="storage-migration-modal" id="storageMigrationModal" style="display: none;">
+        <div class="storage-migration-content">
+          <div class="storage-migration-header">
+            <h3>📦 저장소 변경</h3>
+            <button class="close-btn" id="closeMigrationModal">✕</button>
+          </div>
+
+          <div class="storage-migration-info" id="migrationInfo">
+            <!-- 동적으로 채워짐 -->
+          </div>
+
+          <div class="storage-migration-options">
+            <label class="migration-option" data-option="reset">
+              <input type="radio" name="migrationOption" value="reset">
+              <div class="option-content">
+                <span class="option-icon">🗑️</span>
+                <div class="option-text">
+                  <strong>초기화</strong>
+                  <span>새 저장소에서 빈 상태로 시작</span>
+                </div>
+              </div>
+            </label>
+
+            <label class="migration-option" data-option="keep">
+              <input type="radio" name="migrationOption" value="keep" checked>
+              <div class="option-content">
+                <span class="option-icon">📌</span>
+                <div class="option-text">
+                  <strong>유지</strong>
+                  <span>기존 데이터 그대로 두고 새 저장소 사용 (이전 데이터 접근 불가)</span>
+                </div>
+              </div>
+            </label>
+
+            <label class="migration-option" data-option="migrate">
+              <input type="radio" name="migrationOption" value="migrate">
+              <div class="option-content">
+                <span class="option-icon">📤</span>
+                <div class="option-text">
+                  <strong>마이그레이션</strong>
+                  <span>기존 데이터를 새 저장소로 복사</span>
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div class="storage-migration-warning" id="migrationWarning" style="display: none;">
+            <span class="warning-icon">⚠️</span>
+            <span class="warning-text">마이그레이션은 데이터 양에 따라 시간이 걸릴 수 있습니다.</span>
+          </div>
+
+          <div class="storage-migration-actions">
+            <button class="settings-btn settings-btn-outline" id="cancelMigration">취소</button>
+            <button class="settings-btn settings-btn-primary" id="confirmMigration">확인</button>
+          </div>
+        </div>
+      </div>
     `;
   }
 
@@ -1516,11 +1599,15 @@ export class AISettings {
     const configRes = await this.apiClient.get(`/config/${section}`);
     const config = configRes.config || configRes;
     const currentType = config?.storageType || 'local';
-    
+
+    // 초기 저장소 타입 저장 (변경 감지용)
+    this.originalStorageTypes[section] = currentType;
+
     // 힌트 업데이트
     const hint = document.getElementById(`${section}StorageHint`);
     if (hint) {
-      hint.textContent = currentType === 'ftp' ? 'FTP/NAS' : '로컬';
+      const hintMap = { ftp: 'FTP/NAS', oracle: 'Oracle DB', local: '로컬' };
+      hint.textContent = hintMap[currentType] || '로컬';
     }
     
     // 타입 선택 버튼 렌더링
@@ -1540,15 +1627,22 @@ export class AISettings {
       radio.addEventListener('change', (e) => {
         selector.querySelectorAll('.storage-type-option').forEach(opt => opt.classList.remove('selected'));
         e.target.closest('.storage-type-option').classList.add('selected');
-        
+
         const ftpSettings = document.getElementById(`${section}FtpSettings`);
         const localSettings = document.getElementById(`${section}LocalSettings`);
-        
+        const oracleSettings = document.getElementById(`${section}OracleSettings`);
+
+        // 모두 숨기기
+        if (ftpSettings) ftpSettings.style.display = 'none';
+        if (localSettings) localSettings.style.display = 'none';
+        if (oracleSettings) oracleSettings.style.display = 'none';
+
+        // 선택한 타입만 표시
         if (e.target.value === 'ftp') {
           if (ftpSettings) ftpSettings.style.display = 'block';
-          if (localSettings) localSettings.style.display = 'none';
+        } else if (e.target.value === 'oracle') {
+          if (oracleSettings) oracleSettings.style.display = 'block';
         } else {
-          if (ftpSettings) ftpSettings.style.display = 'none';
           if (localSettings) localSettings.style.display = 'block';
         }
       });
@@ -1557,11 +1651,16 @@ export class AISettings {
     // 현재 타입에 따라 폼 표시
     const ftpSettings = document.getElementById(`${section}FtpSettings`);
     const localSettings = document.getElementById(`${section}LocalSettings`);
-    
+    const oracleSettings = document.getElementById(`${section}OracleSettings`);
+
+    // 모두 숨기기
+    if (ftpSettings) ftpSettings.style.display = 'none';
+    if (localSettings) localSettings.style.display = 'none';
+    if (oracleSettings) oracleSettings.style.display = 'none';
+
     if (currentType === 'ftp') {
       if (ftpSettings) ftpSettings.style.display = 'block';
-      if (localSettings) localSettings.style.display = 'none';
-      
+
       // FTP 값 채우기
       if (config?.ftp) {
         const prefix = section;
@@ -1571,9 +1670,31 @@ export class AISettings {
         document.getElementById(`${prefix}FtpPassword`).value = config.ftp.password || '';
         document.getElementById(`${prefix}FtpBasePath`).value = config.ftp.basePath || '';
       }
+    } else if (currentType === 'oracle') {
+      if (oracleSettings) oracleSettings.style.display = 'block';
+
+      // Oracle 설정 상태 로드
+      this.loadOracleStatus(section);
     } else {
-      if (ftpSettings) ftpSettings.style.display = 'none';
       if (localSettings) localSettings.style.display = 'block';
+    }
+  }
+
+  /**
+   * Oracle 설정 상태 로드
+   */
+  async loadOracleStatus(section) {
+    try {
+      const res = await this.apiClient.get('/config/storage/oracle');
+      if (res.success && res.configured) {
+        const resultEl = document.getElementById(`${section}OracleTestResult`);
+        if (resultEl) {
+          resultEl.textContent = '✅ 키체인에 설정됨' + (res.encrypted ? ' (암호화 활성)' : '');
+          resultEl.style.color = '#4CAF50';
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load Oracle status:', e);
     }
   }
 
@@ -1626,6 +1747,50 @@ export class AISettings {
         }
       } else {
         resultEl.innerHTML = `<span class="error">❌ ${res.error || '연결 실패'}</span>`;
+      }
+    } catch (e) {
+      resultEl.innerHTML = `<span class="error">❌ ${e.message}</span>`;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /**
+   * Oracle 연결 테스트
+   */
+  async testOracleConnection(section) {
+    const resultEl = document.getElementById(`${section}OracleTestResult`);
+    const btn = document.getElementById(`test${section.charAt(0).toUpperCase() + section.slice(1)}OracleBtn`);
+    const passwordEl = document.getElementById(`${section}OraclePassword`);
+    const encryptionKeyEl = document.getElementById(`${section}OracleEncryptionKey`);
+
+    if (!resultEl || !btn) return;
+
+    btn.disabled = true;
+    resultEl.innerHTML = '<span class="testing">🔌 연결 테스트 중...</span>';
+
+    try {
+      // 비밀번호가 입력되었으면 먼저 키체인에 저장
+      const password = passwordEl?.value;
+      const encryptionKey = encryptionKeyEl?.value;
+
+      if (password) {
+        await this.apiClient.post('/config/storage/oracle/credentials', {
+          password,
+          encryptionKey: encryptionKey || undefined
+        });
+      }
+
+      // 연결 테스트
+      const res = await this.apiClient.post('/config/storage/oracle/test');
+
+      if (res.success) {
+        resultEl.innerHTML = '<span class="success">✅ Oracle 연결 성공!</span>';
+        // 비밀번호 필드 초기화
+        if (passwordEl) passwordEl.value = '';
+        if (encryptionKeyEl) encryptionKeyEl.value = '';
+      } else {
+        resultEl.innerHTML = `<span class="error">❌ ${res.error || res.message || '연결 실패'}</span>`;
       }
     } catch (e) {
       resultEl.innerHTML = `<span class="error">❌ ${e.message}</span>`;
@@ -2759,6 +2924,12 @@ export class AISettings {
     
     if (testFilesFtpBtn) {
       testFilesFtpBtn.addEventListener('click', () => this.testFtpConnection('files'));
+    }
+
+    // Oracle 테스트 버튼
+    const testMemoryOracleBtn = container.querySelector('#testMemoryOracleBtn');
+    if (testMemoryOracleBtn) {
+      testMemoryOracleBtn.addEventListener('click', () => this.testOracleConnection('memory'));
     }
 
     if (saveStorageBtn) {
@@ -3952,17 +4123,154 @@ export class AISettings {
    */
   async saveStorageSettings() {
     try {
+      // 저장소 타입 변경 감지
+      const changes = this.detectStorageChanges();
+
+      if (changes.length > 0) {
+        // 변경 사항이 있으면 모달 표시
+        this.showMigrationModal(changes);
+      } else {
+        // 변경 없으면 바로 저장
+        await this.performStorageSave();
+      }
+    } catch (error) {
+      console.error('Failed to save storage settings:', error);
+      this.showSaveStatus('저장소 설정 저장에 실패했습니다.', 'error');
+    }
+  }
+
+  /**
+   * 저장소 변경 감지
+   */
+  detectStorageChanges() {
+    const changes = [];
+    const typeNames = { local: '로컬', ftp: 'FTP/NAS', oracle: 'Oracle DB', notion: 'Notion' };
+
+    ['memory', 'files'].forEach(section => {
+      const selectedType = document.querySelector(`input[name="${section}StorageType"]:checked`)?.value || 'local';
+      const originalType = this.originalStorageTypes[section];
+
+      if (originalType && selectedType !== originalType) {
+        changes.push({
+          section,
+          from: originalType,
+          to: selectedType,
+          fromName: typeNames[originalType] || originalType,
+          toName: typeNames[selectedType] || selectedType,
+          sectionName: section === 'memory' ? '메모리 저장소' : '파일 저장소'
+        });
+      }
+    });
+
+    return changes;
+  }
+
+  /**
+   * 마이그레이션 모달 표시
+   */
+  showMigrationModal(changes) {
+    const modal = document.getElementById('storageMigrationModal');
+    const infoEl = document.getElementById('migrationInfo');
+    const warningEl = document.getElementById('migrationWarning');
+
+    if (!modal || !infoEl) return;
+
+    // 변경 정보 표시
+    infoEl.innerHTML = changes.map(c => `
+      <div class="migration-change-item">
+        <span class="change-section">${c.sectionName}</span>
+        <span class="change-arrow">${c.fromName} → ${c.toName}</span>
+      </div>
+    `).join('');
+
+    // 저장할 변경사항 저장
+    this.pendingStorageChanges = changes;
+
+    // 모달 표시
+    modal.style.display = 'flex';
+
+    // 이벤트 리스너 등록
+    this.setupMigrationModalEvents();
+  }
+
+  /**
+   * 마이그레이션 모달 이벤트 설정
+   */
+  setupMigrationModalEvents() {
+    const modal = document.getElementById('storageMigrationModal');
+    const closeBtn = document.getElementById('closeMigrationModal');
+    const cancelBtn = document.getElementById('cancelMigration');
+    const confirmBtn = document.getElementById('confirmMigration');
+    const warningEl = document.getElementById('migrationWarning');
+
+    // 옵션 선택 시 경고 표시
+    document.querySelectorAll('input[name="migrationOption"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        if (warningEl) {
+          warningEl.style.display = e.target.value === 'migrate' ? 'flex' : 'none';
+        }
+      });
+    });
+
+    // 닫기/취소
+    const closeModal = () => {
+      modal.style.display = 'none';
+      this.pendingStorageChanges = null;
+    };
+
+    closeBtn?.addEventListener('click', closeModal);
+    cancelBtn?.addEventListener('click', closeModal);
+
+    // 확인
+    confirmBtn?.addEventListener('click', async () => {
+      const selectedOption = document.querySelector('input[name="migrationOption"]:checked')?.value || 'keep';
+      modal.style.display = 'none';
+
+      await this.performStorageSave(selectedOption);
+    });
+  }
+
+  /**
+   * 실제 저장소 설정 저장 수행
+   */
+  async performStorageSave(migrationOption = null) {
+    try {
+      // 마이그레이션이 필요한 경우
+      if (migrationOption && this.pendingStorageChanges) {
+        for (const change of this.pendingStorageChanges) {
+          if (migrationOption === 'migrate') {
+            this.showSaveStatus(`${change.sectionName} 마이그레이션 중...`, 'info');
+            await this.apiClient.post('/storage/migrate', {
+              section: change.section,
+              from: change.from,
+              to: change.to
+            });
+          } else if (migrationOption === 'reset') {
+            // 초기화는 새 저장소에서 빈 상태로 시작 (특별한 작업 불필요)
+            console.log(`[Storage] Reset mode for ${change.section}`);
+          }
+          // 'keep'은 아무 작업 없이 저장소만 변경
+        }
+      }
+
       // 메모리 저장소 저장
       await this.saveStorageSection('memory');
-      
+
       // 파일 저장소 저장
       await this.saveStorageSection('files');
-      
+
+      // 원본 타입 업데이트
+      ['memory', 'files'].forEach(section => {
+        const selectedType = document.querySelector(`input[name="${section}StorageType"]:checked`)?.value || 'local';
+        this.originalStorageTypes[section] = selectedType;
+      });
+
+      this.pendingStorageChanges = null;
       this.showSaveStatus('저장소 설정 저장됨. 서버 재시작 중...', 'success');
       await this.restartServer();
     } catch (error) {
       console.error('Failed to save storage settings:', error);
-      this.showSaveStatus('저장소 설정 저장에 실패했습니다.', 'error');
+      this.showSaveStatus('저장소 설정 저장에 실패했습니다: ' + error.message, 'error');
     }
   }
   
@@ -3971,7 +4279,7 @@ export class AISettings {
    */
   async saveStorageSection(section) {
     const selectedType = document.querySelector(`input[name="${section}StorageType"]:checked`)?.value || 'local';
-    
+
     if (selectedType === 'ftp') {
       const prefix = section;
       const ftpConfig = {
@@ -3981,19 +4289,39 @@ export class AISettings {
         password: document.getElementById(`${prefix}FtpPassword`)?.value,
         basePath: document.getElementById(`${prefix}FtpBasePath`)?.value || `/${section}`
       };
-      
+
       if (!ftpConfig.host || !ftpConfig.user) {
         throw new Error(`${section} FTP 호스트와 사용자를 입력해주세요.`);
       }
-      
+
       await this.apiClient.put(`/config/${section}`, {
         storageType: 'ftp',
         ftp: ftpConfig
       });
+    } else if (selectedType === 'oracle') {
+      // Oracle 설정 저장
+      const passwordEl = document.getElementById(`${section}OraclePassword`);
+      const encryptionKeyEl = document.getElementById(`${section}OracleEncryptionKey`);
+
+      // 비밀번호가 입력되었으면 키체인에 저장
+      if (passwordEl?.value) {
+        await this.apiClient.post('/config/storage/oracle/credentials', {
+          password: passwordEl.value,
+          encryptionKey: encryptionKeyEl?.value || undefined
+        });
+      }
+
+      // Oracle 활성화
+      await this.apiClient.put('/config/storage/oracle', { enabled: true });
+
+      // 메모리 설정에 Oracle 타입 저장
+      await this.apiClient.put(`/config/${section}`, {
+        storageType: 'oracle'
+      });
     } else {
       const pathInput = document.getElementById(`${section}Path`);
       const path = pathInput?.value || `./${section}`;
-      
+
       await this.apiClient.put(`/config/${section}`, {
         storageType: 'local',
         storagePath: path

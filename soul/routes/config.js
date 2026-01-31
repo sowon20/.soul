@@ -521,10 +521,9 @@ router.get('/server-status', async (req, res) => {
   const status = {
     backend: { online: true, port: 3001 },
     mongodb: { online: false, port: 27017 },
-    chroma: { online: false, port: 8000 },
-    ftp: { online: false, port: 21 }
+    oracle: { online: false, label: '대화저장' }
   };
-  
+
   // MongoDB 체크
   try {
     const mongoose = require('mongoose');
@@ -532,65 +531,151 @@ router.get('/server-status', async (req, res) => {
   } catch (e) {
     status.mongodb.online = false;
   }
-  
-  // ChromaDB 체크
+
+  // Oracle DB 체크 (ConversationStore 연결 상태)
   try {
-    const http = require('http');
-    await new Promise((resolve) => {
-      const req = http.get('http://localhost:8000/api/v2/heartbeat', (res) => {
-        status.chroma.online = res.statusCode === 200;
-        resolve();
-      });
-      req.on('error', () => {
-        status.chroma.online = false;
-        resolve();
-      });
-      req.setTimeout(2000, () => {
-        status.chroma.online = false;
-        req.destroy();
-        resolve();
-      });
-    });
+    const ConversationStore = require('../utils/conversation-store');
+    const store = new ConversationStore();
+    await store.init();
+    status.oracle.online = store.isConnected() && store.storageType === 'oracle';
   } catch (e) {
-    status.chroma.online = false;
+    status.oracle.online = false;
   }
-  
-  // FTP 체크 (설정에서 가져오기)
-  try {
-    const SystemConfig = require('../models/SystemConfig');
-    const config = await SystemConfig.findOne({ configKey: 'memory' });
-    if (config?.value?.storageType === 'ftp' && config?.value?.ftp) {
-      const ftpConfig = config.value.ftp;
-      status.ftp.port = ftpConfig.port || 21;
-      status.ftp.host = ftpConfig.host;
-      
-      // 간단한 TCP 연결 체크
-      const net = require('net');
-      await new Promise((resolve) => {
-        const socket = new net.Socket();
-        socket.setTimeout(2000);
-        socket.on('connect', () => {
-          status.ftp.online = true;
-          socket.destroy();
-          resolve();
-        });
-        socket.on('error', () => {
-          status.ftp.online = false;
-          resolve();
-        });
-        socket.on('timeout', () => {
-          status.ftp.online = false;
-          socket.destroy();
-          resolve();
-        });
-        socket.connect(ftpConfig.port || 21, ftpConfig.host);
-      });
-    }
-  } catch (e) {
-    status.ftp.online = false;
-  }
-  
+
   res.json(status);
+});
+
+/**
+ * GET /api/config/storage/oracle
+ * Oracle 스토리지 설정 조회
+ */
+router.get('/storage/oracle', async (req, res) => {
+  try {
+    const { OracleStorage } = require('../utils/oracle-storage');
+    const keytar = require('keytar');
+
+    // 키체인에서 설정 여부 확인
+    const hasPassword = !!(await keytar.getPassword('soul-oracle-db', 'password'));
+    const hasEncryptionKey = !!(await keytar.getPassword('soul-oracle-db', 'encryptionKey'));
+
+    // DB 설정에서 Oracle 활성화 여부 확인
+    const oracleConfig = await configManager.getConfigValue('oracle_storage', {
+      enabled: false,
+      connectString: 'database_low',
+      walletDir: './config/oracle'
+    });
+
+    res.json({
+      success: true,
+      configured: hasPassword,
+      encrypted: hasEncryptionKey,
+      ...oracleConfig
+    });
+  } catch (error) {
+    console.error('Error reading Oracle config:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * PUT /api/config/storage/oracle
+ * Oracle 스토리지 설정 저장
+ */
+router.put('/storage/oracle', async (req, res) => {
+  try {
+    const { enabled, connectString, walletDir } = req.body;
+
+    const oracleConfig = {
+      enabled: !!enabled,
+      connectString: connectString || 'database_low',
+      walletDir: walletDir || './config/oracle'
+    };
+
+    await configManager.setConfigValue('oracle_storage', oracleConfig, 'Oracle storage configuration');
+
+    res.json({ success: true, ...oracleConfig });
+  } catch (error) {
+    console.error('Error saving Oracle config:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/config/storage/oracle/credentials
+ * Oracle 비밀번호/암호화키 키체인에 저장
+ */
+router.post('/storage/oracle/credentials', async (req, res) => {
+  try {
+    const { password, encryptionKey } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ success: false, error: 'password is required' });
+    }
+
+    const { OracleStorage } = require('../utils/oracle-storage');
+    await OracleStorage.setCredentials(password, encryptionKey);
+
+    res.json({
+      success: true,
+      message: 'Credentials saved to keychain',
+      hasEncryptionKey: !!encryptionKey
+    });
+  } catch (error) {
+    console.error('Error saving Oracle credentials:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/config/storage/oracle/credentials
+ * Oracle 키체인에서 비밀번호 삭제
+ */
+router.delete('/storage/oracle/credentials', async (req, res) => {
+  try {
+    const { OracleStorage } = require('../utils/oracle-storage');
+    await OracleStorage.deleteCredentials();
+
+    res.json({ success: true, message: 'Credentials deleted from keychain' });
+  } catch (error) {
+    console.error('Error deleting Oracle credentials:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/config/storage/oracle/test
+ * Oracle 연결 테스트
+ */
+router.post('/storage/oracle/test', async (req, res) => {
+  try {
+    const { OracleStorage } = require('../utils/oracle-storage');
+
+    const oracleConfig = await configManager.getConfigValue('oracle_storage', {
+      connectString: 'database_low',
+      walletDir: './config/oracle'
+    });
+
+    const storage = new OracleStorage({
+      connectString: oracleConfig.connectString,
+      walletDir: oracleConfig.walletDir
+    });
+
+    await storage.initialize();
+    const testResult = await storage.testConnection();
+    await storage.close();
+
+    res.json({
+      success: testResult,
+      message: testResult ? 'Oracle 연결 성공!' : 'Oracle 연결 실패'
+    });
+  } catch (error) {
+    console.error('Error testing Oracle connection:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Oracle 연결 실패',
+      error: error.message
+    });
+  }
 });
 
 /**

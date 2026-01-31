@@ -1144,8 +1144,8 @@ class GoogleService extends AIService {
       enableToolSearch = false,
     } = options;
 
-    // Claude 전용 옵션 사용 시 경고
-    const claudeOnlyOptions = { documents, searchResults, outputFormat, strictTools, thinking, prefill, enableCache, effort, toolExamples, fineGrainedToolStreaming, disableParallelToolUse, enableToolSearch };
+    // Claude 전용 옵션 사용 시 경고 (thinking은 Gemini 2.5도 지원하므로 제외)
+    const claudeOnlyOptions = { documents, searchResults, outputFormat, strictTools, prefill, enableCache, effort, toolExamples, fineGrainedToolStreaming, disableParallelToolUse, enableToolSearch };
     const usedClaudeOptions = Object.entries(claudeOnlyOptions)
       .filter(([, v]) => v)
       .map(([k]) => k);
@@ -1163,9 +1163,29 @@ class GoogleService extends AIService {
       maxOutputTokens: maxTokens,
     };
 
+    // Gemini thinking 설정 (2.5+, 3.0+ 등 thinking 지원 모델)
+    // thinkingBudget: 0 = 비활성화, -1 = 동적(Auto), 양수 = 특정 토큰 수
+    // Gemini 3.0+는 thinkingLevel 사용 가능하나 thinkingBudget도 하위 호환
+    const supportsThinking = /gemini[- ]?(2\.5|2-5|3|[4-9])/i.test(this.modelName);
+    if (supportsThinking) {
+      if (thinking) {
+        // thinking 활성화: 동적 모드 (-1)
+        generationConfig.thinkingConfig = {
+          thinkingBudget: -1  // Auto/dynamic
+        };
+        console.log(`[Google] Gemini thinking enabled (dynamic budget) for ${this.modelName}`);
+      } else {
+        // thinking 비활성화
+        generationConfig.thinkingConfig = {
+          thinkingBudget: 0
+        };
+        console.log(`[Google] Gemini thinking disabled for ${this.modelName}`);
+      }
+    }
+
     // Gemini Thinking 모델은 temperature 지원 안함
     const isThinkingModel = this.modelName.includes('thinking');
-    if (!isThinkingModel) {
+    if (!isThinkingModel && !thinking) {
       generationConfig.temperature = temperature;
     }
 
@@ -1207,7 +1227,29 @@ class GoogleService extends AIService {
       output_tokens: data.usageMetadata?.candidatesTokenCount || 0
     };
 
-    return { text: data.candidates[0].content.parts[0].text, usage };
+    // Gemini 2.5 응답에서 thinking과 text 분리
+    const parts = data.candidates[0].content.parts || [];
+    let thinkingContent = '';
+    let textContent = '';
+
+    for (const part of parts) {
+      if (part.thought) {
+        // thinking 파트
+        thinkingContent += part.text || '';
+      } else if (part.text) {
+        // 일반 텍스트 파트
+        textContent += part.text;
+      }
+    }
+
+    // thinking이 있으면 <thinking> 태그로 감싸서 앞에 추가
+    let finalText = textContent;
+    if (thinkingContent) {
+      console.log(`[Google] Thinking content length: ${thinkingContent.length}`);
+      finalText = `<thinking>${thinkingContent}</thinking>\n\n${textContent}`;
+    }
+
+    return { text: finalText, usage };
   }
 
   async analyzeConversation(messages) {

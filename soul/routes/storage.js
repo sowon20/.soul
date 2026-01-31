@@ -248,4 +248,131 @@ router.get('/browse/check', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/storage/migrate
+ * 저장소 간 데이터 마이그레이션
+ */
+router.post('/migrate', async (req, res) => {
+  try {
+    const { section, from, to } = req.body;
+
+    if (!section || !from || !to) {
+      return res.status(400).json({
+        success: false,
+        error: 'section, from, to 필드가 필요합니다.'
+      });
+    }
+
+    console.log(`[Storage Migration] ${section}: ${from} → ${to}`);
+
+    // 저장소 어댑터 로드
+    const sourceAdapter = await getStorageAdapter(from, section);
+    const targetAdapter = await getStorageAdapter(to, section);
+
+    if (!sourceAdapter || !targetAdapter) {
+      return res.status(400).json({
+        success: false,
+        error: '저장소 어댑터를 로드할 수 없습니다.'
+      });
+    }
+
+    // 데이터 마이그레이션 수행
+    const result = await migrateData(sourceAdapter, targetAdapter, section);
+
+    res.json({
+      success: true,
+      message: `${section} 마이그레이션 완료`,
+      stats: result
+    });
+  } catch (error) {
+    console.error('[Storage Migration] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 저장소 타입에 맞는 어댑터 생성
+ */
+async function getStorageAdapter(type, section) {
+  const SystemConfig = require('../models/SystemConfig');
+  const config = await SystemConfig.findOne({ configKey: section });
+  const settings = config?.value || {};
+
+  switch (type) {
+    case 'local': {
+      const { LocalStorageAdapter } = require('../storage');
+      const basePath = settings.storagePath || `./${section}`;
+      const adapter = new LocalStorageAdapter({ basePath });
+      await adapter.connect();
+      return adapter;
+    }
+
+    case 'ftp': {
+      const { FTPStorage } = require('../utils/ftp-storage');
+      const ftpConfig = settings.ftp || {};
+      const adapter = new FTPStorage({
+        host: ftpConfig.host,
+        port: ftpConfig.port || 21,
+        user: ftpConfig.user,
+        password: ftpConfig.password,
+        basePath: ftpConfig.basePath || `/${section}`
+      });
+      await adapter.connect();
+      return adapter;
+    }
+
+    case 'oracle': {
+      const { OracleStorage } = require('../utils/oracle-storage');
+      const adapter = new OracleStorage();
+      await adapter.connect();
+      return adapter;
+    }
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * 데이터 마이그레이션 수행
+ */
+async function migrateData(source, target, section) {
+  const stats = { files: 0, errors: 0 };
+
+  try {
+    // 파일 기반 저장소의 경우
+    if (typeof source.list === 'function' && typeof source.read === 'function') {
+      const files = await source.list('/');
+
+      for (const file of files) {
+        if (file.isDirectory) continue;
+
+        try {
+          const content = await source.read(file.name);
+          await target.write(file.name, content);
+          stats.files++;
+        } catch (err) {
+          console.error(`[Migration] Failed to migrate ${file.name}:`, err.message);
+          stats.errors++;
+        }
+      }
+    }
+
+    // Oracle 등 DB 기반 저장소의 경우
+    if (typeof source.exportAll === 'function' && typeof target.importAll === 'function') {
+      const data = await source.exportAll(section);
+      await target.importAll(section, data);
+      stats.files = data.length || 1;
+    }
+
+    return stats;
+  } catch (error) {
+    console.error('[Migration] Error:', error);
+    throw error;
+  }
+}
+
 module.exports = router;
