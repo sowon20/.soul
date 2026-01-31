@@ -1227,6 +1227,7 @@ textarea.settings-field-input {
   margin-left: 6px;
 }
 
+/* 정체성 섹션 요약 - 기존 2줄 레이아웃 유지 */
 .timeline-summary {
   margin-top: 4px;
   display: block;
@@ -1254,6 +1255,47 @@ textarea.settings-field-input {
   font-weight: 500;
   flex-shrink: 0;
   margin-top: 2px;
+}
+
+.timeline-summary .summary-text {
+  font-size: 0.8rem;
+  color: #5a5550;
+}
+
+/* 텍스트 2줄 제한 + 말줄임표 */
+.timeline-item[data-section] .timeline-summary .summary-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 성격/두뇌 요약 스타일 - 세로 레이아웃 (정체성과 동일) */
+.timeline-summary--personality,
+.timeline-summary--brain {
+  margin-top: 4px;
+  display: block;
+}
+
+.timeline-summary--personality div,
+.timeline-summary--brain div {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.timeline-summary--personality .summary-text,
+.timeline-summary--brain .summary-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.timeline-summary--brain:empty {
+  display: none;
 }
 
 /* 텍스트 2줄 제한 + 말줄임표 (펼침/접힘 상관없이 항상) */
@@ -1330,6 +1372,28 @@ textarea.settings-field-input {
   overflow: visible;
 }
 
+/* 섹션별 빈 상태 안내 힌트 */
+.section-empty-hint {
+  display: inline-block;
+  padding: 3px 8px;
+  margin-top: 4px;
+  background: rgba(100, 90, 80, 0.5);
+  color: #fff;
+  font-size: 0.75rem;
+  border-radius: 5px;
+}
+
+/* 알바 섹션 힌트는 margin 줄임 */
+.timeline-item[data-section="alba"] .section-empty-hint {
+  margin-top: 2px;
+  margin-bottom: 4px;
+}
+
+/* 섹션이 펼쳐지면 힌트 숨김 */
+.timeline-item.expanded .section-empty-hint {
+  display: none;
+}
+
 .timeline-body .neu-field-group {
   gap: 0.2rem;
 }
@@ -1347,13 +1411,15 @@ textarea.settings-field-input {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  width: 95%;
+  margin-left: 0.4rem;
 }
 
 .timeline-slider-item .slider-labels {
   display: flex;
   justify-content: space-between;
-  font-size: 0.7rem;
-  color: var(--text-muted, #888);
+  font-size: 0.75rem;
+  color: rgba(0, 0, 0, 0.5);
   padding: 0 0.25rem;
 }
 
@@ -1364,8 +1430,8 @@ textarea.settings-field-input {
   height: 4px;
   border-radius: 2px;
   background: linear-gradient(90deg,
-    rgba(120,110,100,0.15) 0%,
-    rgba(120,110,100,0.25) 100%
+    #9a8a7a 0%,
+    #8a9a9a 100%
   );
   cursor: pointer;
   transition: background 0.2s;
@@ -1377,30 +1443,31 @@ textarea.settings-field-input {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: linear-gradient(145deg, #c8b8a8, #a89888);
+  background: linear-gradient(145deg, #f0ebe6, #ddd5cd);
   box-shadow:
-    0 1px 3px rgba(0,0,0,0.15),
-    inset 0 1px 1px rgba(255,255,255,0.3);
+    0 1px 4px rgba(0,0,0,0.2),
+    inset 0 1px 1px rgba(255,255,255,0.7);
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s;
+  border: 1px solid rgba(160, 140, 120, 0.4);
 }
 
 .timeline-range::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
+  transform: scale(1.1);
   box-shadow:
-    0 2px 6px rgba(0,0,0,0.2),
-    inset 0 1px 1px rgba(255,255,255,0.3);
+    0 2px 5px rgba(0,0,0,0.25),
+    inset 0 1px 1px rgba(255,255,255,0.7);
 }
 
 .timeline-range::-moz-range-thumb {
   width: 14px;
   height: 14px;
-  border: none;
+  border: 1px solid rgba(160, 140, 120, 0.4);
   border-radius: 50%;
-  background: linear-gradient(145deg, #c8b8a8, #a89888);
+  background: linear-gradient(145deg, #f0ebe6, #ddd5cd);
   box-shadow:
-    0 1px 3px rgba(0,0,0,0.15),
-    inset 0 1px 1px rgba(255,255,255,0.3);
+    0 1px 4px rgba(0,0,0,0.2),
+    inset 0 1px 1px rgba(255,255,255,0.7);
   cursor: pointer;
 }
 
@@ -1569,8 +1636,8 @@ textarea.settings-field-input {
   padding: 6px 14px;
   border-radius: 20px;
   background: transparent;
-  border: 2px dashed rgba(255, 255, 255, 0.3);
-  color: rgba(255, 255, 255, 0.6);
+  border: 2px dashed rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.8);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -1601,8 +1668,8 @@ textarea.settings-field-input {
   height: 32px;
   border-radius: 50%;
   background: transparent;
-  border: 2px dashed rgba(255, 255, 255, 0.3);
-  color: rgba(255, 255, 255, 0.6);
+  border: 2px dashed rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.75);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -3405,7 +3472,7 @@ textarea.settings-field-input {
   white-space: nowrap;
 }
 
-.alba-status {
+.alba-item-status {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -3821,8 +3888,8 @@ textarea.settings-field-input {
 }
 
 .alba-parallel-item:hover {
-  background: rgba(96, 165, 250, 0.1);
-  border-color: rgba(96, 165, 250, 0.3);
+  background: rgba(154, 138, 122, 0.15);
+  border-color: rgba(154, 138, 122, 0.3);
 }
 
 .alba-parallel-item input[type="checkbox"] {
@@ -3926,7 +3993,7 @@ textarea.settings-field-input {
 }
 
 .thinking-toggle input:checked + .thinking-toggle-slider {
-  background: rgba(100, 140, 120, 0.6);
+  background: rgba(90, 140, 110, 0.85);
 }
 
 .thinking-toggle input:checked + .thinking-toggle-slider::after {
@@ -3940,6 +4007,7 @@ textarea.settings-field-input {
 }
 
 .thinking-hint {
+  display: none; /* 브레인 위자드에서는 안내문구로 통합 */
   font-size: 0.6rem;
   color: rgba(0, 0, 0, 0.35);
   white-space: nowrap;
@@ -4769,9 +4837,567 @@ textarea.settings-field-input {
 }
 
 /* ===================================
-   Brain Routing Section (두뇌 라우팅)
+   Brain Wizard (가로 스텝 온보딩)
    =================================== */
 
+.brain-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 가로 스텝 인디케이터 */
+.brain-wizard-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 8px 0;
+}
+
+.brain-wizard-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.brain-wizard-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid rgba(90, 80, 70, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.brain-wizard-dot span {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(90, 80, 70, 0.4);
+  transition: all 0.3s ease;
+}
+
+/* 완료된 스텝: 주황색 */
+.brain-wizard-step[data-done="true"] .brain-wizard-dot {
+  background: linear-gradient(145deg, #e8a87c, #d4956a);
+  border-color: #d4956a;
+}
+
+.brain-wizard-step[data-done="true"] .brain-wizard-dot span {
+  color: #fff;
+}
+
+/* 현재 스텝: 흰색 + 주황 테두리 */
+.brain-wizard-step[data-active="true"] .brain-wizard-dot {
+  background: #fff;
+  border-color: #e8a87c;
+  border-width: 2px;
+}
+
+.brain-wizard-step[data-active="true"] .brain-wizard-dot span {
+  color: #d4956a;
+}
+
+.brain-wizard-label {
+  font-size: 0.65rem;
+  color: rgba(90, 80, 70, 0.5);
+  transition: all 0.3s ease;
+}
+
+.brain-wizard-step[data-active="true"] .brain-wizard-label,
+.brain-wizard-step[data-done="true"] .brain-wizard-label {
+  color: #5a5550;
+  font-weight: 500;
+}
+
+/* 레이블 모드별 표시 */
+.brain-wizard-label--single,
+.brain-wizard-label--auto,
+.brain-wizard-label--none,
+.brain-wizard-label--router,
+.brain-wizard-label--tiers {
+  display: none;
+}
+
+.brain-wizard[data-mode="single"] .brain-wizard-step[data-step="2"] .brain-wizard-label--single {
+  display: block;
+}
+
+.brain-wizard[data-mode="auto"] .brain-wizard-step[data-step="2"] .brain-wizard-label--auto {
+  display: block;
+}
+
+/* 모드 미선택 시 */
+.brain-wizard[data-mode=""] .brain-wizard-step[data-step="2"] .brain-wizard-label--none {
+  display: block;
+}
+
+/* 자동+서버: Step 3에 "티어별" 표시 */
+.brain-wizard[data-mode="auto"][data-router="server"] .brain-wizard-step[data-step="3"] .brain-wizard-label--tiers {
+  display: block;
+}
+
+/* 자동+AI: Step 3에 "라우터", Step 4에 "티어별" 표시 */
+.brain-wizard[data-mode="auto"][data-router="ai"] .brain-wizard-step[data-step="3"] .brain-wizard-label--router {
+  display: block;
+}
+
+/* 연결선 */
+.brain-wizard-line {
+  width: 40px;
+  height: 2px;
+  background: rgba(90, 80, 70, 0.15);
+  margin: 0 8px;
+  margin-bottom: 18px;
+  transition: all 0.3s ease;
+}
+
+.brain-wizard-line[data-active="true"] {
+  background: linear-gradient(90deg, #e8a87c, #d4956a);
+}
+
+/* 기본적으로 Step 3, 4, final 숨김 */
+.brain-wizard-step--step3,
+.brain-wizard-line--step3,
+.brain-wizard-step--step4,
+.brain-wizard-line--step4,
+.brain-wizard-step--final,
+.brain-wizard-line--final {
+  display: none;
+}
+
+/* 모드 미선택 시 Step 2도 숨김 */
+.brain-wizard[data-mode=""] .brain-wizard-step--step2,
+.brain-wizard[data-mode=""] .brain-wizard-line:first-of-type {
+  opacity: 0.4;
+}
+
+/* 단일모델: 모드 → 모델 → 완성 (3단계) */
+.brain-wizard[data-mode="single"] .brain-wizard-step--final,
+.brain-wizard[data-mode="single"] .brain-wizard-line--final {
+  display: flex;
+}
+
+/* 자동라우팅 + 서버: 모드 → 라우팅 → 티어별 → 완성 (4단계) */
+.brain-wizard[data-mode="auto"][data-router="server"] .brain-wizard-step--step3,
+.brain-wizard[data-mode="auto"][data-router="server"] .brain-wizard-line--step3,
+.brain-wizard[data-mode="auto"][data-router="server"] .brain-wizard-step--final,
+.brain-wizard[data-mode="auto"][data-router="server"] .brain-wizard-line--final {
+  display: flex;
+}
+
+/* 자동라우팅 + AI: 모드 → 라우팅 → 라우터 → 티어별 → 완성 (5단계) */
+.brain-wizard[data-mode="auto"][data-router="ai"] .brain-wizard-step--step3,
+.brain-wizard[data-mode="auto"][data-router="ai"] .brain-wizard-line--step3,
+.brain-wizard[data-mode="auto"][data-router="ai"] .brain-wizard-step--step4,
+.brain-wizard[data-mode="auto"][data-router="ai"] .brain-wizard-line--step4,
+.brain-wizard[data-mode="auto"][data-router="ai"] .brain-wizard-step--final,
+.brain-wizard[data-mode="auto"][data-router="ai"] .brain-wizard-line--final {
+  display: flex;
+}
+
+/* 컨텐츠 영역 */
+.brain-wizard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.brain-wizard-panel {
+  display: block;
+}
+
+/* 패널 모드별 표시 */
+.brain-wizard-panel--single {
+  display: none;
+}
+
+.brain-wizard-panel--auto {
+  display: none;
+}
+
+.brain-wizard-panel--tiers {
+  display: none;
+}
+
+.brain-wizard-panel--router {
+  display: none;
+}
+
+.brain-wizard[data-mode="single"] .brain-wizard-panel--single {
+  display: block;
+}
+
+.brain-wizard[data-mode="auto"] .brain-wizard-panel--auto {
+  display: block;
+}
+
+/* 자동라우팅 선택 시 티어 패널 표시 (서버/AI 둘 다) */
+.brain-wizard[data-mode="auto"] .brain-wizard-panel--tiers {
+  display: block;
+}
+
+/* AI 선택 시에만 라우터 모델 패널 추가 표시 */
+.brain-wizard[data-mode="auto"][data-router="ai"] .brain-wizard-panel--router {
+  display: block;
+}
+
+/* 옵션 카드 */
+.brain-wizard-options {
+  display: flex;
+  gap: 10px;
+}
+
+.brain-wizard-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  background: rgba(255, 255, 255, 0.4);
+  border: 2px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.brain-wizard-card:hover {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+.brain-wizard-card.selected {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: #e8a87c;
+}
+
+.brain-wizard-card input[type="radio"] {
+  display: none;
+}
+
+.brain-wizard-card .card-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #4a4540;
+}
+
+.brain-wizard-card .card-desc {
+  font-size: 0.65rem;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+/* 힌트 메시지 */
+.brain-wizard-hint {
+  text-align: center;
+  font-size: 0.7rem;
+  color: rgba(90, 80, 70, 0.5);
+  margin-top: 8px;
+}
+
+/* 모드 선택 후 힌트 숨김 */
+.brain-wizard[data-mode="single"] .brain-wizard-hint,
+.brain-wizard[data-mode="auto"] .brain-wizard-hint {
+  display: none;
+}
+
+/* 폼 영역 */
+.brain-wizard-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.brain-wizard-form .form-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #5a5550;
+}
+
+/* 티어 리스트 */
+.brain-tier-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.brain-tier-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.tier-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  min-width: 45px;
+  text-align: center;
+}
+
+.tier-badge--light {
+  background: rgba(90, 154, 106, 0.6);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.tier-badge--medium {
+  background: rgba(154, 138, 90, 0.6);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.tier-badge--heavy {
+  background: rgba(154, 90, 90, 0.6);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* 티어 행 좌우 여백 줄이기 */
+.brain-tier-row {
+  padding: 4px 0;
+  gap: 6px;
+}
+
+.tier-badge {
+  min-width: 40px;
+  padding: 2px 6px;
+}
+
+/* 확인 버튼 - 100% 너비 */
+.brain-wizard-confirm {
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #e8a87c, #d4956a);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 12px;
+}
+
+.brain-wizard-confirm:hover {
+  background: linear-gradient(135deg, #d4956a, #c4855a);
+  transform: translateY(-1px);
+}
+
+/* 안내 문구 */
+.brain-wizard-note {
+  font-size: 0.75rem;
+  color: rgba(90, 80, 70, 0.65);
+  text-align: center;
+  margin-top: 12px;
+  padding: 0;
+  background: none;
+}
+
+/* 완성 상태: 확인 버튼 누른 후에만 final step 활성화 */
+.brain-wizard[data-confirmed="false"] .brain-wizard-step--final .brain-wizard-dot {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.brain-wizard[data-confirmed="false"] .brain-wizard-step--final .brain-wizard-label {
+  color: rgba(90, 80, 70, 0.4);
+}
+
+.brain-wizard[data-confirmed="true"] .brain-wizard-step--final .brain-wizard-dot {
+  background: linear-gradient(135deg, #e8a87c, #d4956a);
+}
+
+.brain-wizard[data-confirmed="true"] .brain-wizard-step--final .brain-wizard-dot span {
+  color: #fff;
+}
+
+.brain-wizard[data-confirmed="true"] .brain-wizard-step--final .brain-wizard-label {
+  color: #5a5550;
+  font-weight: 600;
+}
+
+/* 완성되면 패널 숨기기 */
+.brain-wizard[data-confirmed="true"] .brain-wizard-body {
+  display: none;
+}
+
+/* 완성 후 다시 수정하기 버튼 */
+.brain-wizard-edit {
+  display: none;
+  margin-top: 8px;
+  padding: 6px 12px;
+  font-size: 0.7rem;
+  color: rgba(90, 80, 70, 0.7);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(90, 80, 70, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.brain-wizard-edit:hover {
+  background: rgba(255, 255, 255, 0.8);
+  color: rgba(90, 80, 70, 0.9);
+}
+
+.brain-wizard[data-confirmed="true"] .brain-wizard-edit {
+  display: inline-block;
+}
+
+/* ===================================
+   알바 타임라인 섹션
+   =================================== */
+
+/* 알바 리스트 (타임라인용) */
+.timeline-body .alba-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.alba-empty-hint {
+  font-size: 0.8rem;
+  color: rgba(90, 80, 70, 0.5);
+  text-align: center;
+  padding: 8px 0;
+}
+
+/* 알바 현황 */
+.alba-status {
+  display: flex;
+  gap: 16px;
+  margin-top: 4px;
+}
+
+.alba-status:empty {
+  display: none;
+}
+
+.alba-status-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.alba-status-box {
+  padding: 3px 8px;
+  background: rgba(100, 90, 80, 0.5);
+  border-radius: 5px;
+  font-size: 0.75rem;
+  color: #fff;
+}
+
+.alba-status-num {
+  font-size: 0.8rem;
+  color: #5a5550;
+  font-weight: 500;
+}
+
+.alba-status:empty {
+  display: none;
+}
+
+/* 알바 간략 아이템 */
+.alba-compact-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 8px;
+  border: 1px solid rgba(90, 80, 70, 0.1);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.alba-compact-item:hover {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(90, 80, 70, 0.2);
+}
+
+.alba-compact-item.inactive {
+  opacity: 0.5;
+}
+
+.alba-compact-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.alba-compact-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #5a5550;
+}
+
+.alba-compact-desc {
+  font-size: 0.75rem;
+  color: rgba(90, 80, 70, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 알바 추가 버튼 */
+.alba-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(90, 80, 70, 0.7);
+  background: transparent;
+  border: 2px dashed rgba(90, 80, 70, 0.25);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.alba-add-btn:hover {
+  color: rgba(90, 80, 70, 0.9);
+  border-color: rgba(90, 80, 70, 0.4);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.alba-add-btn svg {
+  stroke: currentColor;
+}
+
+/* 토글 스위치 xs 사이즈 */
+.toggle-switch-xs {
+  width: 32px;
+  height: 18px;
+  min-width: 32px;
+}
+
+.toggle-switch-xs .toggle-slider {
+  border-radius: 18px;
+}
+
+.toggle-switch-xs .toggle-slider:before {
+  width: 14px;
+  height: 14px;
+  left: 2px;
+  bottom: 1px;
+}
+
+.toggle-switch-xs input:checked + .toggle-slider:before {
+  transform: translateX(14px);
+}
+
+/* 기존 호환성 유지 */
 .brain-routing-section {
   margin-top: 8px;
 }
@@ -5149,6 +5775,38 @@ textarea.settings-field-input {
   margin-top: 0.25rem;
 }
 
+/* Oracle Wallet Section */
+.oracle-wallet-section {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.oracle-wallet-section > label {
+  display: block;
+  font-size: 0.75rem;
+  color: rgba(0, 0, 0, 0.6);
+  margin-bottom: 0.5rem;
+}
+
+.oracle-wallet-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.wallet-status {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.oracle-hint {
+  display: block;
+  font-size: 0.7rem;
+  color: rgba(0, 0, 0, 0.45);
+  margin-top: 0.25rem;
+}
+
 /* Oracle Config Grid */
 .oracle-config-grid {
   display: grid;
@@ -5240,4 +5898,401 @@ textarea.settings-field-input {
   display: flex;
   gap: 0.75rem;
   padding-top: 0.5rem;
+}
+
+/* ===================================
+   알바 추가 모달
+   =================================== */
+
+.alba-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.alba-modal {
+  background: linear-gradient(145deg, #f5f0eb, #e8e0d8);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 480px;
+  max-height: 85vh;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+
+.alba-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.alba-modal-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #4a4540;
+}
+
+.alba-modal-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  font-size: 1.2rem;
+  color: rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.alba-modal-close:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.alba-modal-body {
+  padding: 16px 20px;
+  max-height: 60vh;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.alba-modal-body::-webkit-scrollbar {
+  display: none;
+}
+
+.alba-modal-field {
+  margin-bottom: 14px;
+}
+
+.alba-modal-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.alba-modal-row .alba-modal-field {
+  margin-bottom: 0;
+}
+
+.alba-modal-row .alba-trigger-field {
+  flex: 1;
+}
+
+.alba-modal-row .alba-tokens-field {
+  width: 100px;
+}
+
+.alba-modal-row .alba-tokens-field input {
+  width: 100%;
+}
+
+.alba-modal-field label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.7);
+  margin-bottom: 6px;
+}
+
+.alba-modal-field .field-hint {
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.4);
+  font-size: 0.75rem;
+}
+
+.alba-modal-field input[type="text"],
+.alba-modal-field input[type="number"],
+.alba-modal-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(139, 92, 67, 0.08);
+  font-size: 0.85rem;
+  color: rgba(0, 0, 0, 0.8);
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s;
+}
+
+.alba-modal-field input:focus,
+.alba-modal-field textarea:focus {
+  outline: none;
+  background: rgba(170, 160, 150, 0.2);
+}
+
+.alba-modal-field textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.alba-modal-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(139, 92, 67, 0.08);
+  font-size: 0.85rem;
+  color: rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+}
+
+.alba-modal-radios {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+}
+
+.alba-modal-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+}
+
+.alba-modal-radio input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #9a8a7a;
+}
+
+/* 체인 단계 */
+.alba-chain-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.alba-chain-step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: rgba(154, 138, 122, 0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(154, 138, 122, 0.15);
+}
+
+.alba-chain-step .step-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.alba-chain-step .step-num {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(154, 138, 122, 0.4);
+  color: #5a5550;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.alba-chain-step .step-header select {
+  flex: 1;
+}
+
+.alba-chain-step .alba-chain-role,
+.alba-chain-step .alba-chain-prompt {
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(139, 92, 67, 0.08);
+  font-size: 0.85rem;
+  color: rgba(0, 0, 0, 0.8);
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.alba-chain-step .alba-chain-role::placeholder,
+.alba-chain-step .alba-chain-prompt::placeholder {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.alba-chain-step .alba-chain-prompt {
+  resize: vertical;
+  min-height: 50px;
+}
+
+.alba-chain-remove,
+.alba-parallel-remove {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.3);
+  font-size: 1rem;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.alba-chain-remove:hover:not(:disabled),
+.alba-parallel-remove:hover:not(:disabled) {
+  background: rgba(200, 100, 100, 0.15);
+  color: #a55;
+}
+
+.alba-chain-remove:disabled,
+.alba-parallel-remove:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.alba-chain-add-btn,
+.alba-parallel-add-btn {
+  padding: 8px 12px;
+  border: 1px dashed rgba(90, 80, 70, 0.3);
+  background: transparent;
+  color: rgba(90, 80, 70, 0.7);
+  font-size: 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.alba-chain-add-btn:hover,
+.alba-parallel-add-btn:hover {
+  border-color: rgba(90, 80, 70, 0.5);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* 병렬 모델 */
+.alba-parallel-models {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.alba-parallel-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: rgba(154, 138, 122, 0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(154, 138, 122, 0.15);
+}
+
+.alba-parallel-item .parallel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.alba-parallel-item .parallel-icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(154, 138, 122, 0.4);
+  color: #5a5550;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.alba-parallel-item .parallel-header select {
+  flex: 1;
+}
+
+.alba-parallel-item .alba-parallel-role,
+.alba-parallel-item .alba-parallel-prompt {
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(139, 92, 67, 0.08);
+  font-size: 0.85rem;
+  color: rgba(0, 0, 0, 0.8);
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.alba-parallel-item .alba-parallel-role::placeholder,
+.alba-parallel-item .alba-parallel-prompt::placeholder {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.alba-parallel-item .alba-parallel-prompt {
+  resize: vertical;
+  min-height: 50px;
+}
+
+/* 모달 푸터 */
+.alba-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.alba-modal-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.alba-modal-cancel {
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.alba-modal-cancel:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.alba-modal-confirm {
+  background: linear-gradient(135deg, #c4956a, #b4855a);
+  color: #fff;
+}
+
+.alba-modal-confirm:hover {
+  background: linear-gradient(135deg, #d4a57a, #c4956a);
+}
+
+/* 수정 모달 footer */
+.alba-modal-footer-edit {
+  justify-content: space-between;
+}
+
+.alba-modal-footer-right {
+  display: flex;
+  gap: 10px;
+}
+
+.alba-modal-delete {
+  background: transparent;
+  color: rgba(180, 80, 80, 0.8);
+  border: 1px solid rgba(180, 80, 80, 0.3);
+}
+
+.alba-modal-delete:hover {
+  background: rgba(180, 80, 80, 0.1);
+  border-color: rgba(180, 80, 80, 0.5);
 }

@@ -19,8 +19,8 @@ const Role = require('../models/Role');
  * 기본 인격 프로필 (AgentProfile에서 로드 실패 시 fallback)
  */
 const DEFAULT_PERSONALITY_PROFILE = {
-  name: 'Soul',
-  role: 'AI Assistant',
+  name: '',
+  role: '',
 
   // 핵심 특성
   traits: {
@@ -75,8 +75,8 @@ function loadProfileFromAgentProfile() {
 
     // AgentProfile에서 personality 설정 변환
     const profile = {
-      name: agentProfile.name || 'Soul',
-      role: agentProfile.role || 'AI Assistant',
+      name: agentProfile.name || '',
+      role: agentProfile.role || '',
       traits: agentProfile.personality?.traits || DEFAULT_PERSONALITY_PROFILE.traits,
       communication: agentProfile.personality?.communication || DEFAULT_PERSONALITY_PROFILE.communication,
       language: DEFAULT_PERSONALITY_PROFILE.language,

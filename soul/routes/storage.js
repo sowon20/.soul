@@ -5,7 +5,23 @@
 
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const { getStorageManager, LocalStorageAdapter } = require('../storage');
+
+// Wallet 업로드용 multer 설정
+const walletUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/zip' || file.originalname.endsWith('.zip')) {
+      cb(null, true);
+    } else {
+      cb(new Error('zip 파일만 업로드 가능합니다.'));
+    }
+  }
+});
 
 /**
  * GET /api/storage/types
@@ -374,5 +390,139 @@ async function migrateData(source, target, section) {
     throw error;
   }
 }
+
+/**
+ * POST /api/storage/upload-oracle-wallet
+ * Oracle Wallet zip 업로드 및 압축 해제
+ */
+router.post('/upload-oracle-wallet', walletUpload.single('wallet'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Wallet 파일이 필요합니다.' });
+    }
+
+    const AdmZip = require('adm-zip');
+    const walletDir = path.join(__dirname, '../config/oracle');
+
+    // 디렉토리 생성
+    if (!fs.existsSync(walletDir)) {
+      fs.mkdirSync(walletDir, { recursive: true });
+    }
+
+    // 기존 파일 백업 (선택적)
+    const backupDir = path.join(walletDir, '.backup_' + Date.now());
+    const existingFiles = fs.readdirSync(walletDir).filter(f => !f.startsWith('.backup'));
+    if (existingFiles.length > 0) {
+      fs.mkdirSync(backupDir, { recursive: true });
+      existingFiles.forEach(file => {
+        const src = path.join(walletDir, file);
+        const dest = path.join(backupDir, file);
+        if (fs.statSync(src).isFile()) {
+          fs.copyFileSync(src, dest);
+        }
+      });
+    }
+
+    // zip 압축 해제
+    const zip = new AdmZip(req.file.buffer);
+    zip.extractAllTo(walletDir, true);
+
+    // tnsnames.ora에서 TNS 이름 추출
+    const tnsNames = [];
+    const tnsPath = path.join(walletDir, 'tnsnames.ora');
+    if (fs.existsSync(tnsPath)) {
+      const tnsContent = fs.readFileSync(tnsPath, 'utf-8');
+      const matches = tnsContent.match(/^(\w+)\s*=/gm);
+      if (matches) {
+        matches.forEach(m => {
+          const name = m.replace(/\s*=.*/, '').trim();
+          if (name) tnsNames.push(name);
+        });
+      }
+    }
+
+    // wallet 상태 저장
+    const configManager = require('../utils/config');
+    const currentConfig = await configManager.getStorageConfig();
+    await configManager.updateStorageConfig({
+      ...currentConfig,
+      oracle: {
+        ...(currentConfig.oracle || {}),
+        walletUploaded: true,
+        walletUploadedAt: new Date().toISOString()
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Wallet 업로드 성공',
+      tnsNames,
+      files: fs.readdirSync(walletDir).filter(f => !f.startsWith('.backup'))
+    });
+  } catch (error) {
+    console.error('Wallet upload error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /api/storage/oracle/test
+ * Oracle 연결 테스트
+ */
+router.post('/oracle/test', async (req, res) => {
+  try {
+    const { user, connectString } = req.body;
+    const { OracleStorage } = require('../utils/oracle-storage');
+
+    const oracle = new OracleStorage({
+      user: user || 'ADMIN',
+      connectString: connectString || 'database_high'
+    });
+
+    await oracle.initialize();
+    await oracle.close();
+
+    res.json({ success: true, message: 'Oracle 연결 성공' });
+  } catch (error) {
+    console.error('Oracle test error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/storage/oracle-wallet-status
+ * Oracle Wallet 상태 확인
+ */
+router.get('/oracle-wallet-status', async (req, res) => {
+  try {
+    const walletDir = path.join(__dirname, '../config/oracle');
+    const requiredFiles = ['cwallet.sso', 'tnsnames.ora'];
+
+    const exists = requiredFiles.every(f =>
+      fs.existsSync(path.join(walletDir, f))
+    );
+
+    let tnsNames = [];
+    if (exists) {
+      const tnsPath = path.join(walletDir, 'tnsnames.ora');
+      const tnsContent = fs.readFileSync(tnsPath, 'utf-8');
+      const matches = tnsContent.match(/^(\w+)\s*=/gm);
+      if (matches) {
+        matches.forEach(m => {
+          const name = m.replace(/\s*=.*/, '').trim();
+          if (name) tnsNames.push(name);
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      uploaded: exists,
+      tnsNames
+    });
+  } catch (error) {
+    res.json({ success: true, uploaded: false, tnsNames: [] });
+  }
+});
 
 module.exports = router;

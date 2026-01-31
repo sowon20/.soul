@@ -8,8 +8,8 @@ class ConfigManager {
   constructor() {
     this.defaultConfig = {
       ai: {
-        defaultService: process.env.DEFAULT_AI_SERVICE || 'anthropic',
-        defaultModel: process.env.DEFAULT_AI_MODEL || 'claude-haiku-4-5-20251001',
+        defaultService: process.env.DEFAULT_AI_SERVICE || null,  // UI에서 설정 필수
+        defaultModel: process.env.DEFAULT_AI_MODEL || null,  // UI에서 설정 필수
         services: {
           anthropic: {
             enabled: !!process.env.ANTHROPIC_API_KEY,
@@ -42,9 +42,17 @@ class ConfigManager {
       },
       routing: {
         enabled: true,
-        light: 'auto',
-        medium: 'auto',
-        heavy: 'auto'
+        mode: '',  // '', 'single', 또는 'auto'
+        singleModel: null,
+        manager: 'server',
+        managerModel: null,
+        light: null,
+        medium: null,
+        heavy: null,
+        lightThinking: false,
+        mediumThinking: false,
+        heavyThinking: false,
+        confirmed: false
       },
       toolSearch: {
         enabled: false, // Tool Search Tool 활성화 (도구 10개+ 시 유용)
@@ -103,6 +111,11 @@ class ConfigManager {
       const toolSearch = await this.getConfigValue('toolSearch', this.defaultConfig.toolSearch);
       const storage = await this.getConfigValue('storage', this.defaultConfig.storage);
 
+      // 디버그: storage 타입이 local이면 경고
+      if (storage?.type === 'local') {
+        console.log('[CONFIG] 📖 readConfig: storage.type is LOCAL', new Error().stack);
+      }
+
       return { ai, memory, files, routing, toolSearch, storage };
     } catch (error) {
       console.error('Failed to read config:', error);
@@ -120,7 +133,10 @@ class ConfigManager {
       if (config.files) await this.setConfigValue('files', config.files, 'File storage configuration');
       if (config.routing) await this.setConfigValue('routing', config.routing, 'Smart routing configuration');
       if (config.toolSearch) await this.setConfigValue('toolSearch', config.toolSearch, 'Tool Search configuration');
-      if (config.storage) await this.setConfigValue('storage', config.storage, 'Unified storage configuration');
+      if (config.storage) {
+        console.log('[CONFIG] ⚠️ Writing storage config:', JSON.stringify(config.storage), new Error().stack);
+        await this.setConfigValue('storage', config.storage, 'Unified storage configuration');
+      }
 
       return config;
     } catch (error) {
@@ -280,7 +296,11 @@ class ConfigManager {
    */
   async getRoutingConfig() {
     const config = await this.readConfig();
-    return config.routing || this.defaultConfig.routing;
+    // 기본값과 저장된 값 병합 (저장된 값 우선)
+    return {
+      ...this.defaultConfig.routing,
+      ...(config.routing || {})
+    };
   }
 
   /**
