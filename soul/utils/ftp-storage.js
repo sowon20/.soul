@@ -87,14 +87,16 @@ class FTPStorage {
     
     this.client = new ftp.Client();
     this.client.ftp.verbose = false;
-    
+    this.client.ftp.timeout = 30000; // 30초 타임아웃
+
     try {
       await this.client.access({
         host: this.config.host,
         port: this.config.port,
         user: this.config.user,
         password: this.config.password,
-        secure: this.config.secure
+        secure: this.config.secure,
+        secureOptions: { rejectUnauthorized: false }
       });
       this.connected = true;
       console.log('[FTPStorage] Connected to', this.config.host);

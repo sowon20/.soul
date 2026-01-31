@@ -3,6 +3,7 @@ const router = express.Router();
 const fs = require('fs').promises;
 const path = require('path');
 const SystemConfig = require('../models/SystemConfig');
+const { clearCache: clearMCPCache } = require('../utils/mcp-tools');
 
 // MCP 서버 URL 설정 (환경변수로 외부 서버 지정 가능)
 const MCP_SERVERS = {
@@ -123,25 +124,37 @@ router.get('/servers', async (req, res) => {
     // 등록된 외부 서버들만 표시 (config 기반)
     if (config.externalServers) {
       for (const [serverId, serverInfo] of Object.entries(config.externalServers)) {
-        // 도구 개수 조회 시도
+        const isEnabled = config.servers[serverId]?.enabled !== false;
+
+        // 도구 개수 조회 시도 (enabled된 서버만, 3초 타임아웃)
         let tools = [];
-        try {
-          const baseUrl = serverInfo.url.replace(/\/sse\/?$/, '');
-          console.log(`[MCP] Fetching tools from: ${baseUrl}/tools`);
-          const toolsRes = await fetch(baseUrl + '/tools');
-          const data = await toolsRes.json();
-          tools = data.tools || [];
-          console.log(`[MCP] Got ${tools.length} tools`);
-        } catch (e) {
-          console.error(`[MCP] Failed to fetch tools:`, e.message);
+        if (isEnabled) {
+          try {
+            const baseUrl = serverInfo.url.replace(/\/sse\/?$/, '');
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3000);
+
+            const toolsRes = await fetch(baseUrl + '/tools', { signal: controller.signal });
+            clearTimeout(timeout);
+
+            const data = await toolsRes.json();
+            tools = data.tools || [];
+            console.log(`[MCP] Got ${tools.length} tools from ${serverId}`);
+          } catch (e) {
+            if (e.name === 'AbortError') {
+              console.log(`[MCP] Timeout fetching tools from ${serverId}`);
+            } else {
+              console.log(`[MCP] Failed to fetch tools from ${serverId}:`, e.message);
+            }
+          }
         }
-        
+
         servers.push({
           id: serverId,
           name: serverInfo.name,
           description: serverInfo.description || `외부 MCP 서버`,
           type: 'external',
-          enabled: config.servers[serverId]?.enabled ?? true,
+          enabled: isEnabled,
           tools,
           url: serverInfo.url,
           icon: serverInfo.icon,
@@ -381,6 +394,9 @@ router.post('/servers/:id/enable', async (req, res) => {
 
     // 설정 저장
     await saveServerConfig(config);
+
+    // 도구 캐시 초기화 (즉시 반영되도록)
+    clearMCPCache();
 
     console.log(`[MCP] Server ${id} ${enabled ? 'enabled' : 'disabled'}`);
 

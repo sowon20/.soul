@@ -64,8 +64,17 @@ function invalidateToolsCache() {
  * + Phase 8: 스마트 라우팅 및 단일 인격
  */
 router.post('/', async (req, res) => {
+  // 디버그 로그 파일
+  const fs = require('fs');
+  const logFile = '/Volumes/soul/app/soul/debug-chat.log';
+  const debugLog = (msg) => {
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logFile, `[${timestamp}] ${msg}\n`);
+  };
+
   try {
     const { message, sessionId = 'main-conversation', options = {} } = req.body;
+    debugLog(`=== New request: ${message?.substring(0, 50)}... ===`);
 
     // 실행된 도구 기록 (응답에 포함)
     const executedTools = [];
@@ -253,16 +262,27 @@ ${rulesText}</self_notes>\n\n`;
 
       // MCP 도구 사용 (이미 캐시에서 로드됨)
       let allTools = preloadedTools;
+      debugLog(`Total tools available: ${allTools.length}`);
+      debugLog(`Tool names: ${allTools.map(t => t.name).join(', ')}`);
       console.log('[Chat] Total tools available:', allTools.length);
 
       // 로컬 임베딩으로 도구 선택 (토큰 절약)
+      // 단, builtin 도구(recall_memory, get_profile, update_profile)는 항상 포함
+      const builtinToolNames = ['recall_memory', 'get_profile', 'update_profile'];
       if (allTools.length > 5) {
         try {
           const alba = await getAlbaWorker();
-          const selectedTools = await alba.selectTools(message, allTools, 12);
-          if (selectedTools && selectedTools.length > 0 && selectedTools.length < allTools.length) {
-            allTools = selectedTools;
-            console.log('[Chat] Tools filtered by embedding:', allTools.map(t => t.name).join(', '));
+          // builtin 도구는 별도 분리
+          const builtinToolsAlways = allTools.filter(t => builtinToolNames.includes(t.name));
+          const otherTools = allTools.filter(t => !builtinToolNames.includes(t.name));
+
+          // 나머지 도구 중에서 선택 (builtin 개수만큼 뺀 예산)
+          const remainingBudget = Math.max(12 - builtinToolsAlways.length, 5);
+          const selectedOtherTools = await alba.selectTools(message, otherTools, remainingBudget);
+
+          if (selectedOtherTools && selectedOtherTools.length > 0) {
+            allTools = [...builtinToolsAlways, ...selectedOtherTools];
+            console.log('[Chat] Tools filtered by embedding (builtin always included):', allTools.map(t => t.name).join(', '));
           }
         } catch (toolSelectError) {
           console.warn('[Chat] Tool selection failed, using all tools:', toolSelectError.message);
@@ -428,7 +448,7 @@ ${rulesText}</self_notes>\n\n`;
       } else if (errorMessage.includes('network') || errorMessage.includes('ECONNREFUSED')) {
         aiResponse = '🌐 네트워크 연결에 문제가 있어요. 인터넷 연결을 확인해주세요.';
       } else {
-        aiResponse = `😅 AI 응답 생성 중 문제가 발생했어요. 잠시 후 다시 시도해주세요.`;
+        aiResponse = `😅 AI 응답 생성 중 문제가 발생했어요. 잠시 후 다시 시도해주세요.\n\n[DEBUG] ${errorMessage.substring(0, 200)}`;
       }
     }
 
@@ -534,13 +554,19 @@ ${rulesText}</self_notes>\n\n`;
     const tier = determineTier(routingResult.modelId);
 
     // 10. 응답 저장 (라우팅 정보 포함)
-    await pipeline.handleResponse(message, finalResponse, sessionId, {
-      routing: {
-        modelId: routingResult.modelId,
-        serviceId: routingResult.serviceId,
-        tier
-      }
-    });
+    try {
+      await pipeline.handleResponse(message, finalResponse, sessionId, {
+        routing: {
+          modelId: routingResult.modelId,
+          serviceId: routingResult.serviceId,
+          tier
+        }
+      });
+      console.log('[Chat] Response saved successfully');
+    } catch (saveError) {
+      console.error('[Chat] ❌ Failed to save response:', saveError.message);
+      console.error('[Chat] Stack:', saveError.stack);
+    }
 
     // 11. 사용 통계 저장 (비동기, 응답 지연 없음)
     // actualUsage: API가 반환한 실제 토큰 사용량 (input_tokens, output_tokens)

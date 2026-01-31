@@ -12,24 +12,87 @@
 
 const path = require('path');
 const fs = require('fs').promises;
+const { FTPStorage } = require('./ftp-storage');
 
-// 기본 메모리 스토리지 경로
-let MEMORY_STORAGE_PATH = process.env.MEMORY_STORAGE_PATH || path.join(process.cwd(), 'memory');
+// 메모리 스토리지 설정 캐시 (DB 설정에서 가져옴)
+let MEMORY_STORAGE_CONFIG = null;
+let MEMORY_STORAGE_PATH = null;
+let FTP_STORAGE_INSTANCE = null;
 
 /**
- * DB에서 메모리 경로 설정 가져오기
+ * DB에서 메모리 설정 가져오기
  */
-async function getMemoryStoragePath() {
+async function getMemoryStorageConfig() {
+  if (MEMORY_STORAGE_CONFIG) {
+    return MEMORY_STORAGE_CONFIG;
+  }
+
   try {
     const configManager = require('./config');
     const memoryConfig = await configManager.getMemoryConfig();
-    if (memoryConfig?.storagePath) {
+    MEMORY_STORAGE_CONFIG = memoryConfig;
+
+    // FTP 설정이 있으면 FTP 인스턴스 생성
+    if (memoryConfig?.storageType === 'ftp' && memoryConfig?.ftp) {
+      FTP_STORAGE_INSTANCE = new FTPStorage({
+        host: memoryConfig.ftp.host,
+        port: memoryConfig.ftp.port || 21,
+        user: memoryConfig.ftp.user,
+        password: memoryConfig.ftp.password,
+        basePath: memoryConfig.ftp.basePath,
+        secure: memoryConfig.ftp.secure || false
+      });
+      console.log(`[MemoryLayers] Using FTP storage: ${memoryConfig.ftp.host}/${memoryConfig.ftp.basePath}`);
+    } else if (memoryConfig?.storagePath) {
       MEMORY_STORAGE_PATH = memoryConfig.storagePath;
+      console.log(`[MemoryLayers] Using local storage: ${memoryConfig.storagePath}`);
     }
+
+    return MEMORY_STORAGE_CONFIG;
   } catch (e) {
-    // DB 연결 전이면 환경변수/기본값 사용
+    console.error('[MemoryLayers] Failed to get storage config from DB:', e.message);
+    throw e;
   }
-  return MEMORY_STORAGE_PATH;
+}
+
+/**
+ * FTP 저장소 인스턴스 가져오기 (없으면 null)
+ */
+async function getFTPStorageInstance() {
+  if (!MEMORY_STORAGE_CONFIG) {
+    await getMemoryStorageConfig();
+  }
+  return FTP_STORAGE_INSTANCE;
+}
+
+/**
+ * 로컬 저장소 경로 가져오기 (FTP 사용 시 null)
+ */
+async function getMemoryStoragePath() {
+  if (!MEMORY_STORAGE_CONFIG) {
+    await getMemoryStorageConfig();
+  }
+
+  if (FTP_STORAGE_INSTANCE) {
+    // FTP 사용 중이면 null 반환 (로컬 경로 불필요)
+    return null;
+  }
+
+  if (MEMORY_STORAGE_PATH) {
+    return MEMORY_STORAGE_PATH;
+  }
+
+  throw new Error('[MemoryLayers] memory.storagePath not configured. Please set it in Settings > Storage.');
+}
+
+/**
+ * 스토리지 타입 확인
+ */
+async function isUsingFTP() {
+  if (!MEMORY_STORAGE_CONFIG) {
+    await getMemoryStorageConfig();
+  }
+  return MEMORY_STORAGE_CONFIG?.storageType === 'ftp' && !!FTP_STORAGE_INSTANCE;
 }
 
 /**
@@ -48,24 +111,26 @@ class ShortTermMemory {
   }
 
   /**
-   * MongoDB에서 메시지 로드 (초기화)
+   * JSON 아카이브에서 메시지 로드 (초기화)
    */
   async initialize(sessionId = 'main-conversation') {
     this.sessionId = sessionId;
     try {
-      // JSONL에서 메시지 로드 (개수 기반)
-      const ConversationStore = require('./conversation-store');
-      const store = new ConversationStore();
-      await store.init();
-      
+      // JSON 아카이브에서 메시지 로드 (DB 설정 기반 - FTP 또는 로컬)
+      const { getArchiverAsync } = require('./conversation-archiver');
+      const archiver = await getArchiverAsync();
+      await archiver.initialize();
+
       // maxMessages 설정 사용 (UI에서 설정한 단기 메모리 크기)
-      const messages = await store.getRecentMessages(this.maxMessages);
-      
+      const messages = await archiver.getRecentMessages(this.maxMessages);
+
       this.messages = messages.map(m => ({
         role: m.role,
-        content: m.text || m.content,
+        content: m.content,
         timestamp: m.timestamp,
-        tokens: m.tokens || this._estimateTokens(m.text || m.content)
+        tokens: m.tokens || this._estimateTokens(m.content),
+        // 메타데이터도 포함 (timestamp 정보용)
+        meta: m.meta
       }));
       this.totalTokens = this.messages.reduce((sum, m) => sum + m.tokens, 0);
       this.initialized = true;
@@ -80,7 +145,7 @@ class ShortTermMemory {
         console.log(`[ShortTermMemory] No messages loaded`);
       }
     } catch (error) {
-      console.error('[ShortTermMemory] Failed to load from JSONL:', error.message);
+      console.error('[ShortTermMemory] Failed to load from archive:', error.message);
       this.initialized = true;
     }
   }
@@ -230,7 +295,7 @@ class ShortTermMemory {
  * 중기 메모리 (Middle-Term Memory)
  * - 세션 요약 저장
  * - 대화 재개 시 사용
- * - 파일 시스템 저장
+ * - 파일 시스템 또는 FTP 저장
  */
 class MiddleTermMemory {
   constructor(memoryPath) {
@@ -238,6 +303,8 @@ class MiddleTermMemory {
     this.storagePath = null; // initialize()에서 설정
     this.currentSession = null;
     this.sessionSummaries = new Map(); // sessionId -> summary
+    this.useFTP = false;
+    this.ftpStorage = null;
   }
 
   /**
@@ -245,10 +312,18 @@ class MiddleTermMemory {
    */
   async initialize() {
     try {
-      // DB에서 설정된 경로 가져오기
-      this.storagePath = await getMemoryStoragePath();
-      this.memoryPath = path.join(this.storagePath, 'sessions');
-      await fs.mkdir(this.memoryPath, { recursive: true });
+      // DB 설정 확인
+      this.useFTP = await isUsingFTP();
+      if (this.useFTP) {
+        this.ftpStorage = await getFTPStorageInstance();
+        this.memoryPath = 'sessions'; // FTP 경로
+        console.log('[MiddleTermMemory] Initialized with FTP storage');
+      } else {
+        this.storagePath = await getMemoryStoragePath();
+        this.memoryPath = path.join(this.storagePath, 'sessions');
+        await fs.mkdir(this.memoryPath, { recursive: true });
+        console.log(`[MiddleTermMemory] Initialized at ${this.memoryPath}`);
+      }
     } catch (error) {
       console.error('Error initializing middle-term memory:', error);
     }
@@ -259,8 +334,6 @@ class MiddleTermMemory {
    */
   async saveSessionSummary(sessionId, summary) {
     try {
-      const sessionFile = path.join(this.memoryPath, `${sessionId}.json`);
-
       const sessionData = {
         sessionId,
         summary,
@@ -272,9 +345,15 @@ class MiddleTermMemory {
         topics: summary.topics || []
       };
 
-      await fs.writeFile(sessionFile, JSON.stringify(sessionData, null, 2));
-      this.sessionSummaries.set(sessionId, sessionData);
+      if (this.useFTP) {
+        const filePath = `${this.memoryPath}/${sessionId}.json`;
+        await this.ftpStorage.writeFile(filePath, JSON.stringify(sessionData, null, 2));
+      } else {
+        const sessionFile = path.join(this.memoryPath, `${sessionId}.json`);
+        await fs.writeFile(sessionFile, JSON.stringify(sessionData, null, 2));
+      }
 
+      this.sessionSummaries.set(sessionId, sessionData);
       return sessionData;
     } catch (error) {
       console.error('Error saving session summary:', error);
@@ -292,11 +371,17 @@ class MiddleTermMemory {
         return this.sessionSummaries.get(sessionId);
       }
 
-      // 파일에서 로드
-      const sessionFile = path.join(this.memoryPath, `${sessionId}.json`);
-      const content = await fs.readFile(sessionFile, 'utf-8');
-      const sessionData = JSON.parse(content);
+      let content;
+      if (this.useFTP) {
+        const filePath = `${this.memoryPath}/${sessionId}.json`;
+        content = await this.ftpStorage.readFile(filePath);
+        if (!content) return null;
+      } else {
+        const sessionFile = path.join(this.memoryPath, `${sessionId}.json`);
+        content = await fs.readFile(sessionFile, 'utf-8');
+      }
 
+      const sessionData = JSON.parse(content);
       this.sessionSummaries.set(sessionId, sessionData);
       return sessionData;
     } catch (error) {
@@ -313,25 +398,39 @@ class MiddleTermMemory {
    */
   async getRecentSessions(limit = 10) {
     try {
-      const files = await fs.readdir(this.memoryPath);
       const sessions = [];
 
-      for (const file of files) {
-        if (!file.endsWith('.json')) continue;
-
-        const filePath = path.join(this.memoryPath, file);
-        const stats = await fs.stat(filePath);
-        const content = await fs.readFile(filePath, 'utf-8');
-        const data = JSON.parse(content);
-
-        sessions.push({
-          ...data,
-          modifiedAt: stats.mtime
-        });
+      if (this.useFTP) {
+        const files = await this.ftpStorage.listFiles(this.memoryPath);
+        for (const file of files) {
+          if (file.type !== 'file' || !file.name.endsWith('.json')) continue;
+          const filePath = `${this.memoryPath}/${file.name}`;
+          const content = await this.ftpStorage.readFile(filePath);
+          if (content) {
+            const data = JSON.parse(content);
+            sessions.push({
+              ...data,
+              modifiedAt: file.modifiedAt || new Date()
+            });
+          }
+        }
+      } else {
+        const files = await fs.readdir(this.memoryPath);
+        for (const file of files) {
+          if (!file.endsWith('.json')) continue;
+          const filePath = path.join(this.memoryPath, file);
+          const stats = await fs.stat(filePath);
+          const content = await fs.readFile(filePath, 'utf-8');
+          const data = JSON.parse(content);
+          sessions.push({
+            ...data,
+            modifiedAt: stats.mtime
+          });
+        }
       }
 
       // 수정 시간 기준 정렬
-      sessions.sort((a, b) => b.modifiedAt - a.modifiedAt);
+      sessions.sort((a, b) => new Date(b.modifiedAt) - new Date(a.modifiedAt));
 
       return sessions.slice(0, limit);
     } catch (error) {
@@ -345,8 +444,13 @@ class MiddleTermMemory {
    */
   async deleteSession(sessionId) {
     try {
-      const sessionFile = path.join(this.memoryPath, `${sessionId}.json`);
-      await fs.unlink(sessionFile);
+      if (this.useFTP) {
+        // FTP는 delete 메서드가 없으므로 스킵 (또는 추후 구현)
+        console.warn('[MiddleTermMemory] FTP delete not implemented');
+      } else {
+        const sessionFile = path.join(this.memoryPath, `${sessionId}.json`);
+        await fs.unlink(sessionFile);
+      }
       this.sessionSummaries.delete(sessionId);
       return { success: true };
     } catch (error) {
@@ -360,8 +464,14 @@ class MiddleTermMemory {
    */
   async getStats() {
     try {
-      const files = await fs.readdir(this.memoryPath);
-      const sessionCount = files.filter(f => f.endsWith('.json')).length;
+      let sessionCount = 0;
+      if (this.useFTP) {
+        const files = await this.ftpStorage.listFiles(this.memoryPath);
+        sessionCount = files.filter(f => f.type === 'file' && f.name.endsWith('.json')).length;
+      } else {
+        const files = await fs.readdir(this.memoryPath);
+        sessionCount = files.filter(f => f.endsWith('.json')).length;
+      }
 
       return {
         sessionCount,
@@ -380,12 +490,20 @@ class MiddleTermMemory {
    */
   _getWeeklySummaryPath(year, month, weekNum) {
     const monthStr = String(month).padStart(2, '0');
-    const basePath = this.storagePath || MEMORY_STORAGE_PATH;
-    const dir = path.join(basePath, 'summaries', `${year}-${monthStr}`);
-    return {
-      dir,
-      file: path.join(dir, `week-${weekNum}.json`)
-    };
+    if (this.useFTP) {
+      const dir = `summaries/${year}-${monthStr}`;
+      return {
+        dir,
+        file: `${dir}/week-${weekNum}.json`
+      };
+    } else {
+      const basePath = this.storagePath || MEMORY_STORAGE_PATH;
+      const dir = path.join(basePath, 'summaries', `${year}-${monthStr}`);
+      return {
+        dir,
+        file: path.join(dir, `week-${weekNum}.json`)
+      };
+    }
   }
 
   /**
@@ -394,8 +512,7 @@ class MiddleTermMemory {
   async saveWeeklySummary(year, month, weekNum, summaryData) {
     try {
       const { dir, file } = this._getWeeklySummaryPath(year, month, weekNum);
-      await fs.mkdir(dir, { recursive: true });
-      
+
       const data = {
         year,
         month,
@@ -408,7 +525,13 @@ class MiddleTermMemory {
         createdAt: new Date()
       };
 
-      await fs.writeFile(file, JSON.stringify(data, null, 2));
+      if (this.useFTP) {
+        await this.ftpStorage.writeFile(file, JSON.stringify(data, null, 2));
+      } else {
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(file, JSON.stringify(data, null, 2));
+      }
+
       console.log(`[WeeklySummary] Saved: ${year}-${month} week ${weekNum}`);
       return data;
     } catch (error) {
@@ -423,7 +546,13 @@ class MiddleTermMemory {
   async loadWeeklySummary(year, month, weekNum) {
     try {
       const { file } = this._getWeeklySummaryPath(year, month, weekNum);
-      const content = await fs.readFile(file, 'utf-8');
+      let content;
+      if (this.useFTP) {
+        content = await this.ftpStorage.readFile(file);
+        if (!content) return null;
+      } else {
+        content = await fs.readFile(file, 'utf-8');
+      }
       return JSON.parse(content);
     } catch (error) {
       if (error.code === 'ENOENT') return null;
@@ -437,37 +566,60 @@ class MiddleTermMemory {
    */
   async getRecentWeeklySummaries(count = 4) {
     try {
-      const basePath = this.storagePath || MEMORY_STORAGE_PATH;
-      const summariesRoot = path.join(basePath, 'summaries');
-      
-      // 폴더가 없으면 빈 배열 반환
-      try {
-        await fs.access(summariesRoot);
-      } catch {
-        return [];
-      }
-
-      const monthDirs = await fs.readdir(summariesRoot);
       const allSummaries = [];
 
-      // 모든 월 폴더 순회
-      for (const monthDir of monthDirs.sort().reverse()) {
-        if (!monthDir.match(/^\d{4}-\d{2}$/)) continue;
-        
-        const monthPath = path.join(summariesRoot, monthDir);
-        const files = await fs.readdir(monthPath);
-        
-        for (const file of files.sort().reverse()) {
-          // .json으로 끝나고, ._로 시작하지 않는 파일만 (macOS 메타데이터 제외)
-          if (!file.endsWith('.json') || file.startsWith('._')) continue;
-          
-          const content = await fs.readFile(path.join(monthPath, file), 'utf-8');
-          allSummaries.push(JSON.parse(content));
-          
+      if (this.useFTP) {
+        // FTP에서 summaries 폴더 목록 가져오기
+        const monthDirs = await this.ftpStorage.listFiles('summaries');
+        for (const monthDir of monthDirs.sort((a, b) => b.name.localeCompare(a.name))) {
+          if (monthDir.type !== 'directory' || !monthDir.name.match(/^\d{4}-\d{2}$/)) continue;
+
+          const files = await this.ftpStorage.listFiles(`summaries/${monthDir.name}`);
+          for (const file of files.sort((a, b) => b.name.localeCompare(a.name))) {
+            if (file.type !== 'file' || !file.name.endsWith('.json') || file.name.startsWith('._')) continue;
+
+            const content = await this.ftpStorage.readFile(`summaries/${monthDir.name}/${file.name}`);
+            if (content) {
+              allSummaries.push(JSON.parse(content));
+            }
+
+            if (allSummaries.length >= count) break;
+          }
+
           if (allSummaries.length >= count) break;
         }
-        
-        if (allSummaries.length >= count) break;
+      } else {
+        const basePath = this.storagePath || MEMORY_STORAGE_PATH;
+        const summariesRoot = path.join(basePath, 'summaries');
+
+        // 폴더가 없으면 빈 배열 반환
+        try {
+          await fs.access(summariesRoot);
+        } catch {
+          return [];
+        }
+
+        const monthDirs = await fs.readdir(summariesRoot);
+
+        // 모든 월 폴더 순회
+        for (const monthDir of monthDirs.sort().reverse()) {
+          if (!monthDir.match(/^\d{4}-\d{2}$/)) continue;
+
+          const monthPath = path.join(summariesRoot, monthDir);
+          const files = await fs.readdir(monthPath);
+
+          for (const file of files.sort().reverse()) {
+            // .json으로 끝나고, ._로 시작하지 않는 파일만 (macOS 메타데이터 제외)
+            if (!file.endsWith('.json') || file.startsWith('._')) continue;
+
+            const content = await fs.readFile(path.join(monthPath, file), 'utf-8');
+            allSummaries.push(JSON.parse(content));
+
+            if (allSummaries.length >= count) break;
+          }
+
+          if (allSummaries.length >= count) break;
+        }
       }
 
       return allSummaries;
@@ -648,9 +800,9 @@ ${messages.map(m => `[${m.role}] ${m.content}`).join('\n').substring(0, 3000)}
 /**
  * 장기 메모리 (Long-Term Memory)
  * - 아카이브된 원본 대화 (평생 보관)
- * - 파일 시스템 저장 (DB 아님!)
+ * - 파일 시스템 또는 FTP 저장
  * - AI 생성 태그로 검색 가능
- * 
+ *
  * 저장 구조:
  * /memory/archives/YYYY/MM/conv-{timestamp}.json
  * /memory/archives/index.json (검색용 메타데이터)
@@ -661,6 +813,8 @@ class LongTermMemory {
     this.archivesPath = null;
     this.indexPath = null;
     this.index = null; // 메모리 캐시
+    this.useFTP = false;
+    this.ftpStorage = null;
   }
 
   /**
@@ -668,23 +822,35 @@ class LongTermMemory {
    */
   async initialize() {
     try {
-      // DB에서 설정된 경로 가져오기
-      this.storagePath = await getMemoryStoragePath();
-      this.archivesPath = path.join(this.storagePath, 'archives');
-      this.indexPath = path.join(this.archivesPath, 'index.json');
-      
-      await fs.mkdir(this.archivesPath, { recursive: true });
-      
+      // DB 설정 확인
+      this.useFTP = await isUsingFTP();
+      if (this.useFTP) {
+        this.ftpStorage = await getFTPStorageInstance();
+        this.archivesPath = 'archives';
+        this.indexPath = 'archives/index.json';
+      } else {
+        this.storagePath = await getMemoryStoragePath();
+        this.archivesPath = path.join(this.storagePath, 'archives');
+        this.indexPath = path.join(this.archivesPath, 'index.json');
+        await fs.mkdir(this.archivesPath, { recursive: true });
+      }
+
+      // 인덱스 로드
       try {
-        const content = await fs.readFile(this.indexPath, 'utf-8');
-        this.index = JSON.parse(content);
+        let content;
+        if (this.useFTP) {
+          content = await this.ftpStorage.readFile(this.indexPath);
+        } else {
+          content = await fs.readFile(this.indexPath, 'utf-8');
+        }
+        this.index = content ? JSON.parse(content) : { entries: [], lastUpdated: null };
       } catch {
         // 인덱스 없으면 새로 생성
         this.index = { entries: [], lastUpdated: null };
         await this._saveIndex();
       }
-      
-      console.log(`[LongTermMemory] Loaded ${this.index.entries.length} archive entries`);
+
+      console.log(`[LongTermMemory] Loaded ${this.index.entries.length} archive entries (FTP: ${this.useFTP})`);
     } catch (error) {
       console.error('Error initializing long-term memory:', error);
       this.index = { entries: [], lastUpdated: null };
@@ -696,7 +862,12 @@ class LongTermMemory {
    */
   async _saveIndex() {
     this.index.lastUpdated = new Date().toISOString();
-    await fs.writeFile(this.indexPath, JSON.stringify(this.index, null, 2));
+    const content = JSON.stringify(this.index, null, 2);
+    if (this.useFTP) {
+      await this.ftpStorage.writeFile(this.indexPath, content);
+    } else {
+      await fs.writeFile(this.indexPath, content);
+    }
   }
 
   /**
@@ -707,11 +878,18 @@ class LongTermMemory {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const timestamp = d.getTime();
-    
-    return {
-      dir: path.join(this.archivesPath, String(year), month),
-      file: path.join(this.archivesPath, String(year), month, `conv-${timestamp}.json`)
-    };
+
+    if (this.useFTP) {
+      return {
+        dir: `${this.archivesPath}/${year}/${month}`,
+        file: `${this.archivesPath}/${year}/${month}/conv-${timestamp}.json`
+      };
+    } else {
+      return {
+        dir: path.join(this.archivesPath, String(year), month),
+        file: path.join(this.archivesPath, String(year), month, `conv-${timestamp}.json`)
+      };
+    }
   }
 
   /**
@@ -724,7 +902,9 @@ class LongTermMemory {
       const { dir, file } = this._getArchivePath(now);
       const useBatch = options.useBatch !== false;
 
-      await fs.mkdir(dir, { recursive: true });
+      if (!this.useFTP) {
+        await fs.mkdir(dir, { recursive: true });
+      }
 
       const archiveData = {
         id: `${now.getTime()}-${conversationId}`,
@@ -741,7 +921,11 @@ class LongTermMemory {
       };
 
       // 원본 파일 저장 (즉시)
-      await fs.writeFile(file, JSON.stringify(archiveData, null, 2));
+      if (this.useFTP) {
+        await this.ftpStorage.writeFile(file, JSON.stringify(archiveData, null, 2));
+      } else {
+        await fs.writeFile(file, JSON.stringify(archiveData, null, 2));
+      }
 
       // 인덱스에 메타데이터만 추가 (검색용)
       this.index.entries.push({
@@ -869,9 +1053,14 @@ class LongTermMemory {
     try {
       const entry = this.index?.entries.find(e => e.id === id);
       if (!entry) return null;
-      
-      const content = await fs.readFile(entry.filePath, 'utf-8');
-      return JSON.parse(content);
+
+      let content;
+      if (this.useFTP) {
+        content = await this.ftpStorage.readFile(entry.filePath);
+      } else {
+        content = await fs.readFile(entry.filePath, 'utf-8');
+      }
+      return content ? JSON.parse(content) : null;
     } catch (error) {
       console.error('Error getting archive by id:', error);
       return null;
@@ -892,9 +1081,9 @@ class LongTermMemory {
 /**
  * 문서 스토리지 (Document Storage)
  * - OCR 스캔, 기록물 등 영구 보관 문서
- * - 파일 시스템 저장
+ * - 파일 시스템 또는 FTP 저장
  * - AI 태그로 검색 가능
- * 
+ *
  * 저장 구조:
  * /memory/documents/{category}/{filename}
  * /memory/documents/index.json
@@ -905,26 +1094,40 @@ class DocumentStorage {
     this.documentsPath = null;
     this.indexPath = null;
     this.index = null;
+    this.useFTP = false;
+    this.ftpStorage = null;
   }
 
   async initialize() {
     try {
-      // DB에서 설정된 경로 가져오기
-      this.storagePath = await getMemoryStoragePath();
-      this.documentsPath = path.join(this.storagePath, 'documents');
-      this.indexPath = path.join(this.documentsPath, 'index.json');
-      
-      await fs.mkdir(this.documentsPath, { recursive: true });
-      
+      // DB 설정 확인
+      this.useFTP = await isUsingFTP();
+      if (this.useFTP) {
+        this.ftpStorage = await getFTPStorageInstance();
+        this.documentsPath = 'documents';
+        this.indexPath = 'documents/index.json';
+      } else {
+        this.storagePath = await getMemoryStoragePath();
+        this.documentsPath = path.join(this.storagePath, 'documents');
+        this.indexPath = path.join(this.documentsPath, 'index.json');
+        await fs.mkdir(this.documentsPath, { recursive: true });
+      }
+
+      // 인덱스 로드
       try {
-        const content = await fs.readFile(this.indexPath, 'utf-8');
-        this.index = JSON.parse(content);
+        let content;
+        if (this.useFTP) {
+          content = await this.ftpStorage.readFile(this.indexPath);
+        } else {
+          content = await fs.readFile(this.indexPath, 'utf-8');
+        }
+        this.index = content ? JSON.parse(content) : { documents: [], lastUpdated: null };
       } catch {
         this.index = { documents: [], lastUpdated: null };
         await this._saveIndex();
       }
-      
-      console.log(`[DocumentStorage] Loaded ${this.index.documents.length} documents`);
+
+      console.log(`[DocumentStorage] Loaded ${this.index.documents.length} documents (FTP: ${this.useFTP})`);
     } catch (error) {
       console.error('Error initializing document storage:', error);
       this.index = { documents: [], lastUpdated: null };
@@ -933,7 +1136,12 @@ class DocumentStorage {
 
   async _saveIndex() {
     this.index.lastUpdated = new Date().toISOString();
-    await fs.writeFile(this.indexPath, JSON.stringify(this.index, null, 2));
+    const content = JSON.stringify(this.index, null, 2);
+    if (this.useFTP) {
+      await this.ftpStorage.writeFile(this.indexPath, content);
+    } else {
+      await fs.writeFile(this.indexPath, content);
+    }
   }
 
   /**
@@ -945,12 +1153,18 @@ class DocumentStorage {
   async save(filename, content, metadata = {}) {
     try {
       const category = metadata.category || 'general';
-      const categoryPath = path.join(this.documentsPath, category);
-      await fs.mkdir(categoryPath, { recursive: true });
-      
-      const filePath = path.join(categoryPath, filename);
-      await fs.writeFile(filePath, content);
-      
+      let filePath;
+
+      if (this.useFTP) {
+        filePath = `${this.documentsPath}/${category}/${filename}`;
+        await this.ftpStorage.writeFile(filePath, content);
+      } else {
+        const categoryPath = path.join(this.documentsPath, category);
+        await fs.mkdir(categoryPath, { recursive: true });
+        filePath = path.join(categoryPath, filename);
+        await fs.writeFile(filePath, content);
+      }
+
       const doc = {
         id: `${Date.now()}-${filename}`,
         filename,
@@ -962,10 +1176,10 @@ class DocumentStorage {
         createdAt: new Date().toISOString(),
         size: Buffer.byteLength(content)
       };
-      
+
       this.index.documents.push(doc);
       await this._saveIndex();
-      
+
       console.log(`[DocumentStorage] Saved: ${filename}`);
       return doc;
     } catch (error) {
@@ -1012,8 +1226,13 @@ class DocumentStorage {
   async read(id) {
     const doc = this.index?.documents.find(d => d.id === id);
     if (!doc) return null;
-    
-    const content = await fs.readFile(doc.filePath);
+
+    let content;
+    if (this.useFTP) {
+      content = await this.ftpStorage.readFile(doc.filePath);
+    } else {
+      content = await fs.readFile(doc.filePath);
+    }
     return { ...doc, content };
   }
 
@@ -1573,7 +1792,11 @@ async function getMemoryManager(config = {}) {
  */
 function resetMemoryManager() {
   globalMemoryManager = null;
-  console.log('[MemoryManager] Manager reset');
+  // 스토리지 설정 캐시도 리셋
+  MEMORY_STORAGE_CONFIG = null;
+  MEMORY_STORAGE_PATH = null;
+  FTP_STORAGE_INSTANCE = null;
+  console.log('[MemoryManager] Manager and storage config reset');
 }
 
 module.exports = {
@@ -1585,5 +1808,8 @@ module.exports = {
   getMemoryManager,
   resetMemoryManager,
   getMemoryStoragePath,
+  getMemoryStorageConfig,
+  getFTPStorageInstance,
+  isUsingFTP,
   MEMORY_STORAGE_PATH
 };

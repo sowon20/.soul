@@ -91,12 +91,32 @@ class ConversationPipeline {
       // 시간 프롬프트 내용 로깅
       console.log(`[Pipeline] Time prompt:\n${timePrompt?.substring(0, 800)}`);
 
+      // 메시지별 타임스탬프 목록 생성 (AI가 시간 맥락 파악용)
+      let messageTimeline = '';
+      if (recentMsgs.length > 0) {
+        const timeEntries = recentMsgs.map((m, i) => {
+          if (m.timestamp) {
+            const d = new Date(m.timestamp);
+            const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+            const timeStr = `${kst.getUTCMonth()+1}/${kst.getUTCDate()} ${kst.getUTCHours()}:${String(kst.getUTCMinutes()).padStart(2,'0')}`;
+            const preview = (m.content || '').substring(0, 20).replace(/\n/g, ' ');
+            return `${i+1}. ${timeStr} (${m.role}) "${preview}..."`;
+          }
+          return null;
+        }).filter(Boolean);
+
+        if (timeEntries.length > 0) {
+          messageTimeline = `\n\n<message_timeline>\n대화 히스토리의 각 메시지 전송 시각:\n${timeEntries.join('\n')}\n</message_timeline>`;
+        }
+      }
+
       // 컨텍스트를 XML로 구조화하여 단일 시스템 메시지로 병합
       let contextContent = '<context>\n';
       contextContent += systemPrompt;
       if (timePrompt) {
         contextContent += `\n\n<time_context>\n${timePrompt}\n</time_context>`;
       }
+      contextContent += messageTimeline;
       contextContent += '\n</context>';
 
       messages.push({
@@ -207,25 +227,11 @@ class ConversationPipeline {
       const rawResult = this.memoryManager.shortTerm.getWithinTokenLimit(rawTokenBudget);
       console.log(`[Pipeline] Context: ${rawResult.messages.length} raw messages, ${rawResult.totalTokens} tokens (budget: ${rawTokenBudget})`);
 
-      // 메시지에 timestamp 포함 (AI가 시간 구분할 수 있도록)
-      const rawMessages = rawResult.messages.map(m => {
-        // timestamp를 한국시간으로 변환
-        let timePrefix = '';
-        if (m.timestamp) {
-          const date = new Date(m.timestamp);
-          const kstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000)); // UTC+9
-          const month = kstDate.getUTCMonth() + 1;
-          const day = kstDate.getUTCDate();
-          const hour = kstDate.getUTCHours();
-          const minute = String(kstDate.getUTCMinutes()).padStart(2, '0');
-          timePrefix = `[${month}/${day} ${hour}:${minute}] `;
-        }
-
-        return {
-          role: m.role,
-          content: timePrefix + m.content
-        };
-      });
+      // 메시지 (content 변경 없이)
+      const rawMessages = rawResult.messages.map(m => ({
+        role: m.role,
+        content: m.content
+      }));
 
       // 2. 주간 요약 - 자동 로드 제거
       // 설계 의도: AI가 필요할 때 recall_memory 도구로 직접 조회
@@ -377,19 +383,20 @@ class ConversationPipeline {
       // 0. 스토리지 경로 가져오기 (DB 설정 필수)
       const configManager = require('./config');
       const memoryConfig = await configManager.getMemoryConfig();
-      const storagePath = memoryConfig?.storagePath;
-      if (!storagePath) {
+      // FTP 사용 시 storagePath 없어도 됨
+      const useFTP = memoryConfig?.storageType === 'ftp' && memoryConfig?.ftp;
+      if (!useFTP && !memoryConfig?.storagePath) {
         throw new Error('[Pipeline] memory.storagePath not configured. Please set it in Settings > Storage.');
       }
-      console.log(`[Pipeline] Using storage path: ${storagePath}`);
+      console.log(`[Pipeline] Using storage: ${useFTP ? 'FTP' : memoryConfig.storagePath}`);
 
-      // 0.1 Archiver 가져오기 (실시간 파일 저장)
-      const { getArchiver } = require('./conversation-archiver');
-      const archiver = getArchiver(storagePath);
+      // 0.1 Archiver 가져오기 (실시간 파일 저장 - DB 설정 기반)
+      const { getArchiverAsync } = require('./conversation-archiver');
+      const archiver = await getArchiverAsync();
 
       // 0.2 PendingEvent 매니저 가져오기
       const { getPendingEventManager } = require('./pending-event');
-      const pendingEventManager = await getPendingEventManager(storagePath);
+      const pendingEventManager = await getPendingEventManager(memoryConfig?.storagePath);
 
       // 0.2.1 대화 흐름 추적
       const { getConversationFlowTracker } = require('./conversation-flow');
@@ -398,7 +405,7 @@ class ConversationPipeline {
 
       // 0.2.2 사용자 패턴 학습
       const { getUserPatternLearner } = require('./user-pattern');
-      const patternLearner = await getUserPatternLearner(storagePath);
+      const patternLearner = await getUserPatternLearner(memoryConfig?.storagePath);
       await patternLearner.learnFromMessage({ content: userMessage, timestamp: new Date() });
       
       // 0.2 복귀 체크 (이전에 떠남 이벤트가 있었으면)

@@ -20,7 +20,7 @@ const { getMemoryManager } = require('./memory-layers');
 class SessionContinuity {
   constructor(config = {}) {
     this.config = {
-      sessionPath: config.sessionPath || path.join(process.cwd(), 'memory', 'sessions', 'active'),
+      sessionPath: config.sessionPath || null, // initialize()에서 DB 설정으로 세팅
       autoSave: config.autoSave !== false, // 기본 활성화
       saveInterval: config.saveInterval || 60000, // 1분마다 자동 저장
       maxSessionAge: config.maxSessionAge || 30 * 24 * 60 * 60 * 1000 // 30일
@@ -36,6 +36,16 @@ class SessionContinuity {
    */
   async initialize() {
     try {
+      // sessionPath가 설정 안 됐으면 DB에서 가져오기
+      if (!this.config.sessionPath) {
+        const configManager = require('./config');
+        const memoryConfig = await configManager.getMemoryConfig();
+        if (memoryConfig?.storagePath) {
+          this.config.sessionPath = path.join(memoryConfig.storagePath, 'sessions', 'active');
+        } else {
+          throw new Error('memory.storagePath not configured');
+        }
+      }
       await fs.mkdir(this.config.sessionPath, { recursive: true });
       this.memoryManager = await getMemoryManager();
     } catch (error) {

@@ -17,21 +17,37 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const { getAlbaWorker } = require('./alba-worker');
+const { FTPStorage } = require('./ftp-storage');
+const { NotionStorage } = require('./notion-storage');
 
 // 앱 기준 캐시 경로 (실행 위치와 무관하게 고정)
 const APP_ROOT = path.join(__dirname, '..');
 const LOCAL_CACHE_DIR = path.join(APP_ROOT, 'cache', 'archiver');
 
 class ConversationArchiver {
-  constructor(basePath) {
-    if (!basePath) {
+  constructor(basePath, options = {}) {
+    if (!basePath && !options.useFTP && !options.useNotion) {
       throw new Error('[Archiver] basePath is required. Set memory.storagePath in settings.');
     }
     this.basePath = basePath;
-    this.conversationsPath = path.join(basePath, 'conversations');
+    this.conversationsPath = basePath ? path.join(basePath, 'conversations') : 'conversations';
     this.cachePath = LOCAL_CACHE_DIR; // 앱 폴더 내 고정 경로
     this.initialized = false;
     this.remoteAvailable = true;
+
+    // FTP 설정
+    this.useFTP = options.useFTP || false;
+    this.ftpStorage = options.ftpStorage || null;
+    if (this.useFTP && !this.ftpStorage) {
+      throw new Error('[Archiver] FTP storage instance required when useFTP is true');
+    }
+
+    // Notion 설정
+    this.useNotion = options.useNotion || false;
+    this.notionStorage = options.notionStorage || null;
+    if (this.useNotion && !this.notionStorage) {
+      throw new Error('[Archiver] Notion storage instance required when useNotion is true');
+    }
   }
 
   /**
@@ -47,6 +63,18 @@ class ConversationArchiver {
    * 원격 폴더 접근 가능 여부 테스트
    */
   async _testRemoteAccess() {
+    // Notion은 항상 접근 가능 (API 기반)
+    if (this.useNotion) {
+      this.remoteAvailable = true;
+      return true;
+    }
+
+    // FTP는 연결 상태 확인
+    if (this.useFTP) {
+      this.remoteAvailable = true;
+      return true;
+    }
+
     try {
       await fs.access(this.basePath, fs.constants.W_OK);
       this.remoteAvailable = true;
@@ -63,9 +91,19 @@ class ConversationArchiver {
    */
   async initialize() {
     try {
-      await fs.mkdir(this.conversationsPath, { recursive: true });
-      this.initialized = true;
-      console.log(`[Archiver] Initialized at ${this.conversationsPath}`);
+      if (this.useNotion) {
+        // Notion은 초기화 불필요
+        this.initialized = true;
+        console.log(`[Archiver] Initialized with Notion storage`);
+      } else if (this.useFTP) {
+        // FTP는 폴더 자동 생성 불필요 (업로드 시 생성됨)
+        this.initialized = true;
+        console.log(`[Archiver] Initialized with FTP storage at ${this.ftpStorage.config.basePath}/conversations`);
+      } else {
+        await fs.mkdir(this.conversationsPath, { recursive: true });
+        this.initialized = true;
+        console.log(`[Archiver] Initialized at ${this.conversationsPath}`);
+      }
     } catch (error) {
       console.error('[Archiver] Init failed:', error.message);
     }
@@ -149,13 +187,17 @@ class ConversationArchiver {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
-    
-    const monthDir = path.join(this.conversationsPath, `${year}-${month}`);
+
+    const monthDir = this.useFTP
+      ? `conversations/${year}-${month}`
+      : path.join(this.conversationsPath, `${year}-${month}`);
     const fileName = `${year}-${month}-${day}.json`;
-    
+
     return {
       monthDir,
-      filePath: path.join(monthDir, fileName)
+      filePath: this.useFTP
+        ? `${monthDir}/${fileName}`
+        : path.join(monthDir, fileName)
     };
   }
 
@@ -225,30 +267,59 @@ class ConversationArchiver {
   }
 
   /**
-   * 원격에 저장 (기존 로직)
+   * 원격에 저장 (Notion, FTP 또는 로컬 파일시스템)
    */
   async _saveToRemote(archiveEntry, timestamp) {
-    const { monthDir, filePath } = this.getFilePath(timestamp);
-
-    // 월별 폴더 생성
-    await fs.mkdir(monthDir, { recursive: true });
-
-    // 기존 파일 읽기 또는 새로 생성
-    let dayMessages = [];
-    try {
-      const existing = await fs.readFile(filePath, 'utf-8');
-      dayMessages = JSON.parse(existing);
-    } catch (e) {
-      // 파일 없으면 새로 시작
+    // Notion 저장
+    if (this.useNotion) {
+      const dateStr = new Date(timestamp).toISOString().split('T')[0];
+      await this.notionStorage.saveMessage({
+        role: archiveEntry.role,
+        content: archiveEntry.content,
+        date: dateStr,
+        timestamp: archiveEntry.timestamp,
+        tokens: archiveEntry.tokens,
+        meta: archiveEntry.meta
+      });
+      console.log(`[Archiver/Notion] Saved message: ${archiveEntry.role}`);
+      return archiveEntry;
     }
 
-    // 메시지 추가
-    dayMessages.push(archiveEntry);
+    const { monthDir, filePath } = this.getFilePath(timestamp);
 
-    // 파일 저장
-    await fs.writeFile(filePath, JSON.stringify(dayMessages, null, 2), 'utf-8');
+    let dayMessages = [];
 
-    console.log(`[Archiver] Saved to ${filePath} (${dayMessages.length} messages)`);
+    if (this.useFTP) {
+      // FTP 저장
+      try {
+        const existing = await this.ftpStorage.readFile(filePath);
+        if (existing) {
+          dayMessages = JSON.parse(existing);
+        }
+      } catch (e) {
+        // 파일 없으면 새로 시작
+      }
+
+      dayMessages.push(archiveEntry);
+
+      await this.ftpStorage.writeFile(filePath, JSON.stringify(dayMessages, null, 2));
+      console.log(`[Archiver/FTP] Saved to ${filePath} (${dayMessages.length} messages)`);
+    } else {
+      // 로컬 파일시스템 저장
+      await fs.mkdir(monthDir, { recursive: true });
+
+      try {
+        const existing = await fs.readFile(filePath, 'utf-8');
+        dayMessages = JSON.parse(existing);
+      } catch (e) {
+        // 파일 없으면 새로 시작
+      }
+
+      dayMessages.push(archiveEntry);
+
+      await fs.writeFile(filePath, JSON.stringify(dayMessages, null, 2), 'utf-8');
+      console.log(`[Archiver] Saved to ${filePath} (${dayMessages.length} messages)`);
+    }
 
     // 알바 작업: assistant 메시지일 때 aiMemo, 태그 생성 (비동기)
     if (archiveEntry.role === 'assistant' && dayMessages.length >= 2) {
@@ -363,13 +434,72 @@ class ConversationArchiver {
    * 특정 날짜 메시지 읽기
    */
   async getMessagesForDate(date) {
+    // Notion
+    if (this.useNotion) {
+      console.log(`[Archiver] getMessagesForDate: useNotion=true`);
+      try {
+        return await this.notionStorage.getMessagesForDate(date);
+      } catch (e) {
+        console.log(`[Archiver] Notion getMessagesForDate error: ${e.message}`);
+        return [];
+      }
+    }
+
     const { filePath } = this.getFilePath(date);
+    console.log(`[Archiver] getMessagesForDate: useFTP=${this.useFTP}, path=${filePath}`);
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
-      return JSON.parse(content);
+      if (this.useFTP) {
+        const content = await this.ftpStorage.readFile(filePath);
+        console.log(`[Archiver] FTP read result: ${content ? content.length + ' chars' : 'null'}`);
+        return content ? JSON.parse(content) : [];
+      } else {
+        const content = await fs.readFile(filePath, 'utf-8');
+        return JSON.parse(content);
+      }
     } catch (e) {
+      console.log(`[Archiver] getMessagesForDate error: ${e.message}`);
       return [];
     }
+  }
+
+  /**
+   * 최근 N개 메시지 가져오기 (여러 날짜 파일에서)
+   */
+  async getRecentMessages(limit = 50) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    // Notion은 직접 API로 가져오기
+    if (this.useNotion) {
+      return await this.notionStorage.getRecentMessages(limit);
+    }
+
+    const messages = [];
+    const today = new Date();
+    let daysBack = 0;
+    const maxDaysBack = 30; // 최대 30일 전까지만
+
+    while (messages.length < limit && daysBack < maxDaysBack) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - daysBack);
+
+      const dayMessages = await this.getMessagesForDate(date);
+
+      // 최신 메시지가 앞에 오도록
+      for (let i = dayMessages.length - 1; i >= 0 && messages.length < limit; i--) {
+        messages.unshift(dayMessages[i]);
+      }
+
+      daysBack++;
+    }
+
+    // limit 초과분 제거 (오래된 것부터)
+    if (messages.length > limit) {
+      messages.splice(0, messages.length - limit);
+    }
+
+    return messages;
   }
 
   /**
@@ -384,47 +514,58 @@ class ConversationArchiver {
    * 알바 작업 스케줄링 (비동기 백그라운드)
    */
   _scheduleAlbaWork(filePath, dayMessages) {
+    const self = this;
     // 비동기로 실행 (응답 블로킹 안 함)
     setImmediate(async () => {
       try {
         const alba = await getAlbaWorker();
-        
+
         // 최근 2개 메시지 (user + assistant)
         const recentPair = dayMessages.slice(-2);
         const lastIndex = dayMessages.length - 1;
-        
+
         // 시간 맥락 문자열 (복귀 이벤트 포함)
         const lastMsg = dayMessages[lastIndex];
-        let timeContext = lastMsg.meta 
-          ? `${lastMsg.meta.timeOfDay}, ${lastMsg.meta.dayOfWeek}` 
+        let timeContext = lastMsg.meta
+          ? `${lastMsg.meta.timeOfDay}, ${lastMsg.meta.dayOfWeek}`
           : '';
-        
+
         // 복귀 이벤트 맥락 추가
         if (lastMsg.meta?.returnEvent?.message) {
           timeContext += `, ${lastMsg.meta.returnEvent.message}`;
         }
-        
+
         // 떠남 이벤트 맥락 추가
         if (lastMsg.meta?.departureEvent) {
           timeContext += `, ${lastMsg.meta.departureEvent.type}하러 간다고 함`;
         }
-        
+
         // aiMemo 생성
         const aiMemo = await alba.generateAiMemo(recentPair, { timeContext });
-        
+
         // 태그 생성 (user 메시지 기준)
         const userMsg = recentPair.find(m => m.role === 'user');
         const tags = userMsg ? await alba.generateTags(userMsg.content) : [];
-        
+
         // 파일 업데이트 (마지막 메시지에 aiMemo, 태그 추가)
         if (aiMemo || tags.length > 0) {
-          const content = await fs.readFile(filePath, 'utf-8');
-          const messages = JSON.parse(content);
-          
+          let content, messages;
+          if (self.useFTP) {
+            content = await self.ftpStorage.readFile(filePath);
+            messages = content ? JSON.parse(content) : [];
+          } else {
+            content = await fs.readFile(filePath, 'utf-8');
+            messages = JSON.parse(content);
+          }
+
           if (aiMemo) messages[lastIndex].aiMemo = aiMemo;
           if (tags.length > 0) messages[lastIndex].tags = tags;
-          
-          await fs.writeFile(filePath, JSON.stringify(messages, null, 2), 'utf-8');
+
+          if (self.useFTP) {
+            await self.ftpStorage.writeFile(filePath, JSON.stringify(messages, null, 2));
+          } else {
+            await fs.writeFile(filePath, JSON.stringify(messages, null, 2), 'utf-8');
+          }
           console.log(`[Archiver/Alba] Updated: aiMemo=${!!aiMemo}, tags=${tags.length}`);
         }
       } catch (error) {
@@ -437,11 +578,77 @@ class ConversationArchiver {
 // 싱글톤 인스턴스
 let archiverInstance = null;
 
-function getArchiver(basePath) {
-  if (!archiverInstance || (basePath && archiverInstance.basePath !== basePath)) {
-    archiverInstance = new ConversationArchiver(basePath);
+/**
+ * Archiver 싱글톤 가져오기
+ * DB 설정에서 storageType을 확인하여 FTP 또는 로컬 사용
+ * @param {string} basePath - 로컬 경로 (storageType이 local일 때만 사용)
+ */
+async function getArchiverAsync() {
+  if (archiverInstance) {
+    console.log(`[Archiver] Returning existing instance, useFTP: ${archiverInstance.useFTP}`);
+    return archiverInstance;
   }
+
+  console.log('[Archiver] Creating new instance...');
+  // DB에서 설정 읽기
+  const configManager = require('./config');
+  const memoryConfig = await configManager.getMemoryConfig();
+
+  if (memoryConfig?.storageType === 'notion' && memoryConfig?.notion) {
+    // Notion 저장소 사용
+    const notionConfig = memoryConfig.notion;
+    const notionStorage = new NotionStorage({
+      token: notionConfig.token,
+      databaseId: notionConfig.databaseId
+    });
+
+    archiverInstance = new ConversationArchiver(null, {
+      useNotion: true,
+      notionStorage
+    });
+    console.log(`[Archiver] Using Notion storage: ${notionConfig.databaseId}`);
+  } else if (memoryConfig?.storageType === 'ftp' && memoryConfig?.ftp) {
+    // FTP 저장소 사용
+    const ftpConfig = memoryConfig.ftp;
+    const ftpStorage = new FTPStorage({
+      host: ftpConfig.host,
+      port: ftpConfig.port || 21,
+      user: ftpConfig.user,
+      password: ftpConfig.password,
+      basePath: ftpConfig.basePath,
+      secure: ftpConfig.secure || false
+    });
+
+    archiverInstance = new ConversationArchiver(null, {
+      useFTP: true,
+      ftpStorage
+    });
+    console.log(`[Archiver] Using FTP storage: ${ftpConfig.host}/${ftpConfig.basePath}`);
+  } else if (memoryConfig?.storagePath) {
+    // 로컬 저장소 사용
+    archiverInstance = new ConversationArchiver(memoryConfig.storagePath);
+    console.log(`[Archiver] Using local storage: ${memoryConfig.storagePath}`);
+  } else {
+    throw new Error('[Archiver] No storage configured. Set memory.storagePath or memory.ftp in settings.');
+  }
+
   return archiverInstance;
+}
+
+/**
+ * 동기 버전 (이미 초기화된 경우에만 사용)
+ * 새 인스턴스 생성 시에는 getArchiverAsync 사용 권장
+ */
+function getArchiver(basePath) {
+  if (archiverInstance) {
+    return archiverInstance;
+  }
+  // basePath가 주어지면 로컬로 생성 (레거시 호환)
+  if (basePath) {
+    archiverInstance = new ConversationArchiver(basePath);
+    return archiverInstance;
+  }
+  throw new Error('[Archiver] Use getArchiverAsync() for first initialization');
 }
 
 function resetArchiver() {
@@ -485,6 +692,7 @@ function getCacheStatus() {
 module.exports = {
   ConversationArchiver,
   getArchiver,
+  getArchiverAsync,
   resetArchiver,
   triggerSync,
   getCacheStatus

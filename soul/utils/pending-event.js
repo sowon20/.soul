@@ -24,7 +24,10 @@ const EVENT_DURATIONS = {
 };
 
 class PendingEventManager {
-  constructor(basePath = './memory') {
+  constructor(basePath) {
+    if (!basePath) {
+      throw new Error('[PendingEventManager] basePath is required. Use getPendingEventManager() instead.');
+    }
     this.basePath = basePath;
     this.eventsPath = path.join(basePath, 'events');
     this.currentEvent = null;
@@ -279,8 +282,17 @@ class PendingEventManager {
 // 싱글톤
 let globalPendingEventManager = null;
 
-async function getPendingEventManager(basePath = './memory') {
+async function getPendingEventManager(basePath = null) {
   if (!globalPendingEventManager) {
+    // basePath가 없으면 DB 설정에서 가져오기
+    if (!basePath) {
+      const configManager = require('./config');
+      const memoryConfig = await configManager.getMemoryConfig();
+      basePath = memoryConfig?.storagePath;
+      if (!basePath) {
+        throw new Error('[PendingEventManager] memory.storagePath not configured');
+      }
+    }
     globalPendingEventManager = new PendingEventManager(basePath);
     await globalPendingEventManager.initialize();
   }

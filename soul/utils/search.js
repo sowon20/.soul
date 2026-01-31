@@ -9,7 +9,26 @@ const fs = require('fs').promises;
  */
 class SearchUtils {
   constructor() {
-    this.memoryBasePath = process.env.MEMORY_STORAGE_PATH || './memory';
+    this.memoryBasePath = null; // initialize()에서 설정
+    this.initialized = false;
+  }
+
+  async initialize() {
+    if (this.initialized) return;
+
+    try {
+      const configManager = require('./config');
+      const memoryConfig = await configManager.getMemoryConfig();
+      if (memoryConfig?.storagePath) {
+        this.memoryBasePath = memoryConfig.storagePath;
+      } else {
+        throw new Error('memory.storagePath not configured');
+      }
+    } catch (e) {
+      console.error('[SearchUtils] Failed to initialize:', e.message);
+      throw e;
+    }
+    this.initialized = true;
   }
 
   /**
@@ -19,6 +38,8 @@ class SearchUtils {
    * @returns {Promise<Array>} 검색 결과
    */
   async searchConversations(keyword, filters = {}) {
+    await this.initialize();
+
     const {
       tags = [],
       category = null,
@@ -431,6 +452,7 @@ class SearchUtils {
    * 중기 메모리 (주간 요약) 검색
    */
   async searchSummaries(keywords, limit = 10) {
+    await this.initialize();
     const summaryPath = path.join(this.memoryBasePath, 'summaries');
     const results = [];
     
@@ -473,6 +495,7 @@ class SearchUtils {
    * 장기 메모리 (아카이브) 검색
    */
   async searchArchives(keywords, limit = 10) {
+    await this.initialize();
     const archivePath = path.join(this.memoryBasePath, 'archives');
     const results = [];
     
@@ -525,6 +548,7 @@ class SearchUtils {
    * 문서 검색
    */
   async searchDocuments(keywords, limit = 10) {
+    await this.initialize();
     const docsPath = path.join(this.memoryBasePath, 'documents');
     const results = [];
     

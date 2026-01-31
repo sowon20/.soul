@@ -1256,8 +1256,8 @@ textarea.settings-field-input {
   margin-top: 2px;
 }
 
-/* 접힌 상태에서 텍스트 2줄 제한 + 말줄임표 (정체성/성격/두뇌 섹션만) */
-.timeline-item[data-section]:not(.expanded) .timeline-summary .summary-text {
+/* 텍스트 2줄 제한 + 말줄임표 (펼침/접힘 상관없이 항상) */
+.timeline-item[data-section] .timeline-summary .summary-text {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -4879,4 +4879,186 @@ textarea.settings-field-input {
   .thinking-hint {
     display: none;
   }
+}
+
+
+/* ===== 저장소 마이그레이션 모달 ===== */
+.storage-migration-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100000;
+  backdrop-filter: blur(2px);
+}
+
+.storage-migration-content {
+  width: 90%;
+  max-width: 480px;
+  background: white;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.35);
+  animation: modalSlideUp 0.25s ease-out;
+}
+
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.storage-migration-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.storage-migration-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.storage-migration-header .close-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.storage-migration-header .close-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.storage-migration-info {
+  padding: 1.25rem 1.5rem;
+  background: #f8f9fa;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.migration-change-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.migration-change-item .change-section {
+  font-weight: 600;
+  color: #333;
+  min-width: 100px;
+}
+
+.migration-change-item .change-arrow {
+  color: #6366f1;
+  font-size: 0.9rem;
+}
+
+.storage-migration-options {
+  padding: 1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.migration-option {
+  display: flex;
+  align-items: flex-start;
+  padding: 1rem;
+  background: #f8f9fa;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.migration-option:hover {
+  background: #eef0ff;
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.migration-option:has(input:checked) {
+  background: #eef2ff;
+  border-color: #6366f1;
+}
+
+.migration-option input[type="radio"] {
+  display: none;
+}
+
+.migration-option .option-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.migration-option .option-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.migration-option .option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.migration-option .option-text strong {
+  font-size: 1rem;
+  color: #1a1a1a;
+}
+
+.migration-option .option-text span {
+  font-size: 0.85rem;
+  color: #666;
+  line-height: 1.4;
+}
+
+.storage-migration-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 1.5rem;
+  padding: 0.75rem 1rem;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #856404;
+}
+
+.storage-migration-warning .warning-icon {
+  font-size: 1.1rem;
+}
+
+.storage-migration-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  background: #f8f9fa;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
