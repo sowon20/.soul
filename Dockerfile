@@ -13,12 +13,18 @@ RUN apt-get update && apt-get install -y \
     libsecret-1-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# client 의존성 설치 및 빌드
+COPY --chown=user client/package*.json ./client/
+RUN cd client && npm install
+
+COPY --chown=user client ./client
+RUN cd client && npm run build
+
 # soul 폴더의 의존성 설치
 COPY --chown=user soul/package*.json ./soul/
 RUN cd soul && npm install --production
 
-# 전체 소스 복사 (client + soul)
-COPY --chown=user client ./client
+# soul 소스 복사
 COPY --chown=user soul ./soul
 
 # user로 전환
