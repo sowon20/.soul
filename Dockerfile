@@ -10,12 +10,13 @@ RUN apt-get update && apt-get install -y \
     libsecret-1-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 의존성 먼저 설치 (캐시 활용)
-COPY package*.json ./
-RUN npm install --production
+# soul 폴더의 의존성 설치
+COPY soul/package*.json ./soul/
+RUN cd soul && npm install --production
 
-# 소스 복사
-COPY . .
+# 전체 소스 복사 (client + soul)
+COPY client ./client
+COPY soul ./soul
 
 # 포트 설정
 EXPOSE 8080
@@ -24,5 +25,5 @@ EXPOSE 8080
 ENV PORT=8080
 ENV NODE_ENV=production
 
-# 실행
-CMD ["node", "server/index.js"]
+# 실행 (soul 폴더 안의 서버)
+CMD ["node", "soul/server/index.js"]
