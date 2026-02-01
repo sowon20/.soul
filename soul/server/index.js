@@ -156,4 +156,18 @@ app.set('connectedClients', connectedClients);
 
 server.listen(PORT, () => {
   console.log(`🌟 Soul server running on port ${PORT}`);
+
+  // Cloud Run keep-alive: 5분마다 self-ping
+  if (process.env.NODE_ENV === 'production' && process.env.SELF_URL) {
+    const PING_INTERVAL = 5 * 60 * 1000; // 5분
+    setInterval(async () => {
+      try {
+        const res = await fetch(`${process.env.SELF_URL}/api/health`);
+        console.log(`🏓 Self-ping: ${res.status}`);
+      } catch (err) {
+        console.error('❌ Self-ping failed:', err.message);
+      }
+    }, PING_INTERVAL);
+    console.log('🏓 Self-ping enabled (every 5min)');
+  }
 });
