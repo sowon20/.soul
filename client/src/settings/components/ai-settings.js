@@ -4577,24 +4577,28 @@ export class AISettings {
 
   /**
    * 성격 슬라이더가 기본값에서 변경되었는지 확인
-   * DB에 저장된 personality 값이 있는지 체크
+   * 서버 기본값과 다를 때만 true 반환
    */
   hasPersonalitySliderChanged() {
-    // DB에 personality 설정이 저장되어 있는지 확인
-    const comm = this.agentProfile?.personality?.communication;
-    const traits = this.agentProfile?.personality?.traits;
+    // 서버 기본값 (agent-profile.js와 동일)
+    const serverDefaults = {
+      formality: 0.5,
+      verbosity: 0.5,
+      humor: 0.3,
+      temperature: 0.7
+    };
 
-    // communication이나 traits에 값이 있으면 사용자가 설정한 것
-    if (comm && (comm.formality !== undefined || comm.verbosity !== undefined || comm.humor !== undefined)) {
-      return true;
+    const comm = this.agentProfile?.personality?.communication;
+    const temp = this.agentProfile?.temperature;
+
+    // 기본값과 다른 값이 있는지 확인
+    if (comm) {
+      if (comm.formality !== undefined && comm.formality !== serverDefaults.formality) return true;
+      if (comm.verbosity !== undefined && comm.verbosity !== serverDefaults.verbosity) return true;
+      if (comm.humor !== undefined && comm.humor !== serverDefaults.humor) return true;
     }
-    if (traits && traits.empathetic !== undefined) {
-      return true;
-    }
-    // temperature도 기본값(0.7)과 다르면 설정한 것
-    if (this.agentProfile?.temperature !== undefined && this.agentProfile.temperature !== 0.7) {
-      return true;
-    }
+    if (temp !== undefined && temp !== serverDefaults.temperature) return true;
+
     return false;
   }
 
