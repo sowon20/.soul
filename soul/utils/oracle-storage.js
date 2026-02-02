@@ -38,8 +38,12 @@ class OracleStorage {
   async _getCredentials() {
     // Try keytar first, then fall back to env vars
     if (keytar) {
-      this.password = await keytar.getPassword(SERVICE_NAME, 'password');
-      this.encryptionKey = await keytar.getPassword(SERVICE_NAME, 'encryptionKey');
+      try {
+        this.password = await keytar.getPassword(SERVICE_NAME, 'password');
+        this.encryptionKey = await keytar.getPassword(SERVICE_NAME, 'encryptionKey');
+      } catch (e) {
+        console.log('[OracleStorage] keytar failed (no D-Bus?), using env vars');
+      }
     }
 
     // Fallback to environment variables
