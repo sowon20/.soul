@@ -4561,15 +4561,13 @@ export class AISettings {
     const hasSliderChanged = this.hasPersonalitySliderChanged();
 
     let html = '';
-    // 프롬프트 행
+    // 프롬프트 행 (값이 있을 때만)
     if (description) {
       const shortDesc = description.length > 20 ? description.substring(0, 20) + '...' : description;
       html += `<div><span class="summary-label">프롬프트</span><span class="summary-text">${shortDesc}</span></div>`;
-    } else {
-      html += `<div><span class="summary-label">프롬프트</span><span class="summary-text">-</span></div>`;
     }
 
-    // 세밀조절 행
+    // 세밀조절 행 (값이 있을 때만)
     if (hasSliderChanged) {
       html += `<div><span class="summary-label">세밀조절</span><span class="summary-text">확인</span></div>`;
     }
@@ -4579,27 +4577,23 @@ export class AISettings {
 
   /**
    * 성격 슬라이더가 기본값에서 변경되었는지 확인
-   * 화면의 실제 슬라이더 값으로 체크
+   * DB에 저장된 personality 값이 있는지 체크
    */
   hasPersonalitySliderChanged() {
-    const defaults = {
-      formality: 0.5,
-      verbosity: 0.5,
-      humor: 0.5,
-      empathy: 0.5,
-      temperature: 0.7
-    };
+    // DB에 personality 설정이 저장되어 있는지 확인
+    const comm = this.agentProfile?.personality?.communication;
+    const traits = this.agentProfile?.personality?.traits;
 
-    const round = (v) => Math.round(v * 10) / 10;
-
-    // 화면의 슬라이더 값 직접 확인
-    const sliders = document.querySelectorAll('.timeline-item[data-section="personality"] .timeline-range');
-    for (const slider of sliders) {
-      const field = slider.dataset.field;
-      const value = round(parseFloat(slider.value));
-      if (defaults[field] !== undefined && value !== defaults[field]) {
-        return true;
-      }
+    // communication이나 traits에 값이 있으면 사용자가 설정한 것
+    if (comm && (comm.formality !== undefined || comm.verbosity !== undefined || comm.humor !== undefined)) {
+      return true;
+    }
+    if (traits && traits.empathetic !== undefined) {
+      return true;
+    }
+    // temperature도 기본값(0.7)과 다르면 설정한 것
+    if (this.agentProfile?.temperature !== undefined && this.agentProfile.temperature !== 0.7) {
+      return true;
     }
     return false;
   }
