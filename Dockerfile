@@ -16,10 +16,8 @@ RUN apt-get update && apt-get install -y \
     libsecret-1-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# HuggingFace CLI 설치 (HF 환경에서 사용)
-RUN pip3 install --break-system-packages huggingface_hub[cli] && \
-    which huggingface-cli && \
-    huggingface-cli --version
+# HuggingFace Hub 설치 (HF 환경에서 사용)
+RUN pip3 install --break-system-packages huggingface_hub
 
 # client 의존성 설치 및 빌드
 COPY --chown=node:node client/package*.json ./client/

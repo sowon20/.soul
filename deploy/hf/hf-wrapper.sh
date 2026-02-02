@@ -8,27 +8,36 @@ DATA_DIR="${SOUL_DATA_DIR:-/home/node/.soul}"
 REPO_ID="${HF_DATASET_REPO:-sowon20/dataset}"
 WALLET_DIR="/app/soul/config/oracle"
 
-# HF CLI 경로 확인
-HF_CLI=$(which huggingface-cli 2>/dev/null || echo "/usr/local/bin/huggingface-cli")
-echo "[HF-Wrapper] Using HF CLI: $HF_CLI"
-echo "[HF-Wrapper] CLI exists: $([ -f "$HF_CLI" ] && echo 'yes' || echo 'no')"
-ls -la /usr/local/bin/huggingface* 2>/dev/null || echo "[HF-Wrapper] No huggingface binaries in /usr/local/bin"
-
-# 토큰 로그인
-if [ -n "$HF_TOKEN" ]; then
-    $HF_CLI login --token "$HF_TOKEN" --add-to-git-credential 2>/dev/null || true
-fi
-
-# Dataset에서 데이터 복원
+# Dataset에서 데이터 복원 (Python 사용)
 restore_data() {
     echo "[HF-Wrapper] Restoring data from dataset: $REPO_ID"
     echo "[HF-Wrapper] HF_TOKEN set: $([ -n "$HF_TOKEN" ] && echo 'yes' || echo 'no')"
     mkdir -p "$DATA_DIR"
     mkdir -p "$WALLET_DIR"
 
-    # Dataset에서 파일 다운로드 시도
+    # Python으로 Dataset 다운로드
     echo "[HF-Wrapper] Downloading from dataset..."
-    if $HF_CLI download "$REPO_ID" --repo-type dataset --local-dir "$DATA_DIR"; then
+    python3 << EOF
+import os
+from huggingface_hub import snapshot_download, login
+
+token = os.environ.get('HF_TOKEN')
+if token:
+    login(token=token)
+
+try:
+    snapshot_download(
+        repo_id="$REPO_ID",
+        repo_type="dataset",
+        local_dir="$DATA_DIR"
+    )
+    print("[HF-Wrapper] Download successful")
+except Exception as e:
+    print(f"[HF-Wrapper] Download error: {e}")
+    exit(1)
+EOF
+
+    if [ $? -eq 0 ]; then
         echo "[HF-Wrapper] Data restored successfully"
         echo "[HF-Wrapper] Downloaded files:"
         ls -la "$DATA_DIR"
@@ -53,7 +62,7 @@ restore_data() {
     fi
 }
 
-# Dataset으로 백업
+# Dataset으로 백업 (Python 사용)
 backup_data() {
     echo "[HF-Wrapper] Backing up data to dataset..."
 
@@ -65,7 +74,27 @@ backup_data() {
     fi
 
     if [ -f "$DATA_DIR/soul.db" ] || [ -d "$DATA_DIR/oracle-wallet" ]; then
-        $HF_CLI upload "$REPO_ID" "$DATA_DIR" --repo-type dataset --commit-message "Auto backup" 2>/dev/null || true
+        python3 << EOF
+import os
+from huggingface_hub import HfApi, login
+
+token = os.environ.get('HF_TOKEN')
+if token:
+    login(token=token)
+    api = HfApi()
+    try:
+        api.upload_folder(
+            folder_path="$DATA_DIR",
+            repo_id="$REPO_ID",
+            repo_type="dataset",
+            commit_message="Auto backup"
+        )
+        print("[HF-Wrapper] Backup successful")
+    except Exception as e:
+        print(f"[HF-Wrapper] Backup error: {e}")
+else:
+    print("[HF-Wrapper] No HF_TOKEN, skipping backup")
+EOF
         echo "[HF-Wrapper] Backup complete"
     else
         echo "[HF-Wrapper] No data to backup"
