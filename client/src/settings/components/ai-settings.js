@@ -4850,8 +4850,7 @@ export class AISettings {
       this.originalStorageType = currentType;
       this.storageConfig = { ...this.storageConfig, ...config };
 
-      this.showSaveStatus('저장소 설정 저장됨. 서버 재시작 중...', 'success');
-      await this.restartServer();
+      this.showSaveStatus('✅ 저장소 설정이 저장되었습니다.', 'success');
     } catch (error) {
       console.error('Failed to save storage settings:', error);
       this.showSaveStatus('저장소 설정 저장에 실패했습니다: ' + error.message, 'error');
