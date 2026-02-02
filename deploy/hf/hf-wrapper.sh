@@ -8,14 +8,12 @@ DATA_DIR="${SOUL_DATA_DIR:-/home/node/.soul}"
 REPO_ID="${HF_DATASET_REPO:-sowon20/dataset}"
 WALLET_DIR="/app/soul/config/oracle"
 
-# HF CLI 설치 확인 (Dockerfile에서 이미 설치됨, 백업용)
-if ! command -v huggingface-cli &> /dev/null; then
-    pip3 install --break-system-packages -q huggingface_hub || true
-fi
+# HF CLI 명령어 (python -m 방식으로 실행)
+HF_CLI="python3 -m huggingface_hub.commands.huggingface_cli"
 
 # 토큰 로그인
 if [ -n "$HF_TOKEN" ]; then
-    echo "$HF_TOKEN" | huggingface-cli login --token "$HF_TOKEN" --add-to-git-credential 2>/dev/null || true
+    $HF_CLI login --token "$HF_TOKEN" --add-to-git-credential 2>/dev/null || true
 fi
 
 # Dataset에서 데이터 복원
@@ -27,7 +25,7 @@ restore_data() {
 
     # Dataset에서 파일 다운로드 시도
     echo "[HF-Wrapper] Downloading from dataset..."
-    if huggingface-cli download "$REPO_ID" --repo-type dataset --local-dir "$DATA_DIR"; then
+    if $HF_CLI download "$REPO_ID" --repo-type dataset --local-dir "$DATA_DIR"; then
         echo "[HF-Wrapper] Data restored successfully"
         echo "[HF-Wrapper] Downloaded files:"
         ls -la "$DATA_DIR"
@@ -64,7 +62,7 @@ backup_data() {
     fi
 
     if [ -f "$DATA_DIR/soul.db" ] || [ -d "$DATA_DIR/oracle-wallet" ]; then
-        huggingface-cli upload "$REPO_ID" "$DATA_DIR" --repo-type dataset --commit-message "Auto backup" 2>/dev/null || true
+        $HF_CLI upload "$REPO_ID" "$DATA_DIR" --repo-type dataset --commit-message "Auto backup" 2>/dev/null || true
         echo "[HF-Wrapper] Backup complete"
     else
         echo "[HF-Wrapper] No data to backup"
