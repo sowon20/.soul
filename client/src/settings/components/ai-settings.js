@@ -4577,28 +4577,29 @@ export class AISettings {
 
   /**
    * 성격 슬라이더가 기본값에서 변경되었는지 확인
-   * 서버 기본값과 다를 때만 true 반환
+   * 화면의 슬라이더 값을 실시간으로 체크
    */
   hasPersonalitySliderChanged() {
-    // 서버 기본값 (agent-profile.js와 동일 - 모두 0.5 중앙)
-    const serverDefaults = {
+    // 기본값 (슬라이더 중앙)
+    const defaults = {
       formality: 0.5,
       verbosity: 0.5,
       humor: 0.5,
+      empathy: 0.5,
       temperature: 0.7
     };
 
-    const comm = this.agentProfile?.personality?.communication;
-    const temp = this.agentProfile?.temperature;
+    const round = (v) => Math.round(v * 10) / 10;
 
-    // 기본값과 다른 값이 있는지 확인
-    if (comm) {
-      if (comm.formality !== undefined && comm.formality !== serverDefaults.formality) return true;
-      if (comm.verbosity !== undefined && comm.verbosity !== serverDefaults.verbosity) return true;
-      if (comm.humor !== undefined && comm.humor !== serverDefaults.humor) return true;
+    // 화면의 슬라이더 값 직접 확인
+    const sliders = document.querySelectorAll('.timeline-item[data-section="personality"] .timeline-range');
+    for (const slider of sliders) {
+      const field = slider.dataset.field;
+      const value = round(parseFloat(slider.value));
+      if (defaults[field] !== undefined && value !== defaults[field]) {
+        return true;
+      }
     }
-    if (temp !== undefined && temp !== serverDefaults.temperature) return true;
-
     return false;
   }
 
