@@ -1598,7 +1598,7 @@ export class AISettings {
             <div class="oracle-field">
               <label>사용자</label>
               <input type="text" id="oracleUser" class="storage-input"
-                     value="${this.storageConfig.oracle?.user || ''}" placeholder="ADMIN">
+                     value="${this.storageConfig.oracle?.user || ''}" placeholder="예: ADMIN">
             </div>
             <div class="oracle-field">
               <label>비밀번호</label>
@@ -4920,11 +4920,7 @@ export class AISettings {
         // TNS 드롭다운 업데이트
         this.updateTnsDropdown(result.tnsNames || []);
 
-        if (result.tnsNames?.length > 0) {
-          this.showSaveStatus(`Wallet 업로드 완료. 사용 가능한 TNS: ${result.tnsNames.join(', ')}`, 'success');
-        } else {
-          this.showSaveStatus('Wallet 업로드 완료', 'success');
-        }
+        // 팝업 없이 상태만 표시 (statusEl에 이미 ✅ 업로드됨 표시됨)
       } else {
         throw new Error(result.message || '업로드 실패');
       }
