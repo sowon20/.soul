@@ -39,6 +39,9 @@ RUN chmod +x ./hf-wrapper.sh
 # 데이터 디렉토리 생성
 RUN mkdir -p /home/node/.soul && chown -R node:node /home/node/.soul
 
+# Oracle Wallet 디렉토리 생성
+RUN mkdir -p /app/soul/config/oracle && chown -R node:node /app/soul/config/oracle
+
 # node 유저로 전환
 USER node
 
@@ -49,6 +52,7 @@ EXPOSE 7860
 ENV PORT=7860
 ENV NODE_ENV=production
 ENV SOUL_DATA_DIR=/home/node/.soul
+ENV ORACLE_WALLET_DIR=/app/soul/config/oracle
 
 # HF 래퍼로 실행 (복원 → 서버 → 주기적 백업)
 CMD ["bash", "./hf-wrapper.sh"]

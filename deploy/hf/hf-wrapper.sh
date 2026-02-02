@@ -6,6 +6,7 @@ set -e
 
 DATA_DIR="${SOUL_DATA_DIR:-/home/node/.soul}"
 REPO_ID="${HF_DATASET_REPO:-sowon20/dataset}"
+WALLET_DIR="/app/soul/config/oracle"
 
 # HF CLI 설치 확인
 if ! command -v huggingface-cli &> /dev/null; then
@@ -21,10 +22,18 @@ fi
 restore_data() {
     echo "[HF-Wrapper] Restoring data from dataset..."
     mkdir -p "$DATA_DIR"
+    mkdir -p "$WALLET_DIR"
 
     # Dataset에서 파일 다운로드 시도
     if huggingface-cli download "$REPO_ID" --repo-type dataset --local-dir "$DATA_DIR" 2>/dev/null; then
         echo "[HF-Wrapper] Data restored successfully"
+
+        # Oracle Wallet 파일이 있으면 복원
+        if [ -d "$DATA_DIR/oracle-wallet" ]; then
+            echo "[HF-Wrapper] Restoring Oracle Wallet..."
+            cp -r "$DATA_DIR/oracle-wallet/"* "$WALLET_DIR/" 2>/dev/null || true
+            echo "[HF-Wrapper] Oracle Wallet restored to $WALLET_DIR"
+        fi
     else
         echo "[HF-Wrapper] No existing data found, starting fresh"
     fi
@@ -34,7 +43,14 @@ restore_data() {
 backup_data() {
     echo "[HF-Wrapper] Backing up data to dataset..."
 
-    if [ -f "$DATA_DIR/soul.db" ]; then
+    # Oracle Wallet 파일이 있으면 백업 폴더에 복사
+    if [ -d "$WALLET_DIR" ] && [ "$(ls -A $WALLET_DIR 2>/dev/null)" ]; then
+        echo "[HF-Wrapper] Including Oracle Wallet in backup..."
+        mkdir -p "$DATA_DIR/oracle-wallet"
+        cp -r "$WALLET_DIR/"* "$DATA_DIR/oracle-wallet/" 2>/dev/null || true
+    fi
+
+    if [ -f "$DATA_DIR/soul.db" ] || [ -d "$DATA_DIR/oracle-wallet" ]; then
         huggingface-cli upload "$REPO_ID" "$DATA_DIR" --repo-type dataset --commit-message "Auto backup" 2>/dev/null || true
         echo "[HF-Wrapper] Backup complete"
     else
