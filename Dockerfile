@@ -31,13 +31,12 @@ RUN mkdir -p /home/node/.soul/memory /home/node/.soul/files && chown -R node:nod
 # node 유저로 전환 (UID 1000)
 USER node
 
-# 포트 설정 (Hugging Face는 7860 사용)
-EXPOSE 7860
+# 포트 설정 (환경변수로 오버라이드 가능)
+EXPOSE 4000
 
-# 환경변수
-ENV PORT=7860
+# 환경변수 (배포 환경에서 오버라이드)
+ENV PORT=4000
 ENV NODE_ENV=production
-ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # 실행
 CMD ["node", "soul/server/index.js"]
