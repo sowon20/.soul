@@ -8,9 +8,9 @@ DATA_DIR="${SOUL_DATA_DIR:-/home/node/.soul}"
 REPO_ID="${HF_DATASET_REPO:-sowon20/dataset}"
 WALLET_DIR="/app/soul/config/oracle"
 
-# HF CLI 설치 확인
+# HF CLI 설치 확인 (Dockerfile에서 이미 설치됨, 백업용)
 if ! command -v huggingface-cli &> /dev/null; then
-    pip install -q huggingface_hub
+    pip3 install --break-system-packages -q huggingface_hub || true
 fi
 
 # 토큰 로그인
