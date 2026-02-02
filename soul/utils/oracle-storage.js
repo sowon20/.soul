@@ -5,8 +5,15 @@
  */
 
 const oracledb = require('oracledb');
-const keytar = require('keytar');
 const fs = require('fs');
+
+// keytar is optional (for secure credential storage)
+let keytar = null;
+try {
+  keytar = require('keytar');
+} catch (e) {
+  console.log('[OracleStorage] keytar not available, using env vars for credentials');
+}
 const path = require('path');
 const crypto = require('crypto');
 
@@ -26,14 +33,23 @@ class OracleStorage {
   }
 
   /**
-   * 키체인에서 비밀번호 가져오기
+   * 키체인 또는 환경변수에서 비밀번호 가져오기
    */
   async _getCredentials() {
-    this.password = await keytar.getPassword(SERVICE_NAME, 'password');
-    this.encryptionKey = await keytar.getPassword(SERVICE_NAME, 'encryptionKey');
+    // Try keytar first, then fall back to env vars
+    if (keytar) {
+      this.password = await keytar.getPassword(SERVICE_NAME, 'password');
+      this.encryptionKey = await keytar.getPassword(SERVICE_NAME, 'encryptionKey');
+    }
+
+    // Fallback to environment variables
+    if (!this.password) {
+      this.password = process.env.ORACLE_PASSWORD;
+      this.encryptionKey = process.env.ORACLE_ENCRYPTION_KEY;
+    }
 
     if (!this.password) {
-      throw new Error('[OracleStorage] Password not found in keychain. Run setup first.');
+      throw new Error('[OracleStorage] Password not found. Set ORACLE_PASSWORD env var or run setup.');
     }
 
     return { password: this.password, encryptionKey: this.encryptionKey };
@@ -43,6 +59,10 @@ class OracleStorage {
    * 키체인에 비밀번호 저장 (최초 설정용)
    */
   static async setCredentials(password, encryptionKey) {
+    if (!keytar) {
+      console.log('[OracleStorage] keytar not available, use ORACLE_PASSWORD env var');
+      return;
+    }
     await keytar.setPassword(SERVICE_NAME, 'password', password);
     if (encryptionKey) {
       await keytar.setPassword(SERVICE_NAME, 'encryptionKey', encryptionKey);
@@ -54,6 +74,10 @@ class OracleStorage {
    * 키체인에서 비밀번호 삭제
    */
   static async deleteCredentials() {
+    if (!keytar) {
+      console.log('[OracleStorage] keytar not available');
+      return;
+    }
     await keytar.deletePassword(SERVICE_NAME, 'password');
     await keytar.deletePassword(SERVICE_NAME, 'encryptionKey');
     console.log('[OracleStorage] Credentials deleted from keychain');

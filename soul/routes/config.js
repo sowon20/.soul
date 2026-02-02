@@ -624,11 +624,20 @@ router.get('/server-status', async (req, res) => {
 router.get('/storage/oracle', async (req, res) => {
   try {
     const { OracleStorage } = require('../utils/oracle-storage');
-    const keytar = require('keytar');
 
-    // 키체인에서 설정 여부 확인
-    const hasPassword = !!(await keytar.getPassword('soul-oracle-db', 'password'));
-    const hasEncryptionKey = !!(await keytar.getPassword('soul-oracle-db', 'encryptionKey'));
+    // 키체인 또는 환경변수에서 설정 여부 확인
+    let hasPassword = false;
+    let hasEncryptionKey = false;
+
+    try {
+      const keytar = require('keytar');
+      hasPassword = !!(await keytar.getPassword('soul-oracle-db', 'password'));
+      hasEncryptionKey = !!(await keytar.getPassword('soul-oracle-db', 'encryptionKey'));
+    } catch (e) {
+      // keytar not available, check env vars
+      hasPassword = !!process.env.ORACLE_PASSWORD;
+      hasEncryptionKey = !!process.env.ORACLE_ENCRYPTION_KEY;
+    }
 
     // DB 설정에서 Oracle 활성화 여부 확인
     const oracleConfig = await configManager.getConfigValue('oracle_storage', {
