@@ -471,9 +471,14 @@ router.post('/upload-oracle-wallet', walletUpload.single('wallet'), async (req, 
  */
 router.post('/oracle/test', async (req, res) => {
   try {
-    const { user, connectString, connectionString } = req.body;
+    const { user, password, connectString, connectionString } = req.body;
     const { OracleStorage } = require('../utils/oracle-storage');
     const connStr = connectString || connectionString;
+
+    // 임시로 환경변수에 비밀번호 설정 (테스트용)
+    if (password) {
+      process.env.ORACLE_PASSWORD = password;
+    }
 
     const oracle = new OracleStorage({
       user: user || 'ADMIN',
