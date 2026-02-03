@@ -1034,11 +1034,14 @@ export class AISettings {
    * 알바 간략 아이템 렌더링 (타임라인용)
    */
   renderAlbaCompactItem(role) {
+    // 시스템 역할: OFF일 때 뭐가 달라지는지 힌트
+    const hint = role.isSystem && !role.active ? '<span class="alba-compact-hint">OFF: 간단 규칙으로 동작</span>' : '';
+
     return `
       <div class="alba-compact-item ${role.active ? '' : 'inactive'}" data-role-id="${role.roleId}" data-action="edit-alba">
         <div class="alba-compact-info">
-          <span class="alba-compact-name">${role.name}</span>
-          <span class="alba-compact-desc">${role.description || '설명 없음'}</span>
+          <span class="alba-compact-name">${role.name}${role.isSystem ? ' <span class="alba-system-tag">시스템</span>' : ''}</span>
+          <span class="alba-compact-desc">${role.description || '설명 없음'}${hint}</span>
         </div>
         <label class="toggle-switch toggle-switch-xs" onclick="event.stopPropagation()">
           <input type="checkbox"
@@ -2133,7 +2136,23 @@ export class AISettings {
     // 서비스명 알파벳순 정렬
     const sortedServices = Object.keys(this.modelsByService).sort((a, b) => a.localeCompare(b));
 
-    return placeholder + sortedServices.map(serviceName => {
+    // 선택된 값이 목록에 있는지 확인
+    let selectedFound = false;
+    if (selectedValue) {
+      for (const models of Object.values(this.modelsByService)) {
+        if (models.some(m => m.id === selectedValue)) {
+          selectedFound = true;
+          break;
+        }
+      }
+    }
+
+    // 목록에 없는 커스텀 모델 (임베딩 등)은 별도 옵션으로 추가
+    const customOption = (selectedValue && !selectedFound)
+      ? `<option value="${selectedValue}" selected>${selectedValue}</option>`
+      : '';
+
+    return placeholder + customOption + sortedServices.map(serviceName => {
       const models = this.modelsByService[serviceName];
       return `
         <optgroup label="${serviceName}">
@@ -3055,7 +3074,7 @@ export class AISettings {
         if (brainWizard) {
           brainWizard.dataset.confirmed = 'false';
           this.routingConfig.confirmed = false;
-          this.saveRoutingSettings();
+          this.saveRoutingSettings({ silent: true });
         }
       });
     }
@@ -3928,7 +3947,7 @@ export class AISettings {
   /**
    * 라우팅 설정 저장 (서버로)
    */
-  async saveRoutingSettings() {
+  async saveRoutingSettings({ silent = false } = {}) {
     try {
       // 모드 확인 (단일/자동)
       const modeRadio = document.querySelector('input[name="brainMode"]:checked');
@@ -3999,10 +4018,10 @@ export class AISettings {
       // localStorage에도 백업 저장
       localStorage.setItem('smartRoutingConfig', JSON.stringify(this.routingConfig));
 
-      this.showSaveStatus('라우팅 설정이 저장되었습니다.', 'success');
+      if (!silent) this.showSaveStatus('라우팅 설정이 저장되었습니다.', 'success');
     } catch (error) {
       console.error('Failed to save routing settings:', error);
-      this.showSaveStatus('라우팅 설정 저장에 실패했습니다.', 'error');
+      if (!silent) this.showSaveStatus('라우팅 설정 저장에 실패했습니다.', 'error');
     }
   }
 
@@ -5386,11 +5405,195 @@ export class AISettings {
   }
 
   /**
+   * 시스템 알바 편집 (간소화: 이름 + 모델만)
+   */
+  async editSystemAlba(roleId, role) {
+    const existingModal = document.querySelector('.alba-modal-overlay');
+    if (existingModal) existingModal.remove();
+
+    const config = role.config || {};
+    const currentServiceId = config.serviceId || '';
+    const isEmbedding = config.purpose === 'embedding';
+
+    // 임베딩 알바는 임베딩 모델 전용 드롭다운
+    const modelFieldHtml = isEmbedding
+      ? `<div class="alba-modal-field">
+              <label>사용 모델</label>
+              <select id="albaEmbeddingModel" class="alba-modal-select">
+                <option value="${role.preferredModel || ''}" selected>${role.preferredModel || '로딩중...'}</option>
+              </select>
+              <div style="font-size:10px;color:rgba(0,0,0,0.4);margin-top:4px;">OpenRouter 임베딩 모델 목록</div>
+            </div>`
+      : `<div class="alba-modal-field">
+              <label>사용 모델</label>
+              <select id="albaModel" class="alba-modal-select">
+                ${this.renderModelOptions(role.preferredModel, true)}
+              </select>
+            </div>`;
+
+    const modalHtml = `
+      <div class="alba-modal-overlay">
+        <div class="alba-modal">
+          <div class="alba-modal-header">
+            <h3>${role.name} 설정</h3>
+            <button type="button" class="alba-modal-close">&times;</button>
+          </div>
+          <div class="alba-modal-body">
+            <div class="alba-system-badge">ON: AI 모델이 처리 &nbsp;|&nbsp; OFF: 간단 규칙으로 동작</div>
+            <div class="alba-modal-field">
+              <label>이름</label>
+              <input type="text" id="albaName" value="${role.name || ''}" />
+            </div>
+            ${modelFieldHtml}
+          </div>
+          <div class="alba-modal-footer">
+            <div class="alba-modal-footer-right">
+              <button type="button" class="alba-modal-btn alba-modal-cancel">취소</button>
+              <button type="button" class="alba-modal-btn alba-modal-confirm">저장</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    const overlay = document.querySelector('.alba-modal-overlay');
+    const closeBtn = overlay.querySelector('.alba-modal-close');
+    const cancelBtn = overlay.querySelector('.alba-modal-cancel');
+    const confirmBtn = overlay.querySelector('.alba-modal-confirm');
+
+    // 임베딩 모델 목록 비동기 로드
+    if (isEmbedding) {
+      this.loadEmbeddingModels(role.preferredModel);
+    }
+
+    const closeModal = () => overlay.remove();
+    closeBtn.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+    confirmBtn.addEventListener('click', async () => {
+      const name = document.getElementById('albaName').value.trim();
+      let preferredModel;
+      let serviceId = currentServiceId;
+
+      if (isEmbedding) {
+        // 임베딩: 드롭다운에서 모델명 + serviceId 추출
+        const embSelect = document.getElementById('albaEmbeddingModel');
+        preferredModel = embSelect ? embSelect.value : '';
+        const embOption = embSelect?.options[embSelect.selectedIndex];
+        const embOptgroup = embOption?.closest('optgroup');
+        if (embOptgroup) {
+          const label = embOptgroup.label.toLowerCase();
+          if (label.includes('openrouter')) serviceId = 'openrouter';
+          else if (label.includes('openai')) serviceId = 'openai';
+          else if (label.includes('google')) serviceId = 'google';
+        }
+      } else {
+        // 일반: 드롭다운에서 모델 + serviceId 추출
+        const modelSelect = document.getElementById('albaModel');
+        preferredModel = modelSelect.value;
+
+        const selectedOption = modelSelect.options[modelSelect.selectedIndex];
+        const optgroup = selectedOption?.closest('optgroup');
+        if (optgroup) {
+          const groupLabel = optgroup.label.toLowerCase();
+          if (groupLabel.includes('openrouter')) serviceId = 'openrouter';
+          else if (groupLabel.includes('claude') || groupLabel.includes('anthropic')) serviceId = 'anthropic';
+          else if (groupLabel.includes('openai')) serviceId = 'openai';
+          else if (groupLabel.includes('google') || groupLabel.includes('gemini')) serviceId = 'google';
+          else if (groupLabel.includes('xai') || groupLabel.includes('grok')) serviceId = 'xai';
+          else if (groupLabel.includes('ollama')) serviceId = 'ollama';
+          else if (groupLabel.includes('hugging')) serviceId = 'huggingface';
+        }
+      }
+
+      const updatedConfig = { ...config, serviceId };
+
+      try {
+        await this.apiClient.patch(`/roles/${roleId}`, {
+          name,
+          preferredModel,
+          config: JSON.stringify(updatedConfig)
+        });
+        this.showSaveStatus('저장되었습니다.', 'success');
+        overlay.remove();
+        await this.loadAvailableRoles();
+      } catch (error) {
+        console.error('시스템 역할 수정 실패:', error);
+        this.showSaveStatus('저장에 실패했습니다.', 'error');
+      }
+    });
+  }
+
+  /**
+   * 임베딩 모델 목록 로드 (활성 서비스별)
+   */
+  async loadEmbeddingModels(currentModel) {
+    try {
+      const response = await this.apiClient.get('/chat/embedding-models');
+      const groups = response?.groups || [];
+      const select = document.getElementById('albaEmbeddingModel');
+      if (!select) return;
+
+      select.innerHTML = '';
+      let totalModels = 0;
+      let foundCurrent = false;
+
+      // 서비스별 optgroup으로 모델 표시
+      for (const group of groups) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = group.service;
+
+        for (const m of group.models) {
+          const option = document.createElement('option');
+          option.value = m.id;
+          const ctxInfo = m.context_length ? ` (${(m.context_length / 1000).toFixed(0)}k)` : '';
+          option.textContent = `${m.name}${ctxInfo}`;
+          if (m.id === currentModel) {
+            option.selected = true;
+            foundCurrent = true;
+          }
+          optgroup.appendChild(option);
+          totalModels++;
+        }
+
+        select.appendChild(optgroup);
+      }
+
+      // 현재 모델이 목록에 없으면 맨 위에 추가
+      if (currentModel && !foundCurrent) {
+        const customOpt = document.createElement('option');
+        customOpt.value = currentModel;
+        customOpt.textContent = `${currentModel} (커스텀)`;
+        customOpt.selected = true;
+        select.insertBefore(customOpt, select.firstChild);
+      }
+
+      // 모델이 하나도 없으면
+      if (totalModels === 0 && !currentModel) {
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '활성 서비스에 임베딩 모델이 없습니다';
+        select.appendChild(emptyOpt);
+      }
+    } catch (error) {
+      console.warn('임베딩 모델 로드 실패:', error);
+    }
+  }
+
+  /**
    * 알바 편집
    */
   async editAlba(roleId) {
     const role = this.availableRoles.find(r => r.roleId === roleId);
     if (!role) return;
+
+    // 시스템 역할이면 간소화 모달
+    if (role.isSystem) {
+      return this.editSystemAlba(roleId, role);
+    }
 
     // 기존 모달 제거
     const existingModal = document.querySelector('.alba-modal-overlay');

@@ -1808,16 +1808,30 @@ class OpenRouterService extends AIService {
       }));
     }
 
-    let response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify(requestBody)
-    });
+    console.log(`[OpenRouter] Request model=${this.modelName}`);
 
-    if (!response.ok) {
+    let response;
+    const maxRetries = 3;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (response.ok) break;
+
+      if ((response.status === 429 || response.status === 402) && attempt < maxRetries) {
+        const retryAfter = response.headers.get('retry-after');
+        const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : (1000 * Math.pow(2, attempt));
+        console.warn(`[OpenRouter] ${response.status} error, retry ${attempt + 1}/${maxRetries} after ${waitMs}ms (model: ${this.modelName})`);
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+
       const errorText = await response.text();
       console.error('[OpenRouter] Error response:', errorText);
       throw new Error(`OpenRouter API error (${response.status}): ${errorText || 'Unknown error'}`);
@@ -2957,6 +2971,7 @@ class AIServiceFactory {
             { id: 'meta-llama/Llama-3.3-70B-Instruct', name: 'Llama 3.3 70B', description: 'Meta Llama 3.3' },
             { id: 'mistralai/Mistral-7B-Instruct-v0.3', name: 'Mistral 7B', description: 'Mistral AI 7B' },
             { id: 'Qwen/Qwen2.5-72B-Instruct', name: 'Qwen 2.5 72B', description: 'Alibaba Qwen 2.5' },
+            { id: 'Qwen/Qwen3-VL-Embedding-8B', name: 'Qwen3 VL Embedding 8B', description: '임베딩 모델 (벡터 검색용)' },
           ];
           return { success: true, models: hfModels };
 

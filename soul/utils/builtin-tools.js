@@ -120,10 +120,13 @@ async function recallMemory({ query, timeFilter, limit = 5 }) {
 
     console.log(`[recall_memory] Search: query="${query}", time=${timeFilter}, limit=${limit}`);
 
-    // 1. 벡터 검색 (의미적 유사도) - 가장 정확
+    // 1. 벡터 검색 (의미적 유사도) - 3초 타임아웃
     try {
       const vectorStore = require('./vector-store');
-      const vectorResults = await vectorStore.search(query, limit * 2);
+      const vectorResults = await Promise.race([
+        vectorStore.search(query, limit * 2),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Vector search timeout')), 3000))
+      ]);
 
       if (vectorResults.length > 0) {
         console.log(`[recall_memory] Vector: ${vectorResults.length} results`);

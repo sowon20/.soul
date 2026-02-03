@@ -177,41 +177,89 @@ export class ChatManager {
   }
 
   /**
+   * 로딩 인디케이터 표시
+   */
+  showLoadingIndicator() {
+    if (this._loadingEl) return;
+    this._loadingEl = document.createElement('div');
+    this._loadingEl.className = 'chat-initial-loading';
+    this._loadingEl.innerHTML = `
+      <div class="chat-loading-spinner"></div>
+      <div class="chat-loading-text">대화 불러오는 중...</div>
+    `;
+    this.messagesArea.appendChild(this._loadingEl);
+    // 로딩 중에도 영역 보이게
+    this.messagesArea.classList.add('loaded');
+  }
+
+  /**
+   * 로딩 인디케이터 제거
+   */
+  hideLoadingIndicator() {
+    if (this._loadingEl) {
+      this._loadingEl.remove();
+      this._loadingEl = null;
+    }
+  }
+
+  /**
    * 최근 메시지 로드 (초기 로딩, 마지막 대화 위치)
+   * 서버 미응답 시 재시도 (최대 5회, 2초 간격)
    */
   async loadRecentMessages(limit = 50) {
-    try {
-      const history = await this.apiClient.getConversationHistory(this.conversationId, { limit });
+    const maxRetries = 5;
+    const retryDelay = 2000;
 
-      if (history && history.messages && history.messages.length > 0) {
-        // 메시지 배열에 추가
-        this.messages = history.messages;
-        this.oldestMessageId = history.messages[0].id;
-        this.oldestMessageTimestamp = history.messages[0].timestamp;
+    this.showLoadingIndicator();
 
-        // DOM에 렌더링
-        history.messages.forEach(message => {
-          const messageElement = this.createMessageElement(message);
-          this.messagesArea.appendChild(messageElement);
-        });
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const history = await this.apiClient.getConversationHistory(this.conversationId, { limit });
 
-        // 맨 아래로 스크롤
-        this.scrollToBottom(false);
-        
-        // 더 불러올 메시지가 있는지 확인
-        this.hasMoreHistory = history.messages.length >= limit;
-      } else {
-        this.hasMoreHistory = false;
+        this.hideLoadingIndicator();
+
+        if (history && history.messages && history.messages.length > 0) {
+          // 메시지 배열에 추가
+          this.messages = history.messages;
+          this.oldestMessageId = history.messages[0].id;
+          this.oldestMessageTimestamp = history.messages[0].timestamp;
+
+          // DOM에 렌더링
+          history.messages.forEach(message => {
+            const messageElement = this.createMessageElement(message);
+            this.messagesArea.appendChild(messageElement);
+          });
+
+          // 맨 아래로 스크롤
+          this.scrollToBottom(false);
+
+          // 더 불러올 메시지가 있는지 확인
+          this.hasMoreHistory = history.messages.length >= limit;
+        } else {
+          this.hasMoreHistory = false;
+          this.addWelcomeMessage();
+        }
+
+        // 로딩 완료 표시
+        this.messagesArea.classList.add('loaded');
+        return; // 성공 시 종료
+
+      } catch (error) {
+        console.warn(`대화 로드 시도 ${attempt}/${maxRetries} 실패:`, error.message);
+
+        if (attempt < maxRetries) {
+          // 로딩 텍스트 업데이트
+          const textEl = this._loadingEl?.querySelector('.chat-loading-text');
+          if (textEl) textEl.textContent = `서버 연결 대기중... (${attempt}/${maxRetries})`;
+          await new Promise(r => setTimeout(r, retryDelay));
+        } else {
+          // 최대 재시도 초과
+          console.error('최근 메시지 로드 실패 (재시도 초과)');
+          this.hideLoadingIndicator();
+          this.messagesArea.classList.add('loaded');
+          this.addWelcomeMessage();
+        }
       }
-
-      // 로딩 완료 표시
-      this.messagesArea.classList.add('loaded');
-    } catch (error) {
-      console.error('최근 메시지 로드 실패:', error);
-      // 실패해도 로딩 완료 표시 (데모 메시지 보이게)
-      this.messagesArea.classList.add('loaded');
-      // 실패하면 환영 메시지 표시
-      this.addWelcomeMessage();
     }
   }
 
@@ -405,6 +453,37 @@ export class ChatManager {
         toolContainer.appendChild(toolToggleBtn);
         toolContainer.appendChild(toolContent);
         content.insertBefore(toolContainer, content.firstChild);
+      }
+
+      // 도구 실행 결과 접힘 표시 (toolsUsed가 있는 경우)
+      if (message.toolsUsed && message.toolsUsed.length > 0) {
+        const toolsContainer = document.createElement('div');
+        toolsContainer.className = 'ai-tools-used-container';
+
+        const toolsToggle = document.createElement('button');
+        toolsToggle.type = 'button';
+        toolsToggle.className = 'ai-tools-used-toggle';
+        const allSuccess = message.toolsUsed.every(t => t.success);
+        const icon = allSuccess ? '✓' : '⚠';
+        toolsToggle.innerHTML = `<span class="tools-used-icon ${allSuccess ? 'success' : 'warning'}">${icon}</span> <span>도구 사용 ${message.toolsUsed.length}개</span>`;
+        toolsToggle.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.parentElement.classList.toggle('expanded');
+        });
+
+        const toolsContent = document.createElement('div');
+        toolsContent.className = 'ai-tools-used-content';
+        for (const tool of message.toolsUsed) {
+          const item = document.createElement('div');
+          item.className = `ai-tools-used-item ${tool.success ? 'success' : 'error'}`;
+          item.innerHTML = `<span class="tool-result-icon">${tool.success ? '✓' : '✗'}</span> <span>${tool.display || tool.name}</span>`;
+          toolsContent.appendChild(item);
+        }
+
+        toolsContainer.appendChild(toolsToggle);
+        toolsContainer.appendChild(toolsContent);
+        content.insertBefore(toolsContainer, content.firstChild);
       }
 
       // Process code blocks - add copy button and syntax highlighting
@@ -955,10 +1034,21 @@ export class ChatManager {
 
       // Hide typing indicator
       this.hideTypingIndicator();
-      
-      // 도구 실행 상태 영역 제거
+
+      // 도구 실행 결과 수집 (접힘 형태로 메시지에 포함)
+      let toolItems = [];
       if (window.soulApp?.socketClient) {
+        toolItems = window.soulApp.socketClient.getToolStatusItems();
         window.soulApp.socketClient.clearToolStatus();
+      }
+      // 서버 응답의 toolsUsed가 있으면 그것도 합침
+      if (response.toolsUsed?.length > 0 && toolItems.length === 0) {
+        toolItems = response.toolsUsed.map(t => ({
+          name: t.name,
+          display: t.display || t.name,
+          success: t.success !== false,
+          error: t.success === false,
+        }));
       }
 
       // Add assistant response
@@ -969,6 +1059,7 @@ export class ChatManager {
         content: content,
         timestamp: new Date(response.timestamp || Date.now()),
         routing: response.routing || null,
+        toolsUsed: toolItems.length > 0 ? toolItems : null,
       });
 
       // 대시보드 실시간 업데이트 (마지막 요청 정보)
@@ -981,9 +1072,11 @@ export class ChatManager {
     } catch (error) {
       // Hide typing indicator
       this.hideTypingIndicator();
-      
-      // 도구 실행 상태 영역 제거
+
+      // 도구 실행 결과 수집 (에러 시에도 보존)
+      let errorToolItems = [];
       if (window.soulApp?.socketClient) {
+        errorToolItems = window.soulApp.socketClient.getToolStatusItems();
         window.soulApp.socketClient.clearToolStatus();
       }
 
@@ -996,9 +1089,11 @@ export class ChatManager {
       } else if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
         errorContent = '🌐 네트워크 연결에 문제가 있어요. 인터넷 연결을 확인해주세요.';
       } else if (errorMsg.includes('500') || errorMsg.includes('502') || errorMsg.includes('503')) {
-        errorContent = '🔧 서버에 일시적인 문제가 발생했어요. 잠시 후 다시 시도해주세요.';
+        // 서버 에러 메시지에서 실제 내용 추출하여 표시
+        const detail = errorMsg.replace(/^HTTP \d+:\s*/, '').trim();
+        errorContent = `🔧 서버에 문제가 발생했어요.\n\n📋 ${detail || '일시적인 오류'}`;
       } else {
-        errorContent = '😅 메시지 전송 중 문제가 발생했어요. 다시 시도해주세요.';
+        errorContent = `😅 메시지 전송 중 문제가 발생했어요.\n\n📋 ${errorMsg.substring(0, 300) || '알 수 없는 오류'}`;
       }
 
       // Add error message
@@ -1006,6 +1101,7 @@ export class ChatManager {
         role: 'assistant',
         content: errorContent,
         timestamp: new Date(),
+        toolsUsed: errorToolItems.length > 0 ? errorToolItems : null,
       });
 
       console.error('메시지 전송 실패:', error);

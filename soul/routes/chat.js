@@ -264,8 +264,8 @@ ${rulesText}</self_notes>\n\n`;
     let actualUsage = {}; // 실제 API가 반환한 토큰 사용량
     // 토큰 분류 정보 (대시보드용)
     let tokenBreakdown = { messages: 0, system: 0, tools: 0, toolCount: 0 };
+    let serviceName, modelId;
     try {
-      let serviceName, modelId;
 
       // 모델명으로 서비스 추론하는 헬퍼
       function inferServiceFromModel(model) {
@@ -282,7 +282,7 @@ ${rulesText}</self_notes>\n\n`;
       }
 
       // 유효한 서비스명인지 확인
-      const VALID_SERVICES = ['anthropic', 'openai', 'google', 'xai', 'huggingface', 'ollama', 'lightning', 'vertex'];
+      const VALID_SERVICES = ['anthropic', 'openai', 'google', 'xai', 'huggingface', 'ollama', 'lightning', 'vertex', 'openrouter'];
 
       // 스마트 라우팅 결과 사용
       if (routingResult && routingResult.modelId) {
@@ -454,7 +454,29 @@ ${rulesText}</self_notes>\n\n`;
       let actualToolCount = 0;
       const TOOL_REQUEST_TAG = '[NEED_TOOLS]';
 
+      // 기억/과거 관련 키워드가 있으면 Phase 1 스킵 → 바로 도구와 함께 호출
+      const lastUserMsg = chatMessages.filter(m => m.role === 'user').pop()?.content || '';
+      const memoryKeywords = /기억|작년|예전|지난번|저번|과거|이전에|그때|몇\s?달\s?전|몇\s?주\s?전|어제|지난\s?주|지난\s?달|작업하던|이야기하던|recall|remember/i;
+      const needsMemory = memoryKeywords.test(lastUserMsg);
+
       if (hasTools && contextLevel !== 'minimal') {
+        if (needsMemory) {
+          // 기억/과거 질문: Phase 1 스킵, 바로 도구와 함께 호출
+          console.log(`[Chat] Memory-related query detected, skipping Phase 1 → direct with tools (${allTools.length})`);
+          actualToolCount = allTools.length;
+
+          aiResult = await aiService.chat(chatMessages, {
+            systemPrompt: combinedSystemPrompt,
+            maxTokens: aiSettings.maxTokens,
+            temperature: aiSettings.temperature,
+            tools: allTools,
+            toolExecutor: toolExecutor,
+            thinking: routingResult.thinking || false,
+            enableToolSearch: toolSearchConfig.enabled,
+            toolSearchType: toolSearchConfig.type,
+            alwaysLoadTools: toolSearchConfig.alwaysLoad
+          });
+        } else {
         // minimal이 아닌 경우: 2-phase 도구 호출
         // 1차 호출: 도구 없이 — 답할 수 있으면 바로 답하고, 못 하면 [NEED_TOOLS]
         const phase1Prompt = combinedSystemPrompt + `\n\n도구(검색, 기억 조회 등) 없이 답할 수 있으면 바로 답하세요. 외부 정보가 필요해서 답할 수 없으면 "${TOOL_REQUEST_TAG}"만 출력하세요.`;
@@ -494,6 +516,7 @@ ${rulesText}</self_notes>\n\n`;
           console.log(`[Chat] Phase 1 sufficient, no tools needed`);
           aiResult = phase1Result;
         }
+        }
       } else {
         // minimal 또는 도구 없음: 바로 응답 (Phase 1 스킵)
         console.log(`[Chat] Direct call (${contextLevel === 'minimal' ? 'minimal context - skip phase1' : 'no tools'})`);
@@ -532,14 +555,14 @@ ${rulesText}</self_notes>\n\n`;
 
       // 오류 유형에 따른 친절한 메시지 생성
       const errorMessage = aiError.message || '';
-      const statusMatch = errorMessage.match(/^(\d{3})/);
+      const statusMatch = errorMessage.match(/\((\d{3})\)/) || errorMessage.match(/^(\d{3})/);
       const statusCode = statusMatch ? parseInt(statusMatch[1]) : null;
 
       if (statusCode === 401 || errorMessage.includes('authentication_error') || errorMessage.includes('invalid x-api-key')) {
         aiResponse = '🔑 API 인증에 문제가 발생했어요. 관리자에게 API 키 설정을 확인해달라고 요청해주세요.';
         console.error('❌ API 키 인증 오류 - .env 파일의 ANTHROPIC_API_KEY 또는 해당 서비스 API 키를 확인하세요.');
-      } else if (statusCode === 429 || errorMessage.includes('rate_limit')) {
-        aiResponse = '⏳ 요청이 너무 많아서 잠시 쉬어가야 해요. 1분 후에 다시 시도해주세요.';
+      } else if (statusCode === 402 || statusCode === 429 || errorMessage.includes('spend limit') || errorMessage.includes('insufficient') || errorMessage.includes('rate_limit') || errorMessage.includes('rate-limit')) {
+        aiResponse = '⏳ 무료 모델이 일시적으로 불안정해요 (재시도 3회 실패). 잠시 후 다시 시도하거나, 다른 모델로 전환해보세요.';
       } else if (statusCode === 500 || statusCode === 502 || statusCode === 503) {
         aiResponse = '🔧 AI 서버에 일시적인 문제가 발생했어요. 잠시 후 다시 시도해주세요.';
       } else if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {
@@ -551,10 +574,16 @@ ${rulesText}</self_notes>\n\n`;
       }
     }
 
+    // 빈 응답 안전장치
+    if (!aiResponse || (typeof aiResponse === 'string' && aiResponse.trim() === '')) {
+      console.warn('[Chat] AI returned empty response');
+      aiResponse = '🤔 응답을 생성하지 못했어요. 다시 시도해주세요.';
+    }
+
     // 6. 알바 위임 체크 - Soul이 [DELEGATE:roleId] 태그를 사용했는지 확인
     let delegatedRole = null;
     let finalResponse = aiResponse;
-    const delegateMatch = aiResponse.match(/\[DELEGATE:([a-z_-]+)\]/i);
+    const delegateMatch = typeof aiResponse === 'string' ? aiResponse.match(/\[DELEGATE:([a-z_-]+)\]/i) : null;
 
     if (delegateMatch) {
       const roleId = delegateMatch[1].toLowerCase();
@@ -695,7 +724,7 @@ ${rulesText}</self_notes>\n\n`;
     UsageStats.addUsage({
       tier,
       modelId: routingResult.modelId,
-      serviceId: routingResult.serviceId || 'unknown',
+      serviceId: serviceName || routingResult.serviceId || 'unknown',
       inputTokens,
       outputTokens,
       totalTokens,
@@ -774,9 +803,14 @@ ${rulesText}</self_notes>\n\n`;
     });
   } catch (error) {
     console.error('Error in chat endpoint:', error);
+    // 에러 메시지에 스택 정보 간략 포함 (디버깅용)
+    const errorDetail = error.message || 'Unknown error';
+    const errorStack = error.stack ? error.stack.split('\n').slice(0, 3).join(' → ') : '';
+    console.error('Error stack:', errorStack);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: errorDetail,
+      message: errorDetail
     });
   }
 });
@@ -1045,6 +1079,185 @@ router.delete('/routing-stats', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+/**
+ * GET /api/chat/embedding-models
+ * 활성 서비스별 임베딩 모델 목록 조회
+ * - OpenRouter: /api/v1/embeddings/models
+ * - OpenAI: /v1/models → embedding 필터
+ * - Google: /v1beta/models → embedContent 필터
+ */
+router.get('/embedding-models', async (req, res) => {
+  try {
+    const db = require('../db');
+    if (!db.db) db.init();
+
+    const allServices = db.db.prepare(
+      'SELECT service_id, name, api_key, base_url FROM ai_services WHERE is_active = 1 AND api_key IS NOT NULL AND api_key != ?'
+    ).all('');
+
+    const groups = []; // { service, serviceId, models[] }
+
+    const fetchers = allServices.map(async (svc) => {
+      const sid = svc.service_id;
+      try {
+        if (sid === 'openrouter') {
+          const resp = await fetch('https://openrouter.ai/api/v1/embeddings/models', {
+            headers: { 'Authorization': `Bearer ${svc.api_key}` }
+          });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const models = (data.data || []).map(m => ({
+            id: m.id,
+            name: m.name || m.id,
+            context_length: m.context_length || null
+          }));
+          if (models.length) groups.push({ service: 'OpenRouter', serviceId: sid, models });
+
+        } else if (sid === 'openai') {
+          const resp = await fetch('https://api.openai.com/v1/models', {
+            headers: { 'Authorization': `Bearer ${svc.api_key}` }
+          });
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const models = (data.data || [])
+            .filter(m => m.id.includes('embedding'))
+            .map(m => ({ id: m.id, name: m.id, context_length: null }));
+          if (models.length) groups.push({ service: 'OpenAI', serviceId: sid, models });
+
+        } else if (sid === 'google') {
+          const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${svc.api_key}`);
+          if (!resp.ok) return;
+          const data = await resp.json();
+          const models = (data.models || [])
+            .filter(m => (m.supportedGenerationMethods || []).includes('embedContent'))
+            .map(m => ({
+              id: m.name?.replace('models/', '') || m.name,
+              name: m.displayName || m.name,
+              context_length: m.inputTokenLimit || null
+            }));
+          if (models.length) groups.push({ service: 'Google', serviceId: sid, models });
+        }
+        // huggingface, ollama 등: 임베딩 전용 목록 API 없음 → 스킵
+      } catch (e) {
+        console.warn(`[embedding-models] ${sid} fetch failed:`, e.message);
+      }
+    });
+
+    await Promise.all(fetchers);
+
+    res.json({ success: true, groups });
+  } catch (error) {
+    console.error('[embedding-models] Error:', error.message);
+    res.json({ success: true, groups: [] });
+  }
+});
+
+/**
+ * GET /api/chat/service-billing
+ * 서비스별 잔액/사용량 조회
+ * - 오픈라우터: 실시간 잔액 API
+ * - 나머지: 내부 UsageStats 기반
+ */
+router.get('/service-billing', async (req, res) => {
+  try {
+    const db = require('../db');
+    if (!db.db) db.init();
+
+    // 활성 서비스 목록 (api_key 있는 것만)
+    const allServices = db.db.prepare(
+      'SELECT service_id, name, api_key, is_active FROM ai_services WHERE is_active = 1 AND api_key IS NOT NULL AND api_key != ?'
+    ).all('');
+
+    const today = new Date().toISOString().split('T')[0];
+    const result = [];
+
+    // usage_stats.service → ai_services.service_id 매핑
+    // (Gemini 등이 openai-compatible로 기록되는 경우 처리)
+    const serviceAliases = {
+      'google': ['google', 'openai-compatible'],
+      'openai': ['openai'],
+      'anthropic': ['anthropic'],
+      'huggingface': ['huggingface'],
+      'openrouter': ['openrouter'],
+      'xai': ['xai'],
+      'ollama': ['ollama'],
+      'lightning': ['lightning']
+    };
+
+    for (const svc of allServices) {
+      const sid = svc.service_id;
+      const aliases = serviceAliases[sid] || [sid];
+      const placeholders = aliases.map(() => '?').join(',');
+
+      // 오늘 사용 통계 집계 (별칭 포함)
+      const stats = db.db.prepare(
+        `SELECT COUNT(*) as count, SUM(input_tokens + output_tokens) as totalTokens FROM usage_stats WHERE date = ? AND service IN (${placeholders})`
+      ).get(today, ...aliases) || { count: 0, totalTokens: 0 };
+
+      // 메타데이터에서 비용 합산
+      const metaRows = db.db.prepare(
+        `SELECT metadata FROM usage_stats WHERE date = ? AND service IN (${placeholders}) AND metadata IS NOT NULL`
+      ).all(today, ...aliases);
+
+      let todayCost = 0;
+      for (const row of metaRows) {
+        try {
+          const meta = JSON.parse(row.metadata);
+          if (meta.cost) todayCost += meta.cost;
+        } catch (e) { /* skip */ }
+      }
+
+      // 톱 모델
+      const topModel = db.db.prepare(
+        `SELECT model, COUNT(*) as cnt FROM usage_stats WHERE date = ? AND service IN (${placeholders}) GROUP BY model ORDER BY cnt DESC LIMIT 1`
+      ).get(today, ...aliases);
+
+      const entry = {
+        serviceId: sid,
+        name: svc.name,
+        todayCost,
+        todayRequests: stats.count || 0,
+        todayTokens: stats.totalTokens || 0,
+        topModel: topModel?.model || null,
+        balance: null
+      };
+
+      // 오픈라우터: 실시간 잔액
+      if (sid === 'openrouter') {
+        try {
+          const [authResp, creditsResp] = await Promise.all([
+            fetch('https://openrouter.ai/api/v1/auth/key', {
+              headers: { 'Authorization': `Bearer ${svc.api_key}` }
+            }),
+            fetch('https://openrouter.ai/api/v1/credits', {
+              headers: { 'Authorization': `Bearer ${svc.api_key}` }
+            })
+          ]);
+
+          if (authResp.ok && creditsResp.ok) {
+            const authData = await authResp.json();
+            const creditsData = await creditsResp.json();
+            entry.balance = {
+              ...authData.data,
+              total_credits: creditsData.data?.total_credits,
+              total_usage: creditsData.data?.total_usage
+            };
+          }
+        } catch (e) {
+          console.warn('[Billing] OpenRouter balance fetch failed:', e.message);
+        }
+      }
+
+      result.push(entry);
+    }
+
+    res.json({ success: true, services: result });
+  } catch (error) {
+    console.error('Error getting service billing:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

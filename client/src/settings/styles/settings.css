@@ -5362,6 +5362,39 @@ textarea.settings-field-input {
   text-overflow: ellipsis;
 }
 
+/* 시스템 역할 태그 */
+.alba-system-tag {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #7c3aed;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+/* 시스템 역할 OFF 힌트 */
+.alba-compact-hint {
+  display: block;
+  font-size: 0.68rem;
+  color: #b08d57;
+  margin-top: 2px;
+}
+
+/* 시스템 역할 모달 안내 배지 */
+.alba-system-badge {
+  font-size: 0.78rem;
+  color: #7c3aed;
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
 /* 알바 추가 버튼 */
 .alba-add-btn {
   display: flex;

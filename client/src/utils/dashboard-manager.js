@@ -30,11 +30,15 @@ class DashboardManager {
       await this.loadServerStatus();
       await this.loadRoutingStats();
       await this.loadLastRequestFromStorage();
+      this.setupBillingRefresh();
+      await this.loadServiceBilling();
       this.initialized = true;
       console.log('Dashboard initialized');
 
       // 30초마다 서버 상태 갱신
       setInterval(() => this.loadServerStatus(), 30000);
+      // 60초마다 서비스 잔액 갱신
+      setInterval(() => this.loadServiceBilling(), 60000);
     } catch (error) {
       console.error('Dashboard initialization failed:', error);
     }
@@ -153,6 +157,7 @@ class DashboardManager {
         this.updateLastRequestCost();
         if (this._cachedModelUsage) this.renderModelUsage(this._cachedModelUsage);
         if (this._cachedCategoryUsage) this.renderCategoryUsage(this._cachedCategoryUsage);
+        if (this._cachedBillingData) this.renderServiceBilling(this._cachedBillingData);
 
         // DB에 저장
         await this.saveCurrencyPreference(currency);
@@ -712,6 +717,126 @@ class DashboardManager {
     }).join('');
   }
 
+  /**
+   * 서비스 잔액 새로고침 버튼
+   */
+  setupBillingRefresh() {
+    const refreshBtn = document.getElementById('refreshBillingBtn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', async () => {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = '로딩...';
+        await this.loadServiceBilling();
+        refreshBtn.textContent = '새로고침';
+        refreshBtn.disabled = false;
+      });
+    }
+  }
+
+  /**
+   * 서비스 잔액/사용량 로드
+   */
+  async loadServiceBilling() {
+    try {
+      const response = await fetch('/api/chat/service-billing');
+      const data = await response.json();
+
+      if (data.success && data.services) {
+        this._cachedBillingData = data.services;
+        this.renderServiceBilling(data.services);
+      }
+    } catch (error) {
+      console.error('Failed to load service billing:', error);
+      const container = document.getElementById('service-billing-list');
+      if (container) {
+        container.innerHTML = '<div class="no-data">잔액 정보를 불러올 수 없습니다</div>';
+      }
+    }
+  }
+
+  /**
+   * 서비스 잔액 카드 렌더링
+   */
+  renderServiceBilling(services) {
+    const container = document.getElementById('service-billing-list');
+    if (!container) return;
+
+    if (!services || services.length === 0) {
+      container.innerHTML = '<div class="no-data">활성화된 서비스 없음</div>';
+      return;
+    }
+
+    const serviceIcons = {
+      'anthropic': '🟣',
+      'openai': '🟢',
+      'google': '🔵',
+      'xai': '⚫',
+      'openrouter': '🟠',
+      'huggingface': '🟡',
+      'ollama': '🔧',
+      'lightning': '⚡'
+    };
+
+    // 잔액 있는 서비스 우선, 그 다음 비용 순
+    const sorted = [...services].sort((a, b) => {
+      if (a.balance && !b.balance) return -1;
+      if (!a.balance && b.balance) return 1;
+      return (b.todayCost || 0) - (a.todayCost || 0);
+    });
+
+    container.innerHTML = sorted.map(svc => {
+      const icon = serviceIcons[svc.serviceId] || '🔹';
+      const todayCostStr = svc.todayCost > 0
+        ? this.formatCost(svc.todayCost)
+        : (this.currentCurrency === 'KRW' ? '₩0' : '$0.00');
+      const topModelName = svc.topModel
+        ? this.getModelDisplayName(svc.topModel)
+        : '-';
+
+      // 잔액 표시 (오픈라우터 등 API 있는 서비스)
+      let balanceHtml = '';
+      if (svc.balance) {
+        const totalCredits = svc.balance.total_credits;
+        const totalUsage = svc.balance.total_usage || 0;
+        const remaining = totalCredits != null ? totalCredits - totalUsage : null;
+
+        if (remaining != null) {
+          const remainStr = this.formatCost(remaining) || '$0.00';
+          const usagePercent = totalCredits > 0
+            ? Math.min(100, Math.round((totalUsage / totalCredits) * 100))
+            : 0;
+          balanceHtml += `
+            <div class="billing-balance-row">
+              <span class="billing-balance-label">잔액</span>
+              <span class="billing-balance-value">${remainStr}</span>
+            </div>
+            <div class="model-usage-bar">
+              <div class="billing-usage-fill" style="width: ${usagePercent}%"></div>
+            </div>
+          `;
+        }
+
+        if (svc.balance.is_free_tier) {
+          balanceHtml += '<span class="billing-tag billing-free">무료 티어</span>';
+        }
+      }
+
+      return `
+        <div class="service-billing-item">
+          <div class="service-billing-item-header">
+            <span class="service-billing-name">${icon} ${svc.name}</span>
+            <span class="service-billing-cost">${todayCostStr}</span>
+          </div>
+          ${balanceHtml}
+          <div class="service-billing-details">
+            <span>오늘 ${svc.todayRequests}회</span>
+            <span>${topModelName}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
   getModelDisplayName(modelId) {
     if (!modelId) return 'Unknown';
 
@@ -776,6 +901,11 @@ class DashboardManager {
     const categoryContainer = document.getElementById('category-usage-list');
     if (categoryContainer) {
       categoryContainer.innerHTML = '<div class="no-data">카테고리별 기록 없음</div>';
+    }
+
+    const billingContainer = document.getElementById('service-billing-list');
+    if (billingContainer) {
+      billingContainer.innerHTML = '<div class="no-data">잔액 정보 없음</div>';
     }
   }
 

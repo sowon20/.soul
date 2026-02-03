@@ -29,7 +29,7 @@ router.post('/execute', async (req, res) => {
     }
 
     // MongoDB에서 역할 조회
-    role = await Role.findOne({ roleId, active: true });
+    role = await Role.findOne({ roleId, isActive: 1 });
     if (!role) {
       return res.status(404).json({
         success: false,
@@ -221,7 +221,7 @@ router.get('/', async (req, res) => {
 
     const filter = {};
     if (category) filter.category = category;
-    if (active !== undefined) filter.active = active === 'true';
+    if (active !== undefined) filter.isActive = active === 'true' ? 1 : 0;
 
     let query = Role.find(filter);
 
@@ -243,6 +243,9 @@ router.get('/', async (req, res) => {
       const successCount = stats.successCount || 0;
       const successRate = usageCount > 0 ? Math.round((successCount / usageCount) * 100) : 0;
 
+      // config 파싱
+      const config = typeof role.config === 'string' ? JSON.parse(role.config || '{}') : (role.config || {});
+
       return {
         roleId: role.roleId,
         name: role.name,
@@ -255,10 +258,12 @@ router.get('/', async (req, res) => {
         temperature: role.temperature,
         triggers: role.triggers,
         tags: role.tags || [],
-        active: role.active === 1 || role.active === true,
+        active: role.isActive === 1 || role.isActive === true,
+        isSystem: role.isSystem === 1 || role.isSystem === true,
         mode: role.mode || 'single',
         chainSteps: role.chainSteps || [],
         parallelRoles: role.parallelRoles || [],
+        config,
         stats: {
           usageCount,
           successRate,
@@ -312,7 +317,7 @@ router.get('/:roleId', async (req, res) => {
         maxTokens: role.maxTokens,
         temperature: role.temperature,
         triggers: role.triggers,
-        active: role.active,
+        active: role.isActive === 1 || role.isActive === true,
         stats: {
           usageCount: role.stats.usageCount,
           successCount: role.stats.successCount,
@@ -459,6 +464,14 @@ router.patch('/:roleId', async (req, res) => {
       });
     }
 
+    // 임베딩 워커 설정 변경 시 프로바이더 캐시 리셋
+    if (roleId === 'embedding-worker') {
+      try {
+        const vectorStore = require('../utils/vector-store');
+        vectorStore.resetEmbeddingProvider();
+      } catch (e) { /* ignore */ }
+    }
+
     res.json({
       success: true,
       message: `알바 정보 업데이트 완료: ${role.name}`,
@@ -467,7 +480,7 @@ router.patch('/:roleId', async (req, res) => {
         name: role.name,
         description: role.description,
         category: role.category,
-        active: role.active,
+        active: role.isActive === 1 || role.isActive === true,
         mode: role.mode,
         chainSteps: role.chainSteps,
         parallelRoles: role.parallelRoles,
@@ -519,7 +532,7 @@ router.put('/:roleId', async (req, res) => {
         name: role.name,
         description: role.description,
         category: role.category,
-        active: role.active
+        active: role.isActive === 1 || role.isActive === true
       }
     });
 
@@ -560,7 +573,7 @@ router.delete('/:roleId', async (req, res) => {
       // 비활성화 (소프트 삭제)
       const role = await Role.findOneAndUpdate(
         { roleId },
-        { $set: { is_active: false } },
+        { $set: { isActive: 0 } },
         { new: true }
       );
 
@@ -596,7 +609,7 @@ router.post('/:roleId/activate', async (req, res) => {
 
     const role = await Role.findOneAndUpdate(
       { roleId },
-      { $set: { active: true } },
+      { $set: { isActive: 1 } },
       { new: true }
     );
 
@@ -613,7 +626,7 @@ router.post('/:roleId/activate', async (req, res) => {
       role: {
         roleId: role.roleId,
         name: role.name,
-        active: role.active
+        active: role.isActive === 1 || role.isActive === true
       }
     });
 
@@ -836,7 +849,7 @@ router.post('/auto-manage', async (req, res) => {
       suggested: []
     };
 
-    const roles = await Role.find({ active: true });
+    const roles = await Role.find({ isActive: 1 });
 
     for (const role of roles) {
       const successRate = role.getSuccessRate();

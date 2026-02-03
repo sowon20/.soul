@@ -1641,6 +1641,10 @@ class SoulApp {
             </div>
             <input type="hidden" name="icon" value="${server.icon || ''}">
           </div>
+          <div>
+            <label style="font-size: 0.85rem; opacity: 0.7;">API Key <span style="font-size: 0.75rem; opacity: 0.5;">(선택)</span></label>
+            <input type="password" name="apiKey" value="" placeholder="${server.hasApiKey ? '••••••••(설정됨)' : '없음'}" style="width: 100%; padding: 8px; border: 1px solid #444; border-radius: 8px; background: #1a1a2e; color: white; box-sizing: border-box;">
+          </div>
           <div style="display: flex; align-items: center; gap: 8px;">
             <input type="checkbox" name="showInDock" id="showInDock" ${server.showInDock ? 'checked' : ''}>
             <label for="showInDock">독(Dock)에 표시</label>
@@ -1680,6 +1684,8 @@ class SoulApp {
         icon: formData.get('icon'),
         showInDock: formData.get('showInDock') === 'on'
       };
+      const apiKeyVal = formData.get('apiKey')?.trim();
+      if (apiKeyVal) updates.apiKey = apiKeyVal;
 
       if (updates.showInDock && !updates.uiUrl) {
         alert('독에 표시하려면 UI 페이지 URL을 입력해주세요.');

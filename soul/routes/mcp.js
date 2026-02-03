@@ -5,6 +5,83 @@ const path = require('path');
 const SystemConfig = require('../models/SystemConfig');
 const { clearCache: clearMCPCache } = require('../utils/mcp-tools');
 
+/**
+ * URL에서 프로토콜 타입 감지 (mcp-tools.js와 동일 로직)
+ */
+function detectProtocol(url) {
+  if (!url) return 'custom';
+  const p = url.replace(/\/+$/, '');
+  if (/\/(v1|sse|mcp)$/i.test(p)) return 'streamable-http';
+  return 'custom';
+}
+
+/**
+ * SSE 응답 텍스트에서 JSON-RPC result 파싱
+ */
+function parseSSEResponse(text) {
+  try {
+    const json = JSON.parse(text);
+    if (json.result) return json.result;
+    return json;
+  } catch { /* SSE 형식 시도 */ }
+  const lines = text.split('\n');
+  for (const line of lines) {
+    if (line.startsWith('data:')) {
+      try {
+        const json = JSON.parse(line.slice(5).trim());
+        if (json.result) return json.result;
+        return json;
+      } catch { /* 다음 줄 */ }
+    }
+  }
+  return null;
+}
+
+/**
+ * 서버에서 도구 목록 가져오기 (프로토콜 자동 감지)
+ */
+async function fetchToolsFromServer(serverInfo, timeoutMs = 3000) {
+  const protocol = detectProtocol(serverInfo.url);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    if (protocol === 'streamable-http') {
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream'
+      };
+      if (serverInfo.apiKey) headers['Authorization'] = `Bearer ${serverInfo.apiKey}`;
+
+      const res = await fetch(serverInfo.url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 1 }),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      const result = parseSSEResponse(text);
+      return result?.tools || [];
+    } else {
+      const baseUrl = serverInfo.url.replace(/\/sse\/?$/, '');
+      const res = await fetch(baseUrl + '/tools', { signal: controller.signal });
+      clearTimeout(timeout);
+      const data = await res.json();
+      return data.tools || [];
+    }
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e.name === 'AbortError') {
+      console.log(`[MCP] Timeout fetching tools from ${serverInfo.url}`);
+    } else {
+      console.log(`[MCP] Failed to fetch tools from ${serverInfo.url}:`, e.message);
+    }
+    return [];
+  }
+}
+
 // MCP 서버 URL 설정 (환경변수로 외부 서버 지정 가능)
 const MCP_SERVERS = {
   'google-home': process.env.MCP_GOOGLE_HOME_URL || 'http://localhost:8125',
@@ -77,27 +154,11 @@ router.get('/servers', async (req, res) => {
       for (const [serverId, serverInfo] of Object.entries(config.externalServers)) {
         const isEnabled = config.servers[serverId]?.enabled !== false;
 
-        // 도구 개수 조회 시도 (enabled된 서버만, 3초 타임아웃)
+        // 도구 개수 조회 시도 (enabled된 서버만)
         let tools = [];
         if (isEnabled) {
-          try {
-            const baseUrl = serverInfo.url.replace(/\/sse\/?$/, '');
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 3000);
-
-            const toolsRes = await fetch(baseUrl + '/tools', { signal: controller.signal });
-            clearTimeout(timeout);
-
-            const data = await toolsRes.json();
-            tools = data.tools || [];
-            console.log(`[MCP] Got ${tools.length} tools from ${serverId}`);
-          } catch (e) {
-            if (e.name === 'AbortError') {
-              console.log(`[MCP] Timeout fetching tools from ${serverId}`);
-            } else {
-              console.log(`[MCP] Failed to fetch tools from ${serverId}:`, e.message);
-            }
-          }
+          tools = await fetchToolsFromServer(serverInfo);
+          if (tools.length > 0) console.log(`[MCP] Got ${tools.length} tools from ${serverId}`);
         }
 
         servers.push({
@@ -110,7 +171,8 @@ router.get('/servers', async (req, res) => {
           url: serverInfo.url,
           icon: serverInfo.icon,
           uiUrl: serverInfo.uiUrl,
-          showInDock: serverInfo.showInDock ?? false
+          showInDock: serverInfo.showInDock ?? false,
+          hasApiKey: !!serverInfo.apiKey
         });
       }
     }
@@ -138,33 +200,19 @@ router.get('/servers/:id/tools', async (req, res) => {
     const config = await loadServerConfig();
 
     if (config.externalServers?.[id]) {
-      // 외부 서버 - /tools 엔드포인트에서 도구 목록 가져오기
+      // 외부 서버 - 프로토콜 자동 감지하여 도구 목록 가져오기
       const serverInfo = config.externalServers[id];
-      // SSE URL에서 base URL 추출 (예: https://x.com/smarthome/sse -> https://x.com/smarthome)
-      const baseUrl = serverInfo.url.replace(/\/sse\/?$/, '');
-      try {
-        const toolsRes = await fetch(baseUrl + '/tools');
-        const data = await toolsRes.json();
+      const tools = await fetchToolsFromServer(serverInfo, 5000);
+      if (tools.length > 0) {
         res.json({
           success: true,
           server: id,
-          tools: data.tools || [],
+          tools,
           note: `외부 서버 (${serverInfo.name})`
         });
-      } catch (e) {
-        // /tools 실패 시 /info로 폴백
-        try {
-          const infoRes = await fetch(baseUrl + '/info');
-          const info = await infoRes.json();
-          res.json({
-            success: true,
-            server: id,
-            tools: typeof info.tools === 'number' ? Array(info.tools).fill(null).map((_, i) => ({ name: `tool_${i+1}` })) : [],
-            note: `외부 서버 (${info.name || serverInfo.name})`
-          });
-        } catch {
-          res.json({ success: true, server: id, tools: [], note: '서버에 연결할 수 없음' });
-        }
+      } else {
+        // 도구 없거나 연결 실패
+        res.json({ success: true, server: id, tools: [], note: '서버에 연결할 수 없거나 도구가 없습니다' });
       }
     } else {
       res.status(404).json({
@@ -187,7 +235,7 @@ router.get('/servers/:id/tools', async (req, res) => {
  */
 router.post('/servers', async (req, res) => {
   try {
-    const { id, name, url, enabled = true } = req.body;
+    const { id, name, url, apiKey, enabled = true } = req.body;
 
     if (!name || !url) {
       return res.status(400).json({ success: false, error: 'name과 url은 필수입니다' });
@@ -198,12 +246,11 @@ router.post('/servers', async (req, res) => {
     if (!config.externalServers) config.externalServers = {};
 
     const serverId = id || 'mcp_' + Date.now();
-    
+
     // 외부 서버 정보 저장
-    config.externalServers[serverId] = {
-      name,
-      url
-    };
+    const serverData = { name, url };
+    if (apiKey) serverData.apiKey = apiKey;
+    config.externalServers[serverId] = serverData;
     config.servers[serverId] = { enabled };
 
     await saveServerConfig(config);
@@ -248,25 +295,27 @@ router.delete('/servers/:id', async (req, res) => {
 router.put('/servers/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, url, enabled } = req.body;
+    const { name, url, apiKey, enabled } = req.body;
 
     const config = await loadServerConfig();
     if (!config.externalServers) config.externalServers = {};
     if (!config.servers) config.servers = {};
-    
+
     // 외부 서버가 없으면 새로 생성
     if (!config.externalServers[id]) {
-      // 내장 서버(google-home, todo)는 수정 불가
       if (id === 'google-home' || id === 'todo') {
         return res.status(400).json({ success: false, error: '내장 서버는 수정할 수 없습니다' });
       }
-      // 새 외부 서버 생성
       config.externalServers[id] = { name: name || id, url: url || '' };
     }
 
     // 정보 업데이트
     if (name) config.externalServers[id].name = name;
     if (url) config.externalServers[id].url = url;
+    if (apiKey !== undefined) {
+      if (apiKey) config.externalServers[id].apiKey = apiKey;
+      else delete config.externalServers[id].apiKey; // 빈 값이면 삭제
+    }
     if (enabled !== undefined) {
       config.servers[id] = { enabled };
     }
@@ -327,7 +376,7 @@ router.post('/servers/:id/enable', async (req, res) => {
 router.post('/servers/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, icon, uiUrl, showInDock } = req.body;
+    const { name, description, icon, uiUrl, showInDock, apiKey } = req.body;
 
     const config = await loadServerConfig();
 
@@ -338,6 +387,10 @@ router.post('/servers/:id', async (req, res) => {
       if (icon !== undefined) config.externalServers[id].icon = icon;
       if (uiUrl !== undefined) config.externalServers[id].uiUrl = uiUrl;
       if (showInDock !== undefined) config.externalServers[id].showInDock = showInDock;
+      if (apiKey !== undefined) {
+        if (apiKey) config.externalServers[id].apiKey = apiKey;
+        else delete config.externalServers[id].apiKey;
+      }
     } else {
       // 내장 서버인 경우 servers에 저장
       if (!config.servers) config.servers = {};

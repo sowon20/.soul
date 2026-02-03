@@ -104,6 +104,11 @@ class SessionDigest {
 
       await this._saveDigest(digest);
 
+      // 벡터 임베딩 (fire-and-forget)
+      this._embedDigestResults(digest).catch(err => {
+        console.warn('[SessionDigest] Embedding failed (non-blocking):', err.message);
+      });
+
       // 상태 업데이트
       this.lastDigestIndex = messages.length;
       this.lastDigestTime = new Date();
@@ -269,9 +274,10 @@ class SessionDigest {
 
       const response = await service.chat(messages, { temperature, max_tokens: maxTokens });
 
-      if (response && response.content) {
+      const responseText = response?.content || response?.text;
+      if (responseText) {
         console.log(`[SessionDigest] DigestLLM OK (${serviceId}/${modelId})`);
-        return response.content;
+        return responseText;
       }
     } catch (e) {
       console.warn('[SessionDigest] DigestLLM call failed:', e.message);
@@ -469,6 +475,51 @@ class SessionDigest {
       }
     } catch { /* ignore */ }
     return path.join(require('os').homedir(), '.soul');
+  }
+
+  /**
+   * 다이제스트 결과를 벡터 임베딩 (fire-and-forget)
+   */
+  async _embedDigestResults(digest) {
+    try {
+      const vectorStore = require('./vector-store');
+      let embedded = 0;
+
+      // 1. 세션 요약 임베딩
+      if (digest.summary && digest.summary.length >= 10) {
+        await vectorStore.addMessage({
+          id: `digest_summary_${Date.now()}`,
+          content: digest.summary,
+          role: 'system',
+          sessionId: 'embeddings',
+          timestamp: digest.timestamp,
+          tags: ['digest', 'summary']
+        });
+        embedded++;
+      }
+
+      // 2. 추출된 메모리 각각 임베딩
+      for (const mem of (digest.memories || [])) {
+        const memText = typeof mem === 'string' ? mem : (mem.text || '');
+        if (!memText || memText.length < 10) continue;
+
+        await vectorStore.addMessage({
+          id: `digest_mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          content: memText,
+          role: 'system',
+          sessionId: 'embeddings',
+          timestamp: digest.timestamp,
+          tags: ['digest', 'memory']
+        });
+        embedded++;
+      }
+
+      if (embedded > 0) {
+        console.log(`[SessionDigest] Embedded ${embedded} items`);
+      }
+    } catch (e) {
+      console.warn('[SessionDigest] Embedding failed:', e.message);
+    }
   }
 
   async _saveDigest(digest) {

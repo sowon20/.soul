@@ -1,8 +1,7 @@
 /* Settings 스타일 임포트 */
 @import url('themes.css');
 @import url('../settings/styles/settings.css');
-@import url('mcp.css');
-@import url('../components/mcp/google-home-manager.css');
+@import url('mcp.css'); /* app-settings.js에서 mcp-tools-grid 등 사용 */
 @import url('animations.css');
 @import url('components.css');
 @import url('components/chat.css');
@@ -1615,6 +1614,111 @@ body {
   color: rgba(0, 0, 0, 0.4);
 }
 
+/* 서비스 잔액/사용량 */
+.service-billing-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.service-billing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.service-billing-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.5);
+  margin: 0;
+}
+
+.service-billing-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.service-billing-list .no-data {
+  text-align: center;
+  color: rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  padding: 12px 0;
+}
+
+.service-billing-item {
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.service-billing-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.service-billing-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2a2a2a;
+}
+
+.service-billing-cost {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0ea5e9;
+}
+
+.billing-balance-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.billing-balance-label {
+  font-size: 10px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.billing-balance-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: #10b981;
+}
+
+.billing-usage-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.billing-tag {
+  display: inline-block;
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-top: 2px;
+}
+
+.billing-free {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.service-billing-details {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.4);
+  margin-top: 4px;
+}
+
 .activity-list {
   display: flex;
   flex-direction: column;
@@ -1960,6 +2064,44 @@ body {
 
 .chat-messages.loaded {
   opacity: 1;
+}
+
+/* 초기 로딩 인디케이터 */
+.chat-initial-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.chat-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(0, 0, 0, 0.08);
+  border-top-color: rgba(0, 0, 0, 0.25);
+  border-radius: 50%;
+  animation: chat-spin 0.8s linear infinite;
+}
+
+.chat-loading-text {
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+@keyframes chat-spin {
+  to { transform: rotate(360deg); }
+}
+
+[data-theme="dark"] .chat-initial-loading {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+[data-theme="dark"] .chat-loading-spinner {
+  border-color: rgba(255, 255, 255, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.25);
 }
 
 /* 데스크톱에서 사이드바 숨김 시 메시지 영역 상단 여백 제거 */
@@ -3529,6 +3671,77 @@ body {
   background: rgba(0, 0, 0, 0.2);
   padding: 4px 8px;
   border-radius: 4px;
+}
+
+/* 도구 실행 결과 접힘 (메시지 내 표시) */
+.ai-tools-used-container {
+  margin-bottom: 10px;
+}
+
+.ai-tools-used-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: rgba(96, 165, 250, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  border-radius: 16px;
+  color: rgba(160, 200, 255, 0.9);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ai-tools-used-toggle:hover {
+  background: rgba(96, 165, 250, 0.2);
+}
+
+.ai-tools-used-toggle .tools-used-icon {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ai-tools-used-toggle .tools-used-icon.success {
+  color: rgba(74, 222, 128, 0.9);
+}
+
+.ai-tools-used-toggle .tools-used-icon.warning {
+  color: rgba(251, 191, 36, 0.9);
+}
+
+.ai-tools-used-content {
+  display: none;
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: rgba(96, 165, 250, 0.05);
+  border-left: 3px solid rgba(96, 165, 250, 0.3);
+  border-radius: 0 8px 8px 0;
+  font-size: 0.78rem;
+}
+
+.ai-tools-used-container.expanded .ai-tools-used-content {
+  display: block;
+}
+
+.ai-tools-used-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  color: rgba(200, 210, 230, 0.85);
+}
+
+.ai-tools-used-item .tool-result-icon {
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.ai-tools-used-item.success .tool-result-icon {
+  color: rgba(74, 222, 128, 0.9);
+}
+
+.ai-tools-used-item.error .tool-result-icon {
+  color: rgba(239, 68, 68, 0.9);
 }
 
 

@@ -358,11 +358,15 @@ export class AppSettings {
           <form id="mcpAddForm" class="mcp-form">
             <div class="form-group">
               <label>서버 이름</label>
-              <input type="text" name="name" placeholder="예: Smart Home" required>
+              <input type="text" name="name" placeholder="예: Jina AI" required>
             </div>
             <div class="form-group">
-              <label>SSE URL</label>
-              <input type="url" name="url" placeholder="예: https://mcp.example.com/smarthome/sse" required>
+              <label>서버 URL</label>
+              <input type="url" name="url" placeholder="예: https://mcp.jina.ai/v1" required>
+            </div>
+            <div class="form-group">
+              <label>API Key <span style="font-size:0.75rem;color:#999;">(선택)</span></label>
+              <input type="password" name="apiKey" placeholder="Bearer 토큰 (없으면 비워두세요)">
             </div>
             <div class="form-actions">
               <button type="button" class="btn-cancel">취소</button>
@@ -390,6 +394,8 @@ export class AppSettings {
         url: formData.get('url'),
         enabled: true
       };
+      const apiKey = formData.get('apiKey')?.trim();
+      if (apiKey) newServer.apiKey = apiKey;
       
       try {
         await this.apiClient.post('/mcp/servers', newServer);

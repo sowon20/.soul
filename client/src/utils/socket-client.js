@@ -259,6 +259,26 @@ class SoulSocketClient {
   }
 
   /**
+   * 도구 실행 결과 요약 가져오기 (접힘 형태로 메시지에 포함시키기 위함)
+   * @returns {Array<{name, display, success}>} 도구 실행 결과 배열
+   */
+  getToolStatusItems() {
+    const toolStatus = document.querySelector('.tool-execution-status');
+    if (!toolStatus) return [];
+
+    const items = [];
+    toolStatus.querySelectorAll('.tool-status-item').forEach(item => {
+      items.push({
+        name: item.dataset.toolName || '',
+        display: item.querySelector('.tool-display')?.textContent || item.dataset.toolName || '',
+        success: item.classList.contains('success'),
+        error: item.classList.contains('error'),
+      });
+    });
+    return items;
+  }
+
+  /**
    * 도구 상태 영역 제거 (AI 응답 후 호출)
    */
   clearToolStatus() {
