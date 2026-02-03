@@ -10,10 +10,11 @@
  * 5. 메모리 필터링 + confidence 태그 후 저장
  *
  * 실행: 비동기 (응답 지연 없음)
- * LLM: Alba worker (Ollama 로컬) 우선, 없으면 규칙 기반 폴백
+ * LLM: Alba worker (Ollama 로컬) 우선 → OpenRouter 폴백 → 규칙 기반
  */
 
 const { getAlbaWorker } = require('./alba-worker');
+const { AIServiceFactory } = require('./ai-service');
 const configManager = require('./config');
 const path = require('path');
 const fs = require('fs');
@@ -149,6 +150,7 @@ class SessionDigest {
 
   /**
    * 청크 처리: 요약 + 메모리/액션 추출
+   * 우선순위: Ollama → OpenRouter → 규칙 기반
    */
   async _processChunk(chunk, alba) {
     const conversationText = chunk.map(m => {
@@ -156,9 +158,16 @@ class SessionDigest {
       return `${role}: ${(m.content || '').substring(0, 300)}`;
     }).join('\n');
 
+    // 1) Ollama (로컬 LLM)
     if (alba && alba.initialized) {
       return await this._processChunkWithLLM(conversationText, alba);
     }
+
+    // 2) OpenRouter 폴백
+    const orResult = await this._processChunkWithOpenRouter(conversationText);
+    if (orResult) return orResult;
+
+    // 3) 규칙 기반 폴백
     return this._processChunkRuleBased(chunk);
   }
 
@@ -191,19 +200,121 @@ class SessionDigest {
   }
 
   /**
+   * OpenRouter LLM 청크 처리 (2차 폴백)
+   * Ollama 없을 때 OpenRouter 무료 모델로 시도
+   */
+  async _processChunkWithOpenRouter(conversationText) {
+    const systemPrompt = `대화 조각을 분석해서 아래 JSON 형식으로만 한 줄로 응답해. 다른 텍스트 없이 JSON만.
+{"summary":"핵심 내용 2-3문장","memories":["유저에 대한 영구적 사실/취향/목표 0~5개"],"actions":["유저가 할 일/결정 0~5개, 동사로 시작"]}
+규칙: memories는 "유저는 ~" 형태만. 일시적(오늘 기분, 어제 일)은 제외. 성격/취향/습관/관계/목표만.`;
+
+    try {
+      const result = await this._callOpenRouter(systemPrompt, conversationText);
+      if (!result) return null;
+
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          summary: parsed.summary || '',
+          memories: Array.isArray(parsed.memories) ? parsed.memories : [],
+          actions: Array.isArray(parsed.actions) ? parsed.actions : []
+        };
+      }
+    } catch (e) {
+      console.warn('[SessionDigest] OpenRouter chunk failed:', e.message);
+    }
+    return null;
+  }
+
+  /**
+   * OpenRouter API 호출 헬퍼
+   * DB에서 OpenRouter 서비스 활성 여부 + API 키 확인 후 호출
+   * @returns {string|null} LLM 응답 텍스트 또는 null
+   */
+  async _callOpenRouter(systemPrompt, userMessage) {
+    try {
+      // DB에서 OpenRouter 서비스 조회
+      const AIServiceModel = require('../models/AIService');
+      const orService = await AIServiceModel.findOne({ serviceId: 'openrouter' });
+
+      if (!orService || !orService.apiKey) {
+        return null; // OpenRouter 미설정 → 조용히 패스
+      }
+
+      // 모델 선택: 설정된 모델 중 첫 번째 또는 기본값
+      const modelId = (orService.models && orService.models[0]?.id) || 'openai/gpt-oss-20b:free';
+
+      const service = AIServiceFactory.createService('openrouter', orService.apiKey, modelId);
+      if (!service) return null;
+
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ];
+
+      const response = await service.chat(messages, { temperature: 0.3, max_tokens: 800 });
+
+      if (response && response.content) {
+        console.log(`[SessionDigest] OpenRouter OK (${modelId})`);
+        return response.content;
+      }
+    } catch (e) {
+      console.warn('[SessionDigest] OpenRouter call failed:', e.message);
+    }
+    return null;
+  }
+
+  /**
    * 규칙 기반 청크 처리 (폴백)
+   * Ollama 없을 때도 최소한의 요약 + 메모리 추출
    */
   _processChunkRuleBased(chunk) {
     if (!chunk || chunk.length === 0) return null;
 
     const userMsgs = chunk.filter(m => m.role === 'user');
-    const firstUser = userMsgs[0]?.content?.substring(0, 100) || '';
+    const assistantMsgs = chunk.filter(m => m.role === 'assistant');
 
-    return {
-      summary: firstUser ? `"${firstUser}..." 에 대한 대화` : '(내용 없음)',
-      memories: [],
-      actions: []
-    };
+    // 요약: 유저 발화 키워드 추출 (첫 + 마지막)
+    const firstUser = (userMsgs[0]?.content || '').substring(0, 80);
+    const lastUser = userMsgs.length > 1
+      ? (userMsgs[userMsgs.length - 1]?.content || '').substring(0, 80)
+      : '';
+    const summary = lastUser
+      ? `${firstUser}... → ${lastUser}...`
+      : firstUser ? `${firstUser}...` : '(내용 없음)';
+
+    // 메모리: 규칙 기반 키워드 매칭
+    const memories = [];
+    const memoryPatterns = [
+      // "나는 ~" "나 ~" 형태의 자기 진술
+      /(?:나는|내가|저는|제가)\s*(.{10,50}?)(?:[.!?]|$)/g,
+      // 좋아하다/싫어하다
+      /(.{5,30}?(?:좋아|싫어|관심|선호|취향|취미)(?:해|해요|한다|합니다|하는|이야)?)/g,
+      // 직업/학교/전공
+      /(?:직업|일|회사|학교|전공|근무|개발|코딩)[^\n.]{5,40}/g,
+      // 목표/계획
+      /(?:목표|계획|하려고|할 예정|되고 싶|만들고 싶|하고 싶)[^\n.]{5,40}/g,
+    ];
+
+    for (const msg of userMsgs) {
+      const text = (msg.content || '').substring(0, 500);
+      for (const pattern of memoryPatterns) {
+        pattern.lastIndex = 0;
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+          const memText = (match[1] || match[0]).trim();
+          if (memText.length >= 10 && memText.length <= 100 && memories.length < 3) {
+            // 중복 방지
+            if (!memories.some(m => m.includes(memText.substring(0, 15)))) {
+              memories.push(`유저: ${memText}`);
+            }
+          }
+        }
+      }
+    }
+
+    return { summary, memories, actions: [] };
   }
 
   /**
@@ -217,32 +328,43 @@ class SessionDigest {
       .map((r, i) => `[${i + 1}] ${r.summary}`)
       .join('\n');
 
+    // 요약 프롬프트 구성
+    let summaryPrompt;
+    let systemMsg;
+    if (this.previousSummary) {
+      summaryPrompt = `이전 세션 요약:\n${this.previousSummary}\n\n새로 추가된 대화 요약:\n${chunkSummaries}\n\n위 둘을 합쳐서 전체를 5-8문장으로 다시 정리해. 중복 줄이고, 중요한 결정/다짐/감정변화는 꼭 남겨. 요약만 출력.`;
+      systemMsg = '이전 요약과 새 대화를 합쳐 전체 세션을 정리해. 5-8문장, 시간순서 유지. 요약만 출력.';
+    } else {
+      summaryPrompt = chunkSummaries;
+      systemMsg = '대화 청크 요약들을 3-5문장으로 통합 정리해. 시간순서 유지, 중요한 결정/다짐/감정변화 포함. 요약만 출력.';
+    }
+
+    // 1) Ollama
     if (alba && alba.initialized) {
       try {
-        // 이전 요약이 있으면 합쳐서 업데이트
-        let prompt;
-        if (this.previousSummary) {
-          prompt = `이전 세션 요약:\n${this.previousSummary}\n\n새로 추가된 대화 요약:\n${chunkSummaries}\n\n위 둘을 합쳐서 전체를 5-8문장으로 다시 정리해. 중복 줄이고, 중요한 결정/다짐/감정변화는 꼭 남겨. 요약만 출력.`;
-        } else {
-          prompt = chunkSummaries;
-        }
-
-        const systemMsg = this.previousSummary
-          ? '이전 요약과 새 대화를 합쳐 전체 세션을 정리해. 5-8문장, 시간순서 유지. 요약만 출력.'
-          : '대화 청크 요약들을 3-5문장으로 통합 정리해. 시간순서 유지, 중요한 결정/다짐/감정변화 포함. 요약만 출력.';
-
-        const result = await alba._callLLM(systemMsg, prompt);
+        const result = await alba._callLLM(systemMsg, summaryPrompt);
         if (result) return result.trim();
       } catch (e) {
         console.warn('[SessionDigest] Session summary LLM failed:', e.message);
       }
     }
 
-    // 폴백
+    // 2) OpenRouter 폴백
+    try {
+      const orResult = await this._callOpenRouter(systemMsg, summaryPrompt);
+      if (orResult) return orResult.trim();
+    } catch (e) {
+      console.warn('[SessionDigest] Session summary OpenRouter failed:', e.message);
+    }
+
+    // 3) 규칙 기반 폴백: 최대 500자 유지 (누적 방지)
     const newSummary = chunkResults.map(r => r.summary).join(' ');
-    return this.previousSummary
-      ? `${this.previousSummary} ${newSummary}`
-      : newSummary;
+    if (!this.previousSummary) return newSummary.substring(0, 500);
+
+    // 이전 + 새 요약 합치되, 500자 넘으면 뒤쪽(최신)만 남기기
+    const combined = `${this.previousSummary} ${newSummary}`;
+    if (combined.length <= 500) return combined;
+    return combined.substring(combined.length - 500);
   }
 
   /**

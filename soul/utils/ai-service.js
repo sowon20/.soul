@@ -1739,6 +1739,166 @@ class XAIService extends AIService {
 }
 
 /**
+ * OpenRouter 서비스 (OpenAI 호환 — 여러 AI 제공사 통합)
+ * 다이제스트 전용 무료 모델(GPT-OSS-20B) + 다양한 유료/무료 모델
+ */
+class OpenRouterService extends AIService {
+  constructor(apiKey, modelName = 'openai/gpt-oss-20b:free') {
+    super(apiKey);
+    this.modelName = modelName;
+    this.baseUrl = 'https://openrouter.ai/api/v1';
+  }
+
+  async chat(messages, options = {}) {
+    const {
+      systemPrompt = null,
+      maxTokens = 4096,
+      temperature = 1.0,
+      tools = null,
+      toolExecutor = null,
+      documents = null,
+      searchResults = null,
+      outputFormat = null,
+      strictTools = false,
+      thinking = false,
+      prefill = null,
+      enableCache = false,
+      effort = null,
+      toolExamples = null,
+      fineGrainedToolStreaming = false,
+      disableParallelToolUse = false,
+      enableToolSearch = false,
+    } = options;
+
+    const claudeOnlyOptions = { documents, searchResults, outputFormat, strictTools, thinking, prefill, enableCache, effort, toolExamples, fineGrainedToolStreaming, disableParallelToolUse, enableToolSearch };
+    const usedClaudeOptions = Object.entries(claudeOnlyOptions)
+      .filter(([, v]) => v)
+      .map(([k]) => k);
+    if (usedClaudeOptions.length > 0) {
+      console.warn(`[OpenRouter] Claude-only options ignored: ${usedClaudeOptions.join(', ')}`);
+    }
+
+    const apiMessages = [...messages];
+    if (systemPrompt) {
+      apiMessages.unshift({
+        role: 'system',
+        content: systemPrompt
+      });
+    }
+
+    const requestBody = {
+      model: this.modelName,
+      messages: apiMessages,
+      max_tokens: maxTokens,
+    };
+
+    const isReasoningModel = this.modelName.includes('reasoning') || this.modelName.includes('r1');
+    if (!isReasoningModel) {
+      requestBody.temperature = temperature;
+    }
+
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description || '',
+          parameters: t.input_schema || { type: 'object', properties: {} }
+        }
+      }));
+    }
+
+    let response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[OpenRouter] Error response:', errorText);
+      throw new Error(`OpenRouter API error (${response.status}): ${errorText || 'Unknown error'}`);
+    }
+
+    let data = await response.json();
+
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      console.error('[OpenRouter] Invalid data structure:', data);
+      throw new Error('Invalid response from OpenRouter API');
+    }
+
+    // 도구 호출 루프
+    while (data.choices[0].finish_reason === 'tool_calls' && toolExecutor) {
+      const toolCalls = data.choices[0].message.tool_calls;
+      if (!toolCalls || toolCalls.length === 0) break;
+
+      apiMessages.push(data.choices[0].message);
+
+      for (const tc of toolCalls) {
+        const input = JSON.parse(tc.function.arguments || '{}');
+        console.log(`[OpenRouter Tool] Executing: ${tc.function.name}`, input);
+        const result = await toolExecutor(tc.function.name, input);
+        apiMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: typeof result === 'string' ? result : JSON.stringify(result)
+        });
+      }
+
+      requestBody.messages = apiMessages;
+      response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+      data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error.message || 'OpenRouter API error');
+      }
+      if (!data.choices || !data.choices[0]) break;
+    }
+
+    const usage = {
+      input_tokens: data.usage?.prompt_tokens || 0,
+      output_tokens: data.usage?.completion_tokens || 0
+    };
+
+    return { text: data.choices[0].message.content, usage };
+  }
+
+  async analyzeConversation(messages) {
+    const conversationText = messages
+      .map(msg => `${msg.sender}: ${msg.text}`)
+      .join('\n');
+
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({
+        model: this.modelName,
+        messages: [
+          { role: 'user', content: `다음 대화를 분석해서 JSON 형식으로 결과를 반환해줘:\n\n${conversationText}\n\n형식: { topics: [], tags: [], category: "", importance: 1-10 }` }
+        ]
+      })
+    });
+
+    const data = await response.json();
+    const result = JSON.parse(data.choices[0].message.content);
+    return result;
+  }
+}
+
+/**
  * Lightning AI 서비스 (OpenAI 호환)
  */
 class LightningAIService extends AIService {
@@ -2415,6 +2575,15 @@ class AIServiceFactory {
         break;
       }
 
+      case 'openrouter': {
+        const apiKey = await this.getApiKey('openrouter');
+        if (!apiKey) {
+          throw new Error('OPENROUTER_API_KEY not configured. Please save it in Settings.');
+        }
+        serviceInstance = new OpenRouterService(apiKey, model);
+        break;
+      }
+
       case 'ollama':
         serviceInstance = new OllamaService(
           process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
@@ -2528,6 +2697,18 @@ class AIServiceFactory {
           if (!lightningResponse.ok) {
             const errorData = await lightningResponse.json().catch(() => ({}));
             throw new Error(errorData.error?.message || 'Lightning AI API 인증 실패');
+          }
+
+          return { valid: true, message: 'API 키가 유효합니다' };
+
+        case 'openrouter':
+          const openrouterResponse = await fetch('https://openrouter.ai/api/v1/models', {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+
+          if (!openrouterResponse.ok) {
+            const errorData = await openrouterResponse.json().catch(() => ({}));
+            throw new Error(errorData.error?.message || 'OpenRouter API 인증 실패');
           }
 
           return { valid: true, message: 'API 키가 유효합니다' };
@@ -2779,6 +2960,30 @@ class AIServiceFactory {
           ];
           return { success: true, models: hfModels };
 
+        case 'openrouter':
+          // OpenRouter 모델 목록 (API에서 가져오기)
+          const openrouterModelsResponse = await fetch('https://openrouter.ai/api/v1/models', {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+
+          if (!openrouterModelsResponse.ok) {
+            return {
+              success: false,
+              error: 'OpenRouter API 호출 실패',
+              models: []
+            };
+          }
+
+          const openrouterData = await openrouterModelsResponse.json();
+          const openrouterModels = (openrouterData.data || [])
+            .filter(m => m.id) // ID가 있는 것만
+            .map(m => ({
+              id: m.id,
+              name: m.name || m.id,
+              description: m.pricing ? `In: $${m.pricing.prompt}/1M Out: $${m.pricing.completion}/1M` : ''
+            }));
+          return { success: true, models: openrouterModels };
+
         case 'vertex':
           // Vertex AI에서 사용 가능한 Claude 모델 (고정 목록)
           // https://cloud.google.com/vertex-ai/generative-ai/docs/partner-models/use-claude
@@ -2909,6 +3114,7 @@ module.exports = {
   OpenAIService,
   GoogleService,
   XAIService,
+  OpenRouterService,
   LightningAIService,
   OllamaService,
   HuggingFaceService,

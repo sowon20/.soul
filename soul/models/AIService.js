@@ -79,6 +79,19 @@ async function initializeBuiltinServices() {
       ],
       isActive: 0,
       config: {}
+    },
+    {
+      serviceId: 'openrouter',
+      name: 'OpenRouter',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      models: [
+        { id: 'openai/gpt-oss-20b:free', name: 'GPT-OSS 20B (Free)', contextWindow: 131072 },
+        { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B (Free)', contextWindow: 131072 },
+        { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini Flash 2.0 (Free)', contextWindow: 1000000 },
+        { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B (Free)', contextWindow: 131072 }
+      ],
+      isActive: 0,
+      config: {}
     }
   ];
 

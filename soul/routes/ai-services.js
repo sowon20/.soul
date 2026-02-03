@@ -318,6 +318,8 @@ router.post('/:id/refresh-models', async (req, res) => {
         effectiveType = 'xai';
       } else if (service.serviceId === 'lightning') {
         effectiveType = 'lightning';
+      } else if (service.serviceId === 'openrouter') {
+        effectiveType = 'openrouter';
       } else {
         effectiveType = 'openai';
       }
@@ -382,6 +384,8 @@ router.post('/:id/test', async (req, res) => {
         effectiveType = 'xai';
       } else if (service.serviceId === 'lightning') {
         effectiveType = 'lightning';
+      } else if (service.serviceId === 'openrouter') {
+        effectiveType = 'openrouter';
       } else {
         effectiveType = 'openai';
       }

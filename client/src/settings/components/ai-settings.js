@@ -2344,6 +2344,10 @@ export class AISettings {
         bg: 'linear-gradient(135deg, #6b7280 0%, #8b95a5 100%)',
         displayName: 'xAI'
       },
+      'openrouter': {
+        bg: 'linear-gradient(135deg, #8a6fbf 0%, #a88fd4 100%)',
+        displayName: 'OpenRouter'
+      },
       'custom': {
         bg: 'linear-gradient(135deg, #8a9098 0%, #a0a8b0 100%)',
         displayName: null // 원래 이름 사용
