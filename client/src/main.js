@@ -3,8 +3,6 @@
  * Vanilla JS Implementation
  */
 
-import './styles/chat.css';
-import './styles/app-settings.css';
 import { ThemeManager } from './utils/theme-manager.js';
 import { ChatManager } from './components/chat/chat-manager.js?v=18';
 import { PanelManager } from './components/shared/panel-manager.js';

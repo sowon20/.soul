@@ -5,6 +5,8 @@
 @import url('animations.css');
 @import url('components.css');
 @import url('components/chat.css');
+@import url('chat.css');
+@import url('app-settings.css');
 @import url('profile-manager.css');
 
 /* 폰트 */
