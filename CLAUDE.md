@@ -24,33 +24,16 @@ Soul AI는 개인용 AI 어시스턴트 앱입니다. 여러 AI 서비스(Claude
 
 ---
 
-## 배포 환경 (2개)
+## 배포 환경
 
-### 1. Oracle Cloud VM (배포용) - 우선순위 높음
-- **인스턴스**: VM.Standard.E2.1.Micro
-- **스펙**: 1GB RAM, 1/8 OCPU, 50GB 디스크
-- **용도**: 일반 사용자 배포용, 깨끗한 코드
+### Raspberry Pi (배포용)
+- **호스트명**: pi
+- **OS**: Debian (aarch64), Linux 6.12
+- **스펙**: 4GB RAM, ARM64, 58GB SD
+- **포트**: 4000
+- **경로**: `~/soul`
 - **저장**: 파일시스템 기반 (SQLite)
-- **특징**: 데이터 영속성 O, 무료
-
-**최소 동작 요구사항** (~85MB):
-- Express 서버 + 정적 파일 서빙
-- SQLite로 설정 저장/불러오기
-- 설정 적용 확인 가능
-- DB/저장소 변경 시 마이그레이션
-
-### 2. HuggingFace Spaces (테스트용)
-- **Space**: `sowon20/soul` (private)
-- **스펙**: 16GB RAM, Docker 기반
-- **포트**: 7860
-- **용도**: LLM 실제 호출 테스트, 기능 검증
-- **저장**: HF Dataset으로 영속성 유지 (컨테이너 재시작 시 데이터 복원)
-
-**중요**: HF Dataset 연동 코드는 **메인 코드에 없어야 함**
-- Dockerfile에서 HF 전용 래퍼 스크립트로 처리
-- 서버 시작 전: Dataset에서 데이터 복원
-- 서버 종료 시: Dataset으로 백업
-- 메인 코드는 이 존재를 모름
+- **Git remote**: `https://github.com/sowon20/.soul.git`
 
 ---
 
@@ -58,103 +41,49 @@ Soul AI는 개인용 AI 어시스턴트 앱입니다. 여러 AI 서비스(Claude
 
 ### 전체 흐름도
 ```
-[로컬 개발]
+[로컬 개발 (Mac)]
     ↓ git push origin main
-[GitHub] ─────────────────────────────────────────┐
-    │                                              │
-    │ GitHub Actions 자동 실행                      │
-    │ (.github/workflows/sync-to-hf.yml)           │
-    ↓                                              ↓
-[HuggingFace Space]                         [Oracle VM]
-(테스트용, 7860 포트)                        (배포용, 4000 포트)
-자동: HF로 git push                         자동: SSH로 git pull & restart
+[GitHub] ───── GitHub Actions ─────→ [Raspberry Pi]
+                                      SSH로 git pull & restart
+                                      (배포용, 4000 포트)
 ```
 
-**⚡ git push 한 번에 두 환경 모두 자동 배포됨!**
+**⚡ git push 한 번에 라즈베리파이 자동 배포!**
 
-### 핵심 파일 역할
-
-| 파일 | 역할 | 누가 사용 |
-|------|------|----------|
-| `/Dockerfile` | 공용 Dockerfile (SPACE_ID 있으면 HF 모드) | 둘 다 |
-| `/README.md` (YAML 헤더) | HF Space 설정 (sdk: docker, app_port: 7860) | HF Space만 |
-| `/.github/workflows/sync-to-hf.yml` | GitHub→HF & Oracle 자동 배포 | GitHub Actions |
-| `/deploy/hf/hf-wrapper.sh` | HF Dataset 백업/복원 + Oracle Wallet 영속성 | HF Space |
-
-### 포트 및 실행 방식
-```
-Dockerfile: ENV PORT=4000 (기본값)
-    ↓
-HF Space: SPACE_ID 환경변수 자동 설정됨
-    ↓
-CMD: SPACE_ID 있으면 → hf-wrapper.sh (백업/복원 + 서버)
-     SPACE_ID 없으면 → node soul/server/index.js (직접 실행)
-```
-
-**즉, 같은 Dockerfile로 두 환경 모두 동작함!**
-
-### 자동 동기화 설정 (GitHub → HF)
-
-**이미 설정됨:** `.github/workflows/sync-to-hf.yml`
-
-**GitHub Secrets 필요:**
-1. GitHub 레포 → Settings → Secrets and variables → Actions
-2. New repository secret:
-   - `HF_TOKEN`: HuggingFace 토큰 (hf_xxx...)
-   - `ORACLE_SSH_KEY`: Oracle VM SSH 개인키 (-----BEGIN RSA PRIVATE KEY-----...)
-
-**작동 방식:**
-- `git push origin main` 하면
-- GitHub Actions가 자동으로:
-  1. HF Space에 푸시 → HF 자동 재빌드
-  2. Oracle VM에 SSH 접속 → git pull & restart
-
-### 환경별 상세
-
-| 항목 | Oracle VM | HF Spaces |
-|------|-----------|-----------|
-| URL | http://134.185.105.192:4000 | https://sowon20-soul.hf.space |
-| 포트 | 4000 | 7860 |
-| 데이터 저장 | 파일시스템 (영구) | HF Dataset (자동 백업/복원) |
-| 용도 | 배포용 (일반 사용자) | 테스트용 (LLM 호출 검증) |
-| 업데이트 | 자동 (GitHub Actions) | 자동 (GitHub Actions) |
-
-### HF Space 환경변수 설정
-Settings → Variables and secrets에서:
-- `PORT` = `7860`
-- `HF_TOKEN` = `hf_xxx...` (Dataset 백업용, 선택)
-- `HF_DATASET_REPO` = `sowon20/dataset` (Dataset 백업용, 선택)
-
-### Oracle VM 관리
+### 라즈베리파이 관리
 
 **SSH 접속:**
 ```bash
-ssh soul_clean
-# 또는
-ssh -i "~/Downloads/ssh-key-2026-02-02 (1).key" ubuntu@134.185.105.192
+ssh pi
+# ~/.ssh/config:
+#   Host pi
+#   HostName 192.168.0.50
+#   User sowon
 ```
 
-**서버 관리:**
+**서버 실행:**
 ```bash
-# 상태 확인
-sudo systemctl status soul
+# 프로덕션 실행
+cd ~/soul && ./start.sh
 
-# 재시작
-sudo systemctl restart soul
-
-# 로그 보기
-sudo journalctl -u soul -f
-
-# 코드 업데이트 (수동)
-cd ~/soul && git pull && cd client && npm run build && sudo systemctl restart soul
+# start.sh 내용: NODE_ENV=production PORT=4000 node soul/server/index.js
 ```
+
+**코드 업데이트 (수동):**
+```bash
+ssh pi "cd ~/soul && git pull && cd client && npm run build"
+```
+
+### 자동 배포 설정
+
+**워크플로우:** `.github/workflows/sync-to-hf.yml` (이름은 레거시, 실제로는 Pi 배포)
+
+**GitHub Secrets 필요:**
+- `PI_SSH_KEY`: 라즈베리파이 SSH 키
 
 ### 주의사항
-1. **git push 한 번에 HF + Oracle 둘 다 자동 배포됨**
-2. **환경별 코드 분기 금지** - 환경변수로만 차이 처리
-3. **HF 전용 코드는 deploy/ 폴더에만** - 메인 코드 오염 금지
-4. **README.md 상단 YAML은 건드리지 말 것** - HF Space 설정임
-5. **keytar 사용 금지** - 환경변수(ORACLE_PASSWORD 등)로만 인증 처리
+1. **환경별 코드 분기 금지** - 환경변수로만 차이 처리
+2. **keytar 사용 금지** - 환경변수로만 인증 처리
 
 ---
 
@@ -198,12 +127,8 @@ cd ~/soul && git pull && cd client && npm run build && sudo systemctl restart so
 │   ├── utils/             # 유틸리티
 │   └── db/                # 데이터베이스 (SQLite)
 │
-├── deploy/                # 배포 관련 (HF 전용 코드는 여기)
-│   └── hf/                # HuggingFace 전용
-│       ├── hf-wrapper.sh  # Dataset 백업/복원 래퍼
-│       └── Dockerfile     # HF 전용 Dockerfile
-│
-├── Dockerfile             # 범용 Dockerfile (Oracle 등)
+├── deploy/                # 배포 관련
+├── Dockerfile             # Docker 빌드용
 └── .env                   # 환경변수
 ```
 
@@ -247,7 +172,7 @@ lsof -ti :4000 | xargs kill -9; lsof -ti :5173 | xargs kill -9; npm run dev &
 ## 데이터 저장소
 
 ### 통합 저장소 시스템
-- 사용자는 설정 UI에서 **하나의 저장소**만 선택 (로컬/Oracle/FTP/Notion)
+- 사용자는 설정 UI에서 **하나의 저장소**만 선택 (로컬/FTP/Notion)
 - 내부적으로는 용도별 폴더로 자동 분리 (메모리, 설정, 대화 등)
 - 저장 형식: 파일 기반 (SQLite)
 - **하드코딩 절대 없음** - 모든 경로는 사용자 설정에서 가져옴
@@ -319,19 +244,8 @@ source.exportAll() → 공통 JSON → target.importAll()
 # 필수
 PORT=4000
 
-# Oracle DB (선택)
-ORACLE_PASSWORD=xxx
-ORACLE_USER=ADMIN
-ORACLE_CONNECTION_STRING=database_medium
-ORACLE_WALLET_DIR=./wallet
-
 # 데이터 경로
 SOUL_DATA_DIR=~/.soul
-
-# HuggingFace (HF Spaces에서만 사용)
-HF_TOKEN=xxx
-HF_DATASET_REPO=sowon20/dataset
-SPACE_ID=sowon20/soul
 ```
 
 ---
