@@ -725,6 +725,9 @@ class DashboardManager {
     }
 
     if (id.includes('gpt')) {
+      // HF Inference OSS 모델 구분
+      const ossMatch = id.match(/gpt-oss-(\d+b)/);
+      if (ossMatch) return `GPT-OSS ${ossMatch[1].toUpperCase()}`;
       if (id.includes('4o')) return 'GPT-4o';
       if (id.includes('4')) return 'GPT-4';
       if (id.includes('3.5')) return 'GPT-3.5';

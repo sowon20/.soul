@@ -14,17 +14,27 @@ const {
   ListToolsRequestSchema,
 } = require('@modelcontextprotocol/sdk/types.js');
 
-// 도구 모듈 로드
-const memoryTool = require('./tools/memory-tool');
-const contextTool = require('./tools/context-tool');
-const nlpTool = require('./tools/nlp-tool');
+// 도구 모듈 로드 (mcp/tools/ 에서 동적 로딩)
+const fs = require('fs');
+const path = require('path');
 
-// 모든 도구 통합
-const ALL_TOOLS = [
-  memoryTool,
-  contextTool,
-  nlpTool
-];
+const ALL_TOOLS = [];
+const toolsDir = path.join(__dirname, 'tools');
+try {
+  if (fs.existsSync(toolsDir)) {
+    for (const file of fs.readdirSync(toolsDir)) {
+      if (!file.endsWith('.js')) continue;
+      try {
+        const mod = require(path.join(toolsDir, file));
+        if (mod.tools) ALL_TOOLS.push(mod);
+      } catch (e) {
+        console.error(`[MCP] Failed to load ${file}:`, e.message);
+      }
+    }
+  }
+} catch (e) {
+  console.error('[MCP] Failed to read tools dir:', e.message);
+}
 
 // 도구 맵 생성
 const toolsMap = new Map();

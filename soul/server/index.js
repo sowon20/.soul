@@ -42,15 +42,16 @@ global.io = io;
     await restoreScheduledMessages();
     console.log('✅ Scheduled messages restored');
 
-    // ProactiveMessenger 초기화
-    const { getProactiveMessenger } = require('../utils/proactive-messenger');
-    try {
-      const messenger = await getProactiveMessenger(io);
-      messenger.start();
-      console.log('✅ ProactiveMessenger started');
-    } catch (e) {
-      console.error('❌ ProactiveMessenger init failed:', e.message);
-    }
+    // ProactiveMessenger - 기본 OFF (토글 UI 추가 전까지 비활성)
+    // 활성화하려면 설정 UI에서 토글 추가 후 API로 start() 호출
+    // const { getProactiveMessenger } = require('../utils/proactive-messenger');
+    // try {
+    //   const messenger = await getProactiveMessenger(io);
+    //   messenger.start();
+    //   console.log('✅ ProactiveMessenger started');
+    // } catch (e) {
+    //   console.error('❌ ProactiveMessenger init failed:', e.message);
+    // }
   } catch (err) {
     console.error('❌ Database initialization error:', err);
   }

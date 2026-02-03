@@ -250,38 +250,24 @@ export class StorageSettings {
       <div class="modal migration-modal" id="migrationModal" style="display:none">
         <div class="modal-content">
           <div class="modal-header">
-            <h3>📦 저장소 변경</h3>
+            <h3>저장소 변경</h3>
             <button class="close-btn" id="closeMigrationModal">✕</button>
           </div>
           <div class="modal-body">
             <div class="migration-info" id="migrationInfo"></div>
-            <div class="migration-options">
-              <label class="migration-option">
-                <input type="radio" name="migrationOption" value="reset">
-                <div class="option-content">
-                  <strong>🗑️ 초기화</strong>
-                  <span>새 저장소에서 빈 상태로 시작</span>
-                </div>
-              </label>
-              <label class="migration-option">
-                <input type="radio" name="migrationOption" value="keep" checked>
-                <div class="option-content">
-                  <strong>📌 유지</strong>
-                  <span>기존 데이터 그대로 두고 새 저장소 사용</span>
-                </div>
-              </label>
-              <label class="migration-option">
-                <input type="radio" name="migrationOption" value="migrate">
-                <div class="option-content">
-                  <strong>📤 마이그레이션</strong>
-                  <span>기존 데이터를 새 저장소로 복사</span>
-                </div>
-              </label>
+            <p style="margin: 0.8rem 0; color: var(--text-secondary); font-size: 0.9rem;">
+              기존 대화 데이터를 새 저장소로 이동합니다.
+            </p>
+            <div class="migration-progress" id="migrationProgress" style="display:none">
+              <div style="background: var(--bg-tertiary); border-radius: 4px; height: 6px; overflow: hidden; margin: 1rem 0;">
+                <div id="migrationProgressBar" style="height: 100%; background: var(--accent-primary); width: 0%; transition: width 0.3s;"></div>
+              </div>
+              <span id="migrationProgressText" style="font-size: 0.85rem; color: var(--text-secondary);"></span>
             </div>
           </div>
-          <div class="modal-actions">
+          <div class="modal-actions" id="migrationActions">
             <button class="settings-btn" id="cancelMigration">취소</button>
-            <button class="settings-btn settings-btn-primary" id="confirmMigration">확인</button>
+            <button class="settings-btn settings-btn-primary" id="confirmMigration">마이그레이션 시작</button>
           </div>
         </div>
       </div>
@@ -617,11 +603,16 @@ export class StorageSettings {
     const info = this.container.querySelector('#migrationInfo');
 
     info.innerHTML = `
-      <div style="margin-bottom: 1rem; padding: 0.8rem; background: rgba(196, 149, 106, 0.15); border-radius: 8px;">
+      <div style="margin-bottom: 0.5rem; padding: 0.8rem; background: rgba(196, 149, 106, 0.15); border-radius: 8px;">
         <strong>${changesHtml}</strong>
       </div>
-      <p>데이터가 많으면 마이그레이션에 시간이 다소 걸릴 수 있습니다.</p>
     `;
+
+    // 진행률 숨기고 버튼 초기화
+    const progress = this.container.querySelector('#migrationProgress');
+    if (progress) progress.style.display = 'none';
+    const actions = this.container.querySelector('#migrationActions');
+    if (actions) actions.style.display = 'flex';
 
     modal.style.display = 'flex';
   }
@@ -634,15 +625,61 @@ export class StorageSettings {
   async confirmMigration() {
     if (!this.pendingMigration) return;
 
-    const option = this.container.querySelector('input[name="migrationOption"]:checked')?.value;
-    this.closeMigrationModal();
+    const fromType = this.originalConfig?.memory?.type || 'local';
+    const toType = this.storageConfig.memory?.type || 'local';
 
-    // 마이그레이션 옵션에 따라 처리
-    // TODO: 실제 마이그레이션 로직 (option: 'reset', 'keep', 'migrate')
-    console.log('Migration option:', option);
+    // 버튼 비활성화 + 진행률 표시
+    const confirmBtn = this.container.querySelector('#confirmMigration');
+    const cancelBtn = this.container.querySelector('#cancelMigration');
+    const progress = this.container.querySelector('#migrationProgress');
+    const progressText = this.container.querySelector('#migrationProgressText');
+    const progressBar = this.container.querySelector('#migrationProgressBar');
 
-    // 저장 실행
-    await this.doSave();
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '마이그레이션 중...';
+    cancelBtn.style.display = 'none';
+    progress.style.display = 'block';
+    progressText.textContent = '데이터 내보내기 준비 중...';
+    progressBar.style.width = '10%';
+
+    try {
+      // 1. 마이그레이션 실행
+      progressText.textContent = '데이터 이동 중...';
+      progressBar.style.width = '30%';
+
+      const result = await this.apiClient.post('/storage/migrate', {
+        fromType,
+        toType
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || '마이그레이션 실패');
+      }
+
+      progressBar.style.width = '80%';
+      progressText.textContent = `${result.results?.messages || 0}개 메시지 이동 완료. 설정 저장 중...`;
+
+      // 2. 새 설정 저장
+      await this.doSave();
+
+      progressBar.style.width = '100%';
+      progressText.textContent = `완료! ${result.results?.messages || 0}개 메시지, ${result.results?.files || 0}개 파일 이동됨`;
+
+      // 3초 후 모달 닫기
+      setTimeout(() => {
+        this.closeMigrationModal();
+      }, 2000);
+    } catch (error) {
+      console.error('Migration failed:', error);
+      progressBar.style.width = '0%';
+      progressBar.style.background = '#e74c3c';
+      progressText.textContent = `실패: ${error.message}`;
+
+      // 버튼 복원
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '다시 시도';
+      cancelBtn.style.display = 'block';
+    }
   }
 }
 

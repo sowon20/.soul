@@ -280,6 +280,82 @@ class OracleStorage {
   }
 
   /**
+   * 전체 대화 내보내기 (마이그레이션용)
+   * 반환: { "2026-01/2026-01-30": [...messages], ... }
+   */
+  async exportAll(onProgress) {
+    const connection = await this.pool.getConnection();
+    try {
+      // 모든 날짜 가져오기
+      const dates = await connection.execute(
+        `SELECT DISTINCT date_str FROM conversations ORDER BY date_str ASC`,
+        {}, { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+
+      const data = {};
+      let totalMessages = 0;
+
+      for (const row of dates.rows) {
+        const dateStr = row.DATE_STR; // "2026-01-30"
+        if (!dateStr) continue;
+
+        const messages = await this.getMessagesForDate(dateStr);
+        if (messages.length > 0) {
+          const [y, m] = dateStr.split('-');
+          const key = `${y}-${m}/${dateStr}`;
+          data[key] = messages;
+          totalMessages += messages.length;
+          if (onProgress) onProgress({ exported: totalMessages, currentDate: dateStr });
+        }
+      }
+
+      console.log(`[OracleStorage/Export] Exported ${totalMessages} messages`);
+      return data;
+    } finally {
+      await connection.close();
+    }
+  }
+
+  /**
+   * 전체 대화 가져오기 (마이그레이션용)
+   * 입력: { "2026-01/2026-01-30": [...messages], ... }
+   */
+  async importAll(data, onProgress) {
+    let totalMessages = 0;
+    let totalFiles = 0;
+    const keys = Object.keys(data);
+
+    for (const key of keys) {
+      const messages = data[key];
+      if (!messages || messages.length === 0) continue;
+
+      for (const msg of messages) {
+        try {
+          await this.saveMessage({
+            id: msg.id || crypto.randomUUID(),
+            role: msg.role,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            tags: msg.tags || [],
+            metadata: msg.metadata || msg.meta || {}
+          });
+          totalMessages++;
+        } catch (e) {
+          // 중복 키 에러는 무시 (이미 존재하는 메시지)
+          if (e.errorNum === 1) continue;
+          console.warn(`[OracleStorage/Import] Failed to import message:`, e.message);
+        }
+      }
+
+      totalFiles++;
+      if (onProgress) onProgress({ imported: totalMessages, files: totalFiles, total: keys.length });
+    }
+
+    console.log(`[OracleStorage/Import] Imported ${totalMessages} messages in ${totalFiles} files`);
+    return { messages: totalMessages, files: totalFiles };
+  }
+
+  /**
    * 연결 종료
    */
   async close() {

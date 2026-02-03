@@ -252,11 +252,41 @@ lsof -ti :4000 | xargs kill -9; lsof -ti :5173 | xargs kill -9; npm run dev &
 - 저장 형식: 파일 기반 (SQLite)
 - **하드코딩 절대 없음** - 모든 경로는 사용자 설정에서 가져옴
 
-### 저장소 변경 시 옵션
-저장소를 바꾸면 모든 데이터가 함께 이동:
-1. **전부 옮기기** - 기존 데이터 전체 이전
-2. **새로 만들기** - 빈 상태로 시작
-3. **합쳐서 마이그레이션** - 기존 + 새 저장소 데이터 병합
+### 저장소 마이그레이션 (공통 커넥터 방식)
+
+저장소를 바꾸면 **완전 마이그레이션** (기존 데이터를 새 저장소로 이동):
+
+**구조:**
+```
+source.exportAll() → 공통 JSON → target.importAll()
+```
+
+- 모든 저장소 어댑터는 `exportAll()` / `importAll()` 인터페이스를 구현
+- 마이그레이션 코드는 저장소 타입을 모름 → **새 저장소 추가 시 마이그레이션 코드 변경 불필요**
+- 저장소 N개여도 각각 export/import만 구현하면 모든 조합 자동 지원
+
+**공통 JSON 포맷:**
+```json
+{
+  "2026-01/2026-01-30": [{ "role": "user", "content": "...", "timestamp": "...", "meta": {...} }],
+  "2026-02/2026-02-03": [...]
+}
+```
+
+**관련 파일:**
+
+| 파일 | 역할 |
+|------|------|
+| `soul/storage/adapter.js` | 추상 인터페이스 (exportConversations/importConversations) |
+| `soul/utils/conversation-archiver.js` | 로컬/FTP/Notion의 exportAll/importAll 구현 |
+| `soul/utils/oracle-storage.js` | Oracle의 exportAll/importAll 구현 |
+| `soul/routes/storage.js` | `/api/storage/migrate` 엔드포인트 + `createMigrationAdapter()` |
+| `client/.../storage-settings.js` | UI: 마이그레이션 모달 + 진행률 표시 |
+
+**새 저장소 추가 시:**
+1. 해당 저장소 어댑터에 `exportAll(onProgress)` / `importAll(data, onProgress)` 구현
+2. `storage.js`의 `createMigrationAdapter()`에 case 추가
+3. 끝. 다른 모든 저장소와 자동으로 마이그레이션 가능
 
 ---
 

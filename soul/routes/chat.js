@@ -21,6 +21,7 @@ const Message = require('../models/Message');
 const ConversationStore = require('../utils/conversation-store');
 const { loadMCPTools, executeMCPTool } = require('../utils/mcp-tools');
 const { builtinTools, executeBuiltinTool, isBuiltinTool } = require('../utils/builtin-tools');
+const { isProactiveActive } = require('../utils/proactive-messenger');
 const configManager = require('../utils/config');
 const { getAlbaWorker } = require('../utils/alba-worker');
 
@@ -37,18 +38,23 @@ async function getConversationStore() {
 // 도구 정의 캐시 (토큰 절약: 매 요청마다 로드하지 않음)
 let _cachedTools = null;
 let _cachedToolsTimestamp = 0;
+let _cachedToolsCacheKey = null;
 const TOOLS_CACHE_TTL = 60000; // 1분 캐시
 
 async function getCachedTools() {
   const now = Date.now();
-  if (_cachedTools && (now - _cachedToolsTimestamp) < TOOLS_CACHE_TTL) {
+  const proactiveOn = isProactiveActive();
+  const cacheKey = proactiveOn ? 'proactive' : 'basic';
+
+  if (_cachedTools && _cachedToolsCacheKey === cacheKey && (now - _cachedToolsTimestamp) < TOOLS_CACHE_TTL) {
     return _cachedTools;
   }
 
-  const mcpTools = await loadMCPTools();
+  const mcpTools = await loadMCPTools({ includeProactive: proactiveOn });
   _cachedTools = [...builtinTools, ...mcpTools];
   _cachedToolsTimestamp = now;
-  console.log(`[Chat] Tools cache refreshed: ${_cachedTools.length} tools`);
+  _cachedToolsCacheKey = cacheKey;
+  console.log(`[Chat] Tools cache refreshed: ${_cachedTools.length} tools (proactive: ${proactiveOn})`);
   return _cachedTools;
 }
 
@@ -56,7 +62,9 @@ async function getCachedTools() {
 function invalidateToolsCache() {
   _cachedTools = null;
   _cachedToolsTimestamp = 0;
+  _cachedToolsCacheKey = null;
 }
+
 
 /**
  * POST /api/chat
@@ -314,47 +322,43 @@ ${rulesText}</self_notes>\n\n`;
       debugLog(`Tool names: ${allTools.map(t => t.name).join(', ')}`);
       console.log('[Chat] Total tools available:', allTools.length);
 
-      // 로컬 임베딩으로 도구 선택 (토큰 절약)
-      // 단, builtin 도구(recall_memory, get_profile, update_profile)는 항상 포함
-      const builtinToolNames = ['recall_memory', 'get_profile', 'update_profile'];
-      if (allTools.length > 5) {
+      // 도구 선택: 알바(로컬 LLM)가 있어야 MCP 도구 사용 가능
+      // 알바 없음 → builtin만 (AI가 컨텍스트에서 판단)
+      // 알바 있음 → builtin + 알바가 고른 MCP 도구
+      const builtinToolNames = builtinTools.map(t => t.name);
+      const builtinOnly = allTools.filter(t => builtinToolNames.includes(t.name));
+      const mcpTools = allTools.filter(t => !builtinToolNames.includes(t.name));
+
+      if (mcpTools.length > 0) {
         try {
           const alba = await getAlbaWorker();
-          // builtin 도구는 별도 분리
-          const builtinToolsAlways = allTools.filter(t => builtinToolNames.includes(t.name));
-          const otherTools = allTools.filter(t => !builtinToolNames.includes(t.name));
-
-          // 나머지 도구 중에서 선택 (builtin 개수만큼 뺀 예산)
-          const remainingBudget = Math.max(12 - builtinToolsAlways.length, 5);
-          const selectedOtherTools = await alba.selectTools(message, otherTools, remainingBudget);
-
-          if (selectedOtherTools && selectedOtherTools.length > 0) {
-            allTools = [...builtinToolsAlways, ...selectedOtherTools];
-            console.log('[Chat] Tools filtered by embedding (builtin always included):', allTools.map(t => t.name).join(', '));
+          if (alba.initialized) {
+            const budget = Math.max(12 - builtinOnly.length, 5);
+            const selected = await alba.selectTools(message, mcpTools, budget);
+            if (selected && selected.length > 0) {
+              allTools = [...builtinOnly, ...selected];
+              console.log('[Chat] Alba selected tools:', selected.map(t => t.name).join(', '));
+            } else {
+              allTools = builtinOnly;
+            }
+          } else {
+            // 알바 없음 → MCP 도구 사용 불가
+            allTools = builtinOnly;
+            console.log('[Chat] No alba worker - builtin tools only');
           }
-        } catch (toolSelectError) {
-          console.warn('[Chat] Tool selection failed, using all tools:', toolSelectError.message);
+        } catch (e) {
+          allTools = builtinOnly;
+          console.warn('[Chat] Tool selection failed, builtin only:', e.message);
         }
       }
       console.log('[Chat] Using tools:', allTools.map(t => t.name).join(', '));
       
-      // MCP 서버 이름 매핑
-      const mcpServerNames = {
-        'ssh-commander': '터미널',
-        'google-home': '스마트홈',
-        'todo': 'Todo',
-        'varampet': '바램펫',
-        'calendar': '캘린더',
-        'search': '검색'
-      };
-      
-      // 도구 이름 파싱 헬퍼
+      // 도구 이름 파싱 헬퍼 (mcp_123__server__tool → server > tool)
       const parseToolName = (name) => {
         const mcpMatch = name.match(/^mcp_\d+__(.+?)__(.+)$/);
         if (mcpMatch) {
           const [, serverKey, toolName] = mcpMatch;
-          const serverName = mcpServerNames[serverKey] || serverKey;
-          return { server: serverName, tool: toolName, display: `${serverName} > ${toolName}` };
+          return { server: serverKey, tool: toolName, display: `${serverKey} > ${toolName}` };
         }
         const simpleMatch = name.match(/^mcp_\d+__(.+)$/);
         if (simpleMatch) {

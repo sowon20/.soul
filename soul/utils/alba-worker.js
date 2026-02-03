@@ -10,8 +10,8 @@
  * - 도구 선택 (임베딩 기반)
  *
  * 사용 모델:
- * - llama3.1:8b - 판단/생성 (태그, 요약, 메모)
- * - nomic-embed-text - 임베딩 (도구 선택, 유사도)
+ * - 설정 또는 환경변수로 지정 (OLLAMA_LLM_MODEL, OLLAMA_EMBED_MODEL)
+ * - 기본: llama3.1:8b (판단/생성), qwen3-embedding:8b (임베딩)
  */
 
 const { AIServiceFactory } = require('./ai-service');
@@ -49,8 +49,8 @@ class AlbaWorker {
       maxTokens: config.maxTokens || 500,
       temperature: config.temperature || 0.3,
       ollamaBaseUrl: config.ollamaBaseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
-      llmModel: config.llmModel || 'llama3.1:8b',
-      embedModel: config.embedModel || 'qwen3-embedding:8b',  // 4096차원, 한국어 우수
+      llmModel: config.llmModel || process.env.OLLAMA_LLM_MODEL || 'llama3.1:8b',
+      embedModel: config.embedModel || process.env.OLLAMA_EMBED_MODEL || 'qwen3-embedding:8b',
       ...config
     };
 
@@ -79,9 +79,11 @@ class AlbaWorker {
       const data = await response.json();
       const models = data.models?.map(m => m.name) || [];
 
-      // 필요한 모델 확인
-      const hasLLM = models.some(m => m.includes('llama3.1') || m.includes('llama3'));
-      const hasEmbed = models.some(m => m.includes('nomic-embed'));
+      // 설정된 모델이 있는지 확인
+      const llmBase = this.llmModel.split(':')[0];
+      const embedBase = this.embedModel.split(':')[0];
+      const hasLLM = models.some(m => m.includes(llmBase));
+      const hasEmbed = models.some(m => m.includes(embedBase));
 
       if (!hasLLM) {
         console.warn(`[AlbaWorker] LLM model not found. Run: ollama pull ${this.llmModel}`);

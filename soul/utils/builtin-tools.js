@@ -7,6 +7,7 @@
 
 const { getMemoryManager } = require('./memory-layers');
 const ProfileModel = require('../models/Profile');
+const SelfRule = require('../models/SelfRule');
 
 /**
  * 내장 도구 정의 (Claude tool_use 형식)
@@ -47,6 +48,42 @@ const builtinTools = [
       },
       required: ['field', 'value']
     }
+  },
+  {
+    name: 'list_my_rules',
+    description: '저장한 규칙/메모 조회',
+    input_schema: {
+      type: 'object',
+      properties: {
+        category: { type: 'string', enum: ['system', 'coding', 'daily', 'personality', 'user', 'general'], description: '카테고리' },
+        limit: { type: 'number', description: '개수' }
+      }
+    }
+  },
+  {
+    name: 'add_my_rule',
+    description: '배운 것/기억할 것 저장',
+    input_schema: {
+      type: 'object',
+      properties: {
+        rule: { type: 'string', description: '내용' },
+        category: { type: 'string', enum: ['system', 'coding', 'daily', 'personality', 'user', 'general'], description: '카테고리' },
+        priority: { type: 'number', description: '중요도 1-10' },
+        context: { type: 'string', description: '배경' }
+      },
+      required: ['rule']
+    }
+  },
+  {
+    name: 'delete_my_rule',
+    description: '규칙 삭제',
+    input_schema: {
+      type: 'object',
+      properties: {
+        ruleId: { type: 'string', description: '규칙 ID' }
+      },
+      required: ['ruleId']
+    }
   }
 ];
 
@@ -61,6 +98,12 @@ async function executeBuiltinTool(toolName, input) {
       return await getProfile(input);
     case 'update_profile':
       return await updateProfile(input);
+    case 'list_my_rules':
+      return await listMyRules(input);
+    case 'add_my_rule':
+      return await addMyRule(input);
+    case 'delete_my_rule':
+      return await deleteMyRule(input);
     default:
       return { error: `Unknown builtin tool: ${toolName}` };
   }
@@ -242,6 +285,80 @@ async function updateProfile({ field, value, userId }) {
     };
   } catch (error) {
     console.error('[update_profile] Error:', error);
+    return { error: error.message };
+  }
+}
+
+/**
+ * list_my_rules 구현
+ */
+async function listMyRules({ category = null, limit = 20 } = {}) {
+  try {
+    const query = { isActive: true };
+    if (category) query.category = category;
+
+    const rules = await SelfRule.find(query)
+      .sort({ priority: -1, useCount: -1 })
+      .limit(limit);
+
+    if (!rules || rules.length === 0) {
+      return { found: false, message: '저장한 규칙이 없어.' };
+    }
+
+    return {
+      found: true,
+      count: rules.length,
+      rules: rules.map(r => ({
+        id: r._id || r.id,
+        rule: r.rule,
+        category: r.category,
+        priority: r.priority,
+        context: r.context
+      }))
+    };
+  } catch (error) {
+    console.error('[list_my_rules] Error:', error);
+    return { error: error.message };
+  }
+}
+
+/**
+ * add_my_rule 구현
+ */
+async function addMyRule({ rule, category = 'general', priority = 5, context = null }) {
+  try {
+    await SelfRule.create({
+      rule,
+      category,
+      priority,
+      context,
+      isActive: true,
+      useCount: 0
+    });
+
+    console.log(`[add_my_rule] Saved: "${rule.substring(0, 50)}"`);
+    return {
+      success: true,
+      message: `규칙 저장했어: "${rule.substring(0, 50)}${rule.length > 50 ? '...' : ''}"`
+    };
+  } catch (error) {
+    console.error('[add_my_rule] Error:', error);
+    return { error: error.message };
+  }
+}
+
+/**
+ * delete_my_rule 구현
+ */
+async function deleteMyRule({ ruleId }) {
+  try {
+    const result = await SelfRule.deleteOne({ _id: ruleId });
+    if (result.deletedCount > 0) {
+      return { success: true, message: '규칙 삭제했어.' };
+    }
+    return { success: false, message: '해당 규칙을 찾지 못했어.' };
+  } catch (error) {
+    console.error('[delete_my_rule] Error:', error);
     return { error: error.message };
   }
 }

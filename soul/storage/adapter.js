@@ -1,6 +1,11 @@
 /**
  * Storage Adapter Interface
  * 스토리지 플러그인 추상 인터페이스
+ *
+ * 새 저장소 추가 시 구현 필요:
+ * - 기본: connect, disconnect, read, write, delete, exists, list
+ * - 마이그레이션: exportConversations(), importConversations(data)
+ *   공통 JSON 포맷으로 변환하여 어떤 저장소든 상호 이동 가능
  */
 
 class StorageAdapter {
@@ -29,6 +34,12 @@ class StorageAdapter {
 
   // 메타데이터
   async stat(filePath) { throw new Error('Not implemented'); }
+
+  // 마이그레이션 인터페이스 (공통 JSON 포맷)
+  // 반환: { conversations: { "2026-01/2026-01-30": [...messages], ... } }
+  async exportConversations() { throw new Error('Not implemented'); }
+  // 입력: { "2026-01/2026-01-30": [...messages], ... }
+  async importConversations(data) { throw new Error('Not implemented'); }
 
   // 설정 정보
   getInfo() {

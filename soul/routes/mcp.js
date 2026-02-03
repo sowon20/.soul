@@ -112,7 +112,7 @@ router.get('/servers', async (req, res) => {
     servers.push({
       id: 'hub-server',
       name: hubConfig.name || 'Soul Hub Server',
-      description: 'Soul 내장 MCP 서버 - 컨텍스트 도구 제공',
+      description: 'Soul 내장 MCP 서버 - 외부 MCP 도구 확장용',
       type: 'built-in',
       enabled: hubConfig.enabled ?? true,
       tools: hubTools,

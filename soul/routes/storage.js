@@ -1,6 +1,11 @@
 /**
  * Storage Routes
- * 스토리지 관리 및 디렉토리 탐색 API
+ * 스토리지 관리, 디렉토리 탐색, 마이그레이션 API
+ *
+ * 마이그레이션 구조 (공통 커넥터 방식):
+ *   source.exportAll() → 공통 JSON → target.importAll()
+ *   저장소 타입별로 export/import만 구현하면 모든 조합 자동 지원
+ *   관련: createMigrationAdapter(), /api/storage/migrate
  */
 
 const express = require('express');
@@ -266,53 +271,68 @@ router.get('/browse/check', async (req, res) => {
 
 /**
  * POST /api/storage/migrate
- * 저장소 간 데이터 마이그레이션 (전체 데이터 이동)
+ * 저장소 간 데이터 마이그레이션 (공통 커넥터 방식)
+ * source.exportAll() → 공통 JSON → target.importAll()
  */
 router.post('/migrate', async (req, res) => {
   try {
-    // 클라이언트에서 보내는 파라미터: fromType, toType
-    const { fromType, toType, section, from, to } = req.body;
+    const { fromType, toType, fromConfig, toConfig } = req.body;
 
-    // 파라미터 호환성 처리 (fromType/toType 또는 from/to)
-    const sourceType = fromType || from;
-    const targetType = toType || to;
-
-    if (!sourceType || !targetType) {
+    if (!fromType || !toType) {
       return res.status(400).json({
         success: false,
         error: 'fromType, toType 필드가 필요합니다.'
       });
     }
 
-    console.log(`[Storage Migration] 전체 마이그레이션: ${sourceType} → ${targetType}`);
-
-    // 전체 섹션 마이그레이션 (대화, 메모리, 설정 등)
-    const sections = section ? [section] : ['conversations', 'memory', 'config'];
-    const results = {};
-
-    for (const sec of sections) {
-      try {
-        console.log(`[Storage Migration] ${sec} 마이그레이션 시작...`);
-
-        // 저장소 어댑터 로드
-        const sourceAdapter = await getStorageAdapter(sourceType, sec);
-        const targetAdapter = await getStorageAdapter(targetType, sec);
-
-        if (sourceAdapter && targetAdapter) {
-          const result = await migrateData(sourceAdapter, targetAdapter, sec);
-          results[sec] = result;
-          console.log(`[Storage Migration] ${sec} 완료:`, result);
-        } else {
-          results[sec] = { skipped: true, reason: 'adapter not available' };
-        }
-      } catch (secError) {
-        console.error(`[Storage Migration] ${sec} 실패:`, secError.message);
-        results[sec] = { error: secError.message };
-      }
+    if (fromType === toType) {
+      return res.status(400).json({
+        success: false,
+        error: '같은 저장소 타입으로는 마이그레이션할 수 없습니다.'
+      });
     }
 
-    // 중요: 서버의 모든 저장소 인스턴스 리셋하여 새 설정 적용
-    console.log('[Storage Migration] 저장소 인스턴스 재초기화...');
+    console.log(`[Migration] 시작: ${fromType} → ${toType}`);
+
+    // 1. source 어댑터 생성
+    const source = await createMigrationAdapter(fromType, fromConfig);
+    // 2. target 어댑터 생성
+    const target = await createMigrationAdapter(toType, toConfig);
+
+    // 3. 공통 커넥터: source.export() → data → target.import()
+    console.log('[Migration] 데이터 내보내기 중...');
+    const data = await source.exportAll((progress) => {
+      console.log(`[Migration/Export] ${progress.exported}개 메시지 (${progress.currentDate})`);
+    });
+
+    const fileCount = Object.keys(data).length;
+    const msgCount = Object.values(data).reduce((sum, msgs) => sum + msgs.length, 0);
+    console.log(`[Migration] 내보내기 완료: ${msgCount}개 메시지, ${fileCount}개 파일`);
+
+    if (msgCount === 0) {
+      // source 정리
+      if (source.close) await source.close();
+      if (target.close) await target.close();
+      return res.json({
+        success: true,
+        message: '마이그레이션할 데이터가 없습니다.',
+        from: fromType,
+        to: toType,
+        results: { messages: 0, files: 0 }
+      });
+    }
+
+    console.log('[Migration] 데이터 가져오기 중...');
+    const result = await target.importAll(data, (progress) => {
+      console.log(`[Migration/Import] ${progress.imported}개 메시지 (${progress.files}/${progress.total} 파일)`);
+    });
+
+    // source/target 정리
+    if (source.close) await source.close();
+    if (target.close) await target.close();
+
+    // 4. 저장소 인스턴스 리셋 (새 설정 적용)
+    console.log('[Migration] 저장소 인스턴스 재초기화...');
     const { resetMemoryManager } = require('../utils/memory-layers');
     const { resetConversationPipeline } = require('../utils/conversation-pipeline');
     const { clearStorageConfigCache } = require('../utils/conversation-store');
@@ -323,29 +343,17 @@ router.post('/migrate', async (req, res) => {
     resetMemoryManager();
     resetConversationPipeline();
 
-    // 새 저장소 타입으로 연결 시도
-    if (targetType === 'oracle') {
-      try {
-        const { OracleStorage } = require('../utils/oracle-storage');
-        const oracle = new OracleStorage();
-        await oracle.initialize();
-        console.log('[Storage Migration] Oracle 연결 성공');
-      } catch (oracleError) {
-        console.warn('[Storage Migration] Oracle 연결 실패 (무시됨):', oracleError.message);
-      }
-    }
-
-    console.log('[Storage Migration] 마이그레이션 완료!');
+    console.log(`[Migration] 완료! ${result.messages}개 메시지, ${result.files}개 파일`);
 
     res.json({
       success: true,
-      message: '마이그레이션 완료',
-      from: sourceType,
-      to: targetType,
-      results
+      message: `마이그레이션 완료: ${result.messages}개 메시지`,
+      from: fromType,
+      to: toType,
+      results: result
     });
   } catch (error) {
-    console.error('[Storage Migration] Error:', error);
+    console.error('[Migration] Error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -354,84 +362,79 @@ router.post('/migrate', async (req, res) => {
 });
 
 /**
- * 저장소 타입에 맞는 어댑터 생성
+ * 마이그레이션용 어댑터 생성
+ * 모든 어댑터는 exportAll(onProgress) / importAll(data, onProgress) 인터페이스를 가짐
  */
-async function getStorageAdapter(type, section) {
-  const SystemConfig = require('../models/SystemConfig');
-  const config = await SystemConfig.findOne({ configKey: section });
-  const settings = config?.value || {};
+async function createMigrationAdapter(type, config) {
+  const configManager = require('../utils/config');
 
   switch (type) {
     case 'local': {
-      const { LocalStorageAdapter } = require('../storage');
-      const basePath = settings.storagePath || `./${section}`;
-      const adapter = new LocalStorageAdapter({ basePath });
-      await adapter.connect();
-      return adapter;
+      // 현재 설정에서 경로 가져오기 (또는 전달된 config 사용)
+      const memoryConfig = await configManager.getMemoryConfig();
+      const basePath = config?.path || memoryConfig?.storagePath || '~/.soul/data';
+      const expandedPath = basePath.replace(/^~/, require('os').homedir());
+
+      const { ConversationArchiver } = require('../utils/conversation-archiver');
+      const archiver = new ConversationArchiver(expandedPath);
+      await archiver.initialize();
+      return archiver;
     }
 
     case 'ftp': {
+      const memoryConfig = await configManager.getMemoryConfig();
+      const ftpConfig = config || memoryConfig?.ftp;
+      if (!ftpConfig?.host) throw new Error('FTP 설정이 없습니다.');
+
       const { FTPStorage } = require('../utils/ftp-storage');
-      const ftpConfig = settings.ftp || {};
-      const adapter = new FTPStorage({
+      const ftpStorage = new FTPStorage({
         host: ftpConfig.host,
         port: ftpConfig.port || 21,
         user: ftpConfig.user,
         password: ftpConfig.password,
-        basePath: ftpConfig.basePath || `/${section}`
+        basePath: ftpConfig.basePath,
+        secure: ftpConfig.secure || false
       });
-      await adapter.connect();
-      return adapter;
+
+      const { ConversationArchiver } = require('../utils/conversation-archiver');
+      const archiver = new ConversationArchiver(null, { useFTP: true, ftpStorage });
+      await archiver.initialize();
+      return archiver;
+    }
+
+    case 'notion': {
+      const memoryConfig = await configManager.getMemoryConfig();
+      const notionConfig = config || memoryConfig?.notion;
+      if (!notionConfig?.token) throw new Error('Notion 설정이 없습니다.');
+
+      const { NotionStorage } = require('../utils/notion-storage');
+      const notionStorage = new NotionStorage({
+        token: notionConfig.token,
+        databaseId: notionConfig.databaseId
+      });
+
+      const { ConversationArchiver } = require('../utils/conversation-archiver');
+      const archiver = new ConversationArchiver(null, { useNotion: true, notionStorage });
+      await archiver.initialize();
+      return archiver;
     }
 
     case 'oracle': {
       const { OracleStorage } = require('../utils/oracle-storage');
-      const adapter = new OracleStorage();
-      await adapter.connect();
-      return adapter;
+      const memoryConfig = await configManager.getMemoryConfig();
+      const oracleConfig = config || memoryConfig?.oracle || {};
+
+      const oracle = new OracleStorage({
+        user: oracleConfig.user || 'ADMIN',
+        connectString: oracleConfig.connectionString || oracleConfig.connectString || 'database_low',
+        walletDir: oracleConfig.walletPath || undefined
+      });
+      await oracle.initialize();
+      return oracle;
     }
 
     default:
-      return null;
-  }
-}
-
-/**
- * 데이터 마이그레이션 수행
- */
-async function migrateData(source, target, section) {
-  const stats = { files: 0, errors: 0 };
-
-  try {
-    // 파일 기반 저장소의 경우
-    if (typeof source.list === 'function' && typeof source.read === 'function') {
-      const files = await source.list('/');
-
-      for (const file of files) {
-        if (file.isDirectory) continue;
-
-        try {
-          const content = await source.read(file.name);
-          await target.write(file.name, content);
-          stats.files++;
-        } catch (err) {
-          console.error(`[Migration] Failed to migrate ${file.name}:`, err.message);
-          stats.errors++;
-        }
-      }
-    }
-
-    // Oracle 등 DB 기반 저장소의 경우
-    if (typeof source.exportAll === 'function' && typeof target.importAll === 'function') {
-      const data = await source.exportAll(section);
-      await target.importAll(section, data);
-      stats.files = data.length || 1;
-    }
-
-    return stats;
-  } catch (error) {
-    console.error('[Migration] Error:', error);
-    throw error;
+      throw new Error(`지원하지 않는 저장소 타입: ${type}`);
   }
 }
 

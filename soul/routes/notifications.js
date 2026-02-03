@@ -60,6 +60,60 @@ router.get('/', (req, res) => {
 });
 
 /**
+ * GET /api/notifications/proactive/status
+ * 프로액티브 메시징 상태 조회
+ */
+router.get('/proactive/status', (req, res) => {
+  try {
+    const { isProactiveActive } = require('../utils/proactive-messenger');
+    res.json({
+      success: true,
+      enabled: isProactiveActive()
+    });
+  } catch (error) {
+    res.json({ success: true, enabled: false });
+  }
+});
+
+/**
+ * POST /api/notifications/proactive/toggle
+ * 프로액티브 메시징 ON/OFF
+ */
+router.post('/proactive/toggle', async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    const { getProactiveMessenger, resetProactiveMessenger, isProactiveActive } = require('../utils/proactive-messenger');
+    const { clearCache } = require('../utils/mcp-tools');
+    const { invalidateToolsCache } = require('./chat');
+
+    if (enabled) {
+      const io = req.app.get('io');
+      const messenger = await getProactiveMessenger(io);
+      messenger.start();
+      console.log('[Proactive] Started via toggle');
+    } else {
+      resetProactiveMessenger();
+      console.log('[Proactive] Stopped via toggle');
+    }
+
+    // 도구 캐시 무효화 (프로액티브 도구 포함/제외 반영)
+    clearCache();
+    invalidateToolsCache();
+
+    res.json({
+      success: true,
+      enabled: isProactiveActive()
+    });
+  } catch (error) {
+    console.error('Error toggling proactive:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * GET /api/notifications/:notificationId
  * 특정 알림 조회
  */

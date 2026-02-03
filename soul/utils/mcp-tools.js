@@ -48,9 +48,9 @@ function compressInputSchema(schema) {
 }
 
 /**
- * 내장 도구 정의 (description 압축으로 토큰 절약)
+ * 프로액티브 메시징 도구 (프로액티브 기능 ON일 때만 포함)
  */
-const BUILTIN_TOOLS = [
+const PROACTIVE_TOOLS = [
   {
     name: 'send_message',
     description: '즉시 메시지 전송',
@@ -191,11 +191,14 @@ async function executeExternalTool(serverUrl, toolName, input) {
 
 /**
  * MCP 도구 목록 로드 (async)
+ * @param {Object} options
+ * @param {boolean} options.includeProactive - 프로액티브 도구 포함 여부 (기본: false)
  * @returns {Promise<Array>} Claude API tools 형식의 도구 배열
  */
-async function loadMCPTools() {
-  // 캐시 사용 (5분)
-  if (toolsCache && Date.now() - toolsCache.timestamp < 5 * 60 * 1000) {
+async function loadMCPTools({ includeProactive = false } = {}) {
+  // 캐시 키에 proactive 포함 여부 반영
+  const cacheKey = includeProactive ? 'with_proactive' : 'no_proactive';
+  if (toolsCache && toolsCache.key === cacheKey && Date.now() - toolsCache.timestamp < 5 * 60 * 1000) {
     return toolsCache.tools;
   }
 
@@ -204,12 +207,19 @@ async function loadMCPTools() {
   executorsCache = {};
   externalServersCache = {};
 
-  // 1. 내장 도구
-  for (const tool of BUILTIN_TOOLS) {
-    tools.push(tool);
-    executorsCache[tool.name] = executeBuiltinTool;
+  // 1. 프로액티브 도구 (옵션에 따라 포함)
+  if (includeProactive) {
+    for (const tool of PROACTIVE_TOOLS) {
+      tools.push(tool);
+      executorsCache[tool.name] = executeBuiltinTool;
+    }
+    console.log(`[MCP] Loaded ${PROACTIVE_TOOLS.length} proactive tools`);
+  } else {
+    // 프로액티브 도구 executor는 항상 등록 (직접 호출 대비)
+    for (const tool of PROACTIVE_TOOLS) {
+      executorsCache[tool.name] = executeBuiltinTool;
+    }
   }
-  console.log(`[MCP] Loaded ${BUILTIN_TOOLS.length} builtin tools`);
 
   // 2. 로컬 MCP 도구 (mcp/tools/)
   try {
@@ -268,7 +278,7 @@ async function loadMCPTools() {
     console.error('[MCP] Failed to load external servers:', e.message);
   }
 
-  toolsCache = { tools, timestamp: Date.now() };
+  toolsCache = { tools, key: cacheKey, timestamp: Date.now() };
   console.log(`[MCP] Total ${tools.length} tools loaded`);
   return tools;
 }

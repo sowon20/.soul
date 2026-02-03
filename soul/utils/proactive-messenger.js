@@ -466,8 +466,13 @@ function resetProactiveMessenger() {
   globalMessenger = null;
 }
 
+function isProactiveActive() {
+  return globalMessenger !== null && globalMessenger.checkInterval !== null;
+}
+
 module.exports = {
   ProactiveMessenger,
   getProactiveMessenger,
-  resetProactiveMessenger
+  resetProactiveMessenger,
+  isProactiveActive
 };

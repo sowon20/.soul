@@ -115,15 +115,32 @@ export class AppSettings {
         <span id="localeSaveStatus" style="margin-left: 12px; color: #4caf50; font-size: 13px;"></span>
       </div>
 
+      <!-- 선제 메시지 -->
+      <div class="proactive-settings-section" style="margin-top: 24px;">
+        <h3>선제 메시지</h3>
+        <p style="font-size: 12px; color: var(--text-secondary, #888); margin: 4px 0 12px;">AI가 먼저 연락하는 기능 (안부, 예약 메시지). OFF 시 관련 도구가 제외되어 토큰 절약</p>
+        <div class="setting-row" style="display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 14px;">활성화</span>
+          <label class="mcp-toggle">
+            <input type="checkbox" id="proactiveToggle">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div id="proactiveStatus" style="margin-top: 8px; font-size: 12px; color: var(--text-secondary, #888);"></div>
+      </div>
+
       <!-- TODO 메모 -->
       <div class="todo-memo-section" style="margin-top: 20px; padding: 15px; background: rgba(255, 200, 100, 0.2); border: 1px dashed rgba(200, 150, 50, 0.5); border-radius: 8px;">
-        <h4 style="margin: 0 0 10px 0; font-size: 13px; color: #8b7355;">📝 TODO</h4>
+        <h4 style="margin: 0 0 10px 0; font-size: 13px; color: #8b7355;">TODO</h4>
         <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #6b5a47; line-height: 1.8;">
           <li>기본 호스트명 home.soul 로 하기</li>
           <li>도메인 설정 폼 만들기</li>
         </ul>
       </div>
     `;
+
+    // 프로액티브 토글 초기화
+    this.initProactiveToggle();
 
     // 저장 버튼 이벤트
     document.getElementById('saveLocaleBtn')?.addEventListener('click', async () => {
@@ -140,6 +157,38 @@ export class AppSettings {
         console.error('로케일 저장 실패:', e);
         document.getElementById('localeSaveStatus').textContent = '❌ 저장 실패';
         document.getElementById('localeSaveStatus').style.color = '#f44336';
+      }
+    });
+  }
+
+  /**
+   * 프로액티브 토글 초기화
+   */
+  async initProactiveToggle() {
+    const toggle = document.getElementById('proactiveToggle');
+    const status = document.getElementById('proactiveStatus');
+    if (!toggle) return;
+
+    // 현재 상태 로드
+    try {
+      const res = await this.apiClient.get('/notifications/proactive/status');
+      toggle.checked = res.enabled;
+      status.textContent = res.enabled ? '활성 - 선제 메시지 도구 4개 포함 중' : '비활성 - 토큰 절약 중';
+    } catch (e) {
+      status.textContent = '상태 확인 실패';
+    }
+
+    // 토글 이벤트
+    toggle.addEventListener('change', async (e) => {
+      const enabled = e.target.checked;
+      status.textContent = '변경 중...';
+      try {
+        const res = await this.apiClient.post('/notifications/proactive/toggle', { enabled });
+        status.textContent = res.enabled ? '활성 - 선제 메시지 도구 4개 포함 중' : '비활성 - 토큰 절약 중';
+      } catch (err) {
+        console.error('프로액티브 토글 실패:', err);
+        e.target.checked = !enabled; // 롤백
+        status.textContent = '변경 실패';
       }
     });
   }

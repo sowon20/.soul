@@ -512,6 +512,149 @@ class ConversationArchiver {
   }
 
   /**
+   * 전체 대화 내보내기 (마이그레이션용)
+   * 반환: { "2026-01/2026-01-30": [...messages], "2026-02/2026-02-03": [...] }
+   */
+  async exportAll(onProgress) {
+    if (!this.initialized) await this.initialize();
+
+    const data = {};
+    let totalMessages = 0;
+
+    if (this.useNotion) {
+      // Notion: 최근 365일 탐색
+      const today = new Date();
+      for (let i = 0; i < 365; i++) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const messages = await this.getMessagesForDate(date);
+        if (messages.length > 0) {
+          const y = date.getFullYear();
+          const m = String(date.getMonth() + 1).padStart(2, '0');
+          const d = String(date.getDate()).padStart(2, '0');
+          const key = `${y}-${m}/${y}-${m}-${d}`;
+          data[key] = messages;
+          totalMessages += messages.length;
+          if (onProgress) onProgress({ exported: totalMessages, currentDate: `${y}-${m}-${d}` });
+        }
+      }
+    } else if (this.useFTP) {
+      // FTP: conversations/ 하위 폴더 탐색
+      try {
+        const months = await this.ftpStorage.listDir('conversations');
+        for (const month of months) {
+          if (!month.isDirectory) continue;
+          const files = await this.ftpStorage.listDir(`conversations/${month.name}`);
+          for (const file of files) {
+            if (!file.name.endsWith('.json')) continue;
+            try {
+              const content = await this.ftpStorage.readFile(`conversations/${month.name}/${file.name}`);
+              const messages = JSON.parse(content);
+              const key = `${month.name}/${file.name.replace('.json', '')}`;
+              data[key] = messages;
+              totalMessages += messages.length;
+              if (onProgress) onProgress({ exported: totalMessages, currentDate: file.name.replace('.json', '') });
+            } catch (e) {
+              console.warn(`[Archiver/Export] FTP file read failed: ${file.name}`, e.message);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[Archiver/Export] FTP export failed:', e.message);
+      }
+    } else {
+      // 로컬 파일시스템
+      try {
+        const months = await fs.readdir(this.conversationsPath);
+        for (const monthDir of months) {
+          const monthPath = path.join(this.conversationsPath, monthDir);
+          const stat = await fs.stat(monthPath);
+          if (!stat.isDirectory()) continue;
+
+          const files = await fs.readdir(monthPath);
+          for (const file of files) {
+            if (!file.endsWith('.json')) continue;
+            try {
+              const content = await fs.readFile(path.join(monthPath, file), 'utf-8');
+              const messages = JSON.parse(content);
+              const key = `${monthDir}/${file.replace('.json', '')}`;
+              data[key] = messages;
+              totalMessages += messages.length;
+              if (onProgress) onProgress({ exported: totalMessages, currentDate: file.replace('.json', '') });
+            } catch (e) {
+              console.warn(`[Archiver/Export] File read failed: ${file}`, e.message);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[Archiver/Export] Local export failed:', e.message);
+      }
+    }
+
+    console.log(`[Archiver/Export] Exported ${totalMessages} messages in ${Object.keys(data).length} files`);
+    return data;
+  }
+
+  /**
+   * 전체 대화 가져오기 (마이그레이션용)
+   * 입력: { "2026-01/2026-01-30": [...messages], ... }
+   */
+  async importAll(data, onProgress) {
+    if (!this.initialized) await this.initialize();
+
+    let totalMessages = 0;
+    let totalFiles = 0;
+    const keys = Object.keys(data);
+
+    for (const key of keys) {
+      const messages = data[key];
+      if (!messages || messages.length === 0) continue;
+
+      // key: "2026-01/2026-01-30" → monthDir: "2026-01", fileName: "2026-01-30.json"
+      const parts = key.split('/');
+      const monthDir = parts[0];
+      const fileName = parts[1] + '.json';
+
+      try {
+        if (this.useNotion) {
+          // Notion: 메시지 하나씩 저장
+          for (const msg of messages) {
+            const dateStr = msg.timestamp ? new Date(msg.timestamp).toISOString().split('T')[0] : parts[1];
+            await this.notionStorage.saveMessage({
+              role: msg.role,
+              content: msg.content,
+              date: dateStr,
+              timestamp: msg.timestamp,
+              tokens: msg.tokens || 0,
+              meta: msg.meta
+            });
+            totalMessages++;
+          }
+        } else if (this.useFTP) {
+          // FTP: 파일 단위로 저장
+          const remotePath = `conversations/${monthDir}/${fileName}`;
+          await this.ftpStorage.writeFile(remotePath, JSON.stringify(messages, null, 2));
+          totalMessages += messages.length;
+        } else {
+          // 로컬: 파일 단위로 저장
+          const dirPath = path.join(this.conversationsPath, monthDir);
+          await fs.mkdir(dirPath, { recursive: true });
+          await fs.writeFile(path.join(dirPath, fileName), JSON.stringify(messages, null, 2), 'utf-8');
+          totalMessages += messages.length;
+        }
+
+        totalFiles++;
+        if (onProgress) onProgress({ imported: totalMessages, files: totalFiles, total: keys.length });
+      } catch (e) {
+        console.error(`[Archiver/Import] Failed to import ${key}:`, e.message);
+      }
+    }
+
+    console.log(`[Archiver/Import] Imported ${totalMessages} messages in ${totalFiles} files`);
+    return { messages: totalMessages, files: totalFiles };
+  }
+
+  /**
    * 알바 작업 스케줄링 (비동기 백그라운드)
    */
   _scheduleAlbaWork(filePath, dayMessages) {
