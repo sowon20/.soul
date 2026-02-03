@@ -42,6 +42,16 @@ global.io = io;
     await restoreScheduledMessages();
     console.log('✅ Scheduled messages restored');
 
+    // mDNS 서비스 (soul.local 자동 검색)
+    const dnsService = require('../utils/dns-service');
+    await dnsService.startFromConfig();
+    console.log('✅ DNS service started');
+
+    // DDNS 서비스 (외부 접속용 동적 DNS)
+    const ddnsService = require('../utils/ddns-service');
+    await ddnsService.startAutoUpdate();
+    console.log('✅ DDNS service initialized');
+
     // ProactiveMessenger - 기본 OFF (토글 UI 추가 전까지 비활성)
     // 활성화하려면 설정 UI에서 토글 추가 후 API로 start() 호출
     // const { getProactiveMessenger } = require('../utils/proactive-messenger');
@@ -142,7 +152,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 5041;
 
 // Socket.io 연결 관리
 const connectedClients = new Map();

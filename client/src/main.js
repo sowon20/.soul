@@ -959,7 +959,7 @@ class SoulApp {
             <div class="server-item" data-service="backend">
               <span class="server-indicator checking"></span>
               <span class="server-name">Backend</span>
-              <span class="server-port">:4000</span>
+              <span class="server-port">:5041</span>
             </div>
             <div class="server-item" data-service="sqlite">
               <span class="server-indicator checking"></span>

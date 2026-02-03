@@ -576,12 +576,7 @@ export class AISettings {
             </div>
           </div>
 
-          <!-- 메모리 설정 -->
-          <section class="settings-section">
-            <h3 class="settings-section-title">메모리 설정</h3>
-            <p class="settings-section-desc">대화 메모리 자동 저장 및 컨텍스트 관리 설정</p>
-            ${this.renderMemorySettings()}
-          </section>
+          <!-- 메모리 설정: 시스템 자동 관리 (UI 노출 제거) -->
 
         </div>
 

@@ -47,11 +47,11 @@ RUN mkdir -p /app/soul/config/oracle && chown -R node:node /app/soul/config/orac
 USER node
 
 # 포트 설정 (환경변수로 오버라이드 가능)
-EXPOSE 4000
+EXPOSE 5041
 EXPOSE 7860
 
 # 환경변수 (배포 환경에서 오버라이드)
-ENV PORT=4000
+ENV PORT=5041
 ENV NODE_ENV=production
 ENV SOUL_DATA_DIR=/home/node/.soul
 ENV ORACLE_WALLET_DIR=/app/soul/config/oracle

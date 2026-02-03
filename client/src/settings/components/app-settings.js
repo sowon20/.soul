@@ -85,19 +85,88 @@ export class AppSettings {
         <div id="proactiveStatus" style="margin-top: 8px; font-size: 12px; color: var(--text-secondary, #888);"></div>
       </div>
 
-      <!-- TODO 메모 -->
-      <div class="todo-memo-section" style="margin-top: 20px; padding: 15px; background: rgba(255, 200, 100, 0.2); border: 1px dashed rgba(200, 150, 50, 0.5); border-radius: 8px;">
-        <h4 style="margin: 0 0 10px 0; font-size: 13px; color: #8b7355;">TODO</h4>
-        <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #6b5a47; line-height: 1.8;">
-          <li>기본 호스트명 home.soul 로 하기</li>
-          <li>도메인 설정 폼 만들기</li>
-        </ul>
+      <!-- 네트워크 -->
+      <div class="network-settings-section" style="margin-top: 24px;">
+        <h3>네트워크</h3>
+        <p style="font-size: 13px; color: var(--text-secondary, #888); margin: 4px 0 0;">같은 Wi-Fi에서 <strong>soul.local:5041</strong> 으로 접속</p>
+
+        <!-- DDNS -->
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color, #e0e0e0);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <span style="font-size: 14px; font-weight: 500;">외부 접속 (DDNS)</span>
+            <label class="mcp-toggle">
+              <input type="checkbox" id="ddnsToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div id="ddnsSettings" style="display: none;">
+            <div style="margin-bottom: 10px;">
+              <label style="font-size: 12px; color: var(--text-secondary, #888);">프로바이더</label>
+              <select id="ddnsProvider" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color, #ccc); background: var(--input-bg, #fff); color: var(--text-primary, #333); font-size: 13px; margin-top: 4px;">
+                <option value="">선택</option>
+                <option value="duckdns">DuckDNS</option>
+                <option value="freedns">FreeDNS (afraid.org)</option>
+                <option value="noip">No-IP</option>
+              </select>
+            </div>
+
+            <!-- DuckDNS 필드 -->
+            <div id="ddnsFields-duckdns" class="ddns-fields" style="display: none;">
+              <div style="margin-bottom: 8px;">
+                <label style="font-size: 12px; color: var(--text-secondary, #888);">서브도메인</label>
+                <div style="display: flex; align-items: center; gap: 4px; margin-top: 4px;">
+                  <input type="text" id="ddns-duckdns-subdomain" placeholder="mysoul" style="flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color, #ccc); background: var(--input-bg, #fff); color: var(--text-primary, #333); font-size: 13px;">
+                  <span style="font-size: 12px; color: var(--text-secondary, #888);">.duckdns.org</span>
+                </div>
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label style="font-size: 12px; color: var(--text-secondary, #888);">Token</label>
+                <input type="password" id="ddns-duckdns-token" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color, #ccc); background: var(--input-bg, #fff); color: var(--text-primary, #333); font-size: 13px; margin-top: 4px;">
+              </div>
+            </div>
+
+            <!-- FreeDNS 필드 -->
+            <div id="ddnsFields-freedns" class="ddns-fields" style="display: none;">
+              <div style="margin-bottom: 8px;">
+                <label style="font-size: 12px; color: var(--text-secondary, #888);">Update Token</label>
+                <input type="password" id="ddns-freedns-token" placeholder="Direct URL의 해시값" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color, #ccc); background: var(--input-bg, #fff); color: var(--text-primary, #333); font-size: 13px; margin-top: 4px;">
+                <p style="font-size: 11px; color: var(--text-secondary, #888); margin: 4px 0 0;">freedns.afraid.org > Dynamic DNS 페이지에서 Direct URL 끝부분의 해시</p>
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label style="font-size: 12px; color: var(--text-secondary, #888);">도메인 (표시용)</label>
+                <input type="text" id="ddns-freedns-domain" placeholder="mysoul.mooo.com" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color, #ccc); background: var(--input-bg, #fff); color: var(--text-primary, #333); font-size: 13px; margin-top: 4px;">
+              </div>
+            </div>
+
+            <!-- No-IP 필드 -->
+            <div id="ddnsFields-noip" class="ddns-fields" style="display: none;">
+              <div style="margin-bottom: 8px;">
+                <label style="font-size: 12px; color: var(--text-secondary, #888);">호스트명</label>
+                <input type="text" id="ddns-noip-hostname" placeholder="mysoul.ddns.net" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color, #ccc); background: var(--input-bg, #fff); color: var(--text-primary, #333); font-size: 13px; margin-top: 4px;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label style="font-size: 12px; color: var(--text-secondary, #888);">사용자명</label>
+                <input type="text" id="ddns-noip-username" placeholder="이메일 또는 사용자명" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color, #ccc); background: var(--input-bg, #fff); color: var(--text-primary, #333); font-size: 13px; margin-top: 4px;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label style="font-size: 12px; color: var(--text-secondary, #888);">비밀번호</label>
+                <input type="password" id="ddns-noip-password" placeholder="비밀번호" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color, #ccc); background: var(--input-bg, #fff); color: var(--text-primary, #333); font-size: 13px; margin-top: 4px;">
+              </div>
+            </div>
+
+            <button id="ddnsSaveBtn" style="width: 100%; padding: 8px; border-radius: 8px; border: none; background: var(--accent-color, #007aff); color: white; font-size: 13px; cursor: pointer; margin-top: 8px;">저장 및 테스트</button>
+            <div id="ddnsStatus" style="margin-top: 8px; font-size: 12px; color: var(--text-secondary, #888);"></div>
+          </div>
+        </div>
       </div>
     `;
 
     // 프로액티브 토글 초기화
     this.initProactiveToggle();
 
+    // DDNS 초기화
+    this.initDDNS();
   }
 
   /**
@@ -130,6 +199,147 @@ export class AppSettings {
         status.textContent = '변경 실패';
       }
     });
+  }
+
+  /**
+   * DDNS 설정 초기화
+   */
+  async initDDNS() {
+    const toggle = document.getElementById('ddnsToggle');
+    const settings = document.getElementById('ddnsSettings');
+    const provider = document.getElementById('ddnsProvider');
+    const saveBtn = document.getElementById('ddnsSaveBtn');
+    const statusEl = document.getElementById('ddnsStatus');
+
+    if (!toggle) return;
+
+    // 기존 설정 로드
+    try {
+      const res = await fetch('/api/config/ddns');
+      const data = await res.json();
+      const config = data.config || {};
+
+      toggle.checked = config.enabled || false;
+      settings.style.display = config.enabled ? 'block' : 'none';
+
+      if (config.provider) {
+        provider.value = config.provider;
+        this._showDDNSFields(config.provider);
+        this._fillDDNSFields(config);
+      }
+
+      if (data.publicIP) {
+        statusEl.textContent = `공인 IP: ${data.publicIP}`;
+      }
+    } catch (err) {
+      console.warn('DDNS 설정 로드 실패:', err);
+    }
+
+    // 토글
+    toggle.addEventListener('change', () => {
+      settings.style.display = toggle.checked ? 'block' : 'none';
+      if (!toggle.checked) {
+        // 비활성화 저장
+        this._saveDDNS({ enabled: false, provider: '' });
+      }
+    });
+
+    // 프로바이더 변경
+    provider.addEventListener('change', () => {
+      this._showDDNSFields(provider.value);
+    });
+
+    // 저장
+    saveBtn.addEventListener('click', async () => {
+      const config = this._collectDDNSConfig();
+      if (!config) return;
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = '테스트 중...';
+      statusEl.textContent = '';
+
+      try {
+        const result = await this._saveDDNS(config);
+        if (result.success) {
+          statusEl.style.color = '#34c759';
+          statusEl.textContent = result.result
+            ? `${result.result.domain} → ${result.result.ip} (${result.result.changed ? '갱신됨' : '확인됨'})`
+            : 'DDNS 비활성화됨';
+        } else {
+          statusEl.style.color = '#ff3b30';
+          statusEl.textContent = `실패: ${result.error}`;
+        }
+      } catch (err) {
+        statusEl.style.color = '#ff3b30';
+        statusEl.textContent = `오류: ${err.message}`;
+      }
+
+      saveBtn.disabled = false;
+      saveBtn.textContent = '저장 및 테스트';
+    });
+  }
+
+  _showDDNSFields(provider) {
+    document.querySelectorAll('.ddns-fields').forEach(el => el.style.display = 'none');
+    if (provider) {
+      const fields = document.getElementById(`ddnsFields-${provider}`);
+      if (fields) fields.style.display = 'block';
+    }
+  }
+
+  _fillDDNSFields(config) {
+    switch (config.provider) {
+      case 'duckdns':
+        document.getElementById('ddns-duckdns-subdomain').value = config.subdomain || '';
+        document.getElementById('ddns-duckdns-token').value = config.token || '';
+        break;
+      case 'freedns':
+        document.getElementById('ddns-freedns-token').value = config.updateToken || '';
+        document.getElementById('ddns-freedns-domain').value = config.domain || '';
+        break;
+      case 'noip':
+        document.getElementById('ddns-noip-hostname').value = config.hostname || '';
+        document.getElementById('ddns-noip-username').value = config.username || '';
+        document.getElementById('ddns-noip-password').value = config.password || '';
+        break;
+    }
+  }
+
+  _collectDDNSConfig() {
+    const provider = document.getElementById('ddnsProvider').value;
+    if (!provider) return null;
+
+    const base = { enabled: true, provider };
+
+    switch (provider) {
+      case 'duckdns':
+        return { ...base,
+          subdomain: document.getElementById('ddns-duckdns-subdomain').value.trim(),
+          token: document.getElementById('ddns-duckdns-token').value.trim()
+        };
+      case 'freedns':
+        return { ...base,
+          updateToken: document.getElementById('ddns-freedns-token').value.trim(),
+          domain: document.getElementById('ddns-freedns-domain').value.trim()
+        };
+      case 'noip':
+        return { ...base,
+          hostname: document.getElementById('ddns-noip-hostname').value.trim(),
+          username: document.getElementById('ddns-noip-username').value.trim(),
+          password: document.getElementById('ddns-noip-password').value.trim()
+        };
+      default:
+        return null;
+    }
+  }
+
+  async _saveDDNS(config) {
+    const res = await fetch('/api/config/ddns', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+    return await res.json();
   }
 
   /**

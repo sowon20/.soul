@@ -597,7 +597,7 @@ router.get('/server-status', async (req, res) => {
   };
 
   const status = {
-    backend: { online: true, port: process.env.PORT || 4000 },
+    backend: { online: true, port: process.env.PORT || 5041 },
     sqlite: { online: false, label: '설정 DB' },
     storage: { online: false, type: 'local', label: '로딩중...' }
   };
@@ -857,6 +857,57 @@ router.put('/preferences', async (req, res) => {
   } catch (error) {
     console.error('Error saving preferences:', error);
     res.status(500).json({ error: 'Internal Server Error', message: error.message });
+  }
+});
+
+// ============================================================
+// DDNS 설정
+// ============================================================
+
+/**
+ * GET /api/config/ddns
+ * DDNS 설정 + 공인 IP 조회
+ */
+router.get('/ddns', async (req, res) => {
+  try {
+    const ddns = require('../utils/ddns-service');
+    const config = await ddns.getConfig();
+    const publicIP = await ddns.getPublicIP();
+    res.json({ config: config || { enabled: false, provider: '' }, publicIP });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /api/config/ddns
+ * DDNS 설정 저장 + 즉시 테스트
+ */
+router.put('/ddns', async (req, res) => {
+  try {
+    const ddns = require('../utils/ddns-service');
+    const config = req.body;
+
+    // 저장
+    await ddns.saveConfig(config);
+
+    // 활성화 시 즉시 테스트
+    if (config.enabled) {
+      try {
+        const result = await ddns.update(config);
+        // 자동 갱신 재시작
+        await ddns.startAutoUpdate();
+        res.json({ success: true, result });
+      } catch (err) {
+        // 설정은 저장되지만 업데이트 실패
+        res.json({ success: false, error: err.message });
+      }
+    } else {
+      ddns.stop();
+      res.json({ success: true });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 

@@ -30,7 +30,7 @@ Soul AI는 개인용 AI 어시스턴트 앱입니다. 여러 AI 서비스(Claude
 - **호스트명**: pi
 - **OS**: Debian (aarch64), Linux 6.12
 - **스펙**: 4GB RAM, ARM64, 58GB SD
-- **포트**: 4000
+- **포트**: 5041
 - **경로**: `~/soul`
 - **저장**: 파일시스템 기반 (SQLite)
 - **Git remote**: `https://github.com/sowon20/.soul.git`
@@ -45,7 +45,7 @@ Soul AI는 개인용 AI 어시스턴트 앱입니다. 여러 AI 서비스(Claude
     ↓ git push origin main
 [GitHub] ───── GitHub Actions ─────→ [Raspberry Pi]
                                       SSH로 git pull & restart
-                                      (배포용, 4000 포트)
+                                      (배포용, 5041 포트)
 ```
 
 **⚡ git push 한 번에 라즈베리파이 자동 배포!**
@@ -66,7 +66,7 @@ ssh pi
 # 프로덕션 실행
 cd ~/soul && ./start.sh
 
-# start.sh 내용: NODE_ENV=production PORT=4000 node soul/server/index.js
+# start.sh 내용: NODE_ENV=production PORT=5041 node soul/server/index.js
 ```
 
 **코드 업데이트 (수동):**
@@ -147,8 +147,8 @@ cd soul && npm run dev
 cd client && npm run dev
 ```
 
-**포트**: 백엔드 4000, 프론트엔드 5173 (Vite 프록시로 /api → localhost:4000)
-**브라우저 접속**: http://localhost:5173 (4000 아님!)
+**포트**: 백엔드 5041, 프론트엔드 5173 (Vite 프록시로 /api → localhost:5041)
+**브라우저 접속**: http://localhost:5173 (5041 아님!)
 
 ### 서버 재시작 방법
 
@@ -159,10 +159,10 @@ cd client && npm run dev
 
 ```bash
 # 백엔드만 재시작 (프론트는 유지)
-lsof -ti :4000 | xargs kill -9; PORT=4000 node soul/server/index.js &
+lsof -ti :5041 | xargs kill -9; PORT=5041 node soul/server/index.js &
 
 # 전체 재시작 (백엔드 + 프론트)
-lsof -ti :4000 | xargs kill -9; lsof -ti :5173 | xargs kill -9; npm run dev &
+lsof -ti :5041 | xargs kill -9; lsof -ti :5173 | xargs kill -9; npm run dev &
 ```
 
 **주의**: 포트가 이미 사용 중이면 kill 먼저 해야 함. `strictPort: true`라서 5173 점유 시 Vite가 안 뜸
@@ -251,7 +251,7 @@ source.exportAll() → 공통 JSON → target.importAll()
 
 ```bash
 # 필수
-PORT=4000
+PORT=5041
 
 # 데이터 경로
 SOUL_DATA_DIR=~/.soul
