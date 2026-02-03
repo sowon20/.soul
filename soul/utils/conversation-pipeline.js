@@ -36,6 +36,59 @@ class ConversationPipeline {
   }
 
   /**
+   * 메시지 복잡도 판단 → 컨텍스트 윈도우 크기 결정
+   *
+   * 레벨:
+   * - minimal (3개): 감탄사, 맞장구, 이모지, 단답 ("ㅋㅋ", "ㅇㅇ", "넵", "ok", "👍")
+   * - light (8개):  짧은 질문, 일상 대화 ("밥 먹었어?", "지금 몇시야?", "오늘 날씨 어때?")
+   * - medium (20개): 보통 대화, 간단한 요청
+   * - full (전체):  복잡한 질문, 이전 대화 참조, 분석/요약/비교
+   */
+  _assessContextNeeds(message) {
+    if (!message) return { level: 'minimal', maxMessages: 3, reason: 'empty' };
+
+    const trimmed = message.trim();
+    const len = trimmed.length;
+
+    // === minimal: 단답, 감탄사, 이모지 ===
+    // 5자 이하 + 특수 패턴
+    if (len <= 5) {
+      // 이모지만
+      if (/^[\p{Emoji}\s]+$/u.test(trimmed)) return { level: 'minimal', maxMessages: 3, reason: 'emoji' };
+      // 한글 단답: ㅋ, ㅎ, ㅇㅇ, ㄴㄴ, ㅇㅋ, ㅎㅎ, 넵, 응, 예, 네, 아, 음, 오
+      if (/^[ㅋㅎㅇㄴㅂㅈㄷㅊㅌㅍ]+$/.test(trimmed)) return { level: 'minimal', maxMessages: 3, reason: 'shorthand' };
+      if (/^(넵|응|예|네|아|음|오|ㅇ|굿|ok|ㅇㅋ|wow|lol|gg|thx|ty|np)$/i.test(trimmed)) {
+        return { level: 'minimal', maxMessages: 3, reason: 'ack' };
+      }
+    }
+
+    // 10자 이하 단순 반응
+    if (len <= 10) {
+      if (/^(ㅋ{2,}|ㅎ{2,}|[ㅋㅎ]+[ㅋㅎ]+|하{2,}|오{2,}|와{2,}|대박|진짜|헐|레알|ㄹㅇ|맞아|그치|알겠어|알았어|좋아|고마워|감사|괜찮아)$/i.test(trimmed)) {
+        return { level: 'minimal', maxMessages: 3, reason: 'reaction' };
+      }
+    }
+
+    // === 이전 대화 참조 → full 필요 ===
+    const needsHistory = /아까|이전|방금|그때|위에|전에|앞에|말했던|말한|했던|했잖|그거|그건|그게|이어서|계속|다시|정리해|요약해|비교해|분석해|리뷰해/.test(trimmed);
+    if (needsHistory) return { level: 'full', maxMessages: 999, reason: 'reference' };
+
+    // 복잡한 요청 패턴 (여러 단계, 긴 설명)
+    if (len > 200) return { level: 'full', maxMessages: 999, reason: 'long_message' };
+    if (/[1-9]\.\s|첫째|둘째|그리고.*그리고|또한.*또한/.test(trimmed)) {
+      return { level: 'full', maxMessages: 999, reason: 'multi_step' };
+    }
+
+    // === light: 짧은 질문/요청 (30자 이하) ===
+    if (len <= 30) {
+      return { level: 'light', maxMessages: 8, reason: 'short_query' };
+    }
+
+    // === medium: 나머지 ===
+    return { level: 'medium', maxMessages: 20, reason: 'normal' };
+  }
+
+  /**
    * 초기화
    */
   async initialize() {
@@ -92,15 +145,23 @@ class ConversationPipeline {
       console.log(`[Pipeline] Time prompt:\n${timePrompt?.substring(0, 800)}`);
 
       // 메시지별 타임스탬프 목록 생성 (AI가 시간 맥락 파악용)
+      // 복잡도 미리 판단하여 minimal/light일 때는 타임라인 생략
+      const earlyContextNeeds = this._assessContextNeeds(userMessage);
       let messageTimeline = '';
-      if (recentMsgs.length > 0) {
-        const timeEntries = recentMsgs.map((m, i) => {
+      if (recentMsgs.length > 0 && earlyContextNeeds.level !== 'minimal') {
+        // light: 최근 8개만, medium/full: 전체
+        const timelineMsgs = earlyContextNeeds.level === 'light'
+          ? recentMsgs.slice(-8)
+          : recentMsgs;
+        const startIdx = recentMsgs.length - timelineMsgs.length;
+
+        const timeEntries = timelineMsgs.map((m, i) => {
           if (m.timestamp) {
             const d = new Date(m.timestamp);
             const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
             const timeStr = `${kst.getUTCMonth()+1}/${kst.getUTCDate()} ${kst.getUTCHours()}:${String(kst.getUTCMinutes()).padStart(2,'0')}`;
             const preview = (m.content || '').substring(0, 20).replace(/\n/g, ' ');
-            return `${i+1}. ${timeStr} (${m.role}) "${preview}..."`;
+            return `${startIdx+i+1}. ${timeStr} (${m.role}) "${preview}..."`;
           }
           return null;
         }).filter(Boolean);
@@ -129,12 +190,16 @@ class ConversationPipeline {
       let contextData = null;
 
       // === 2단계: 대화 히스토리 (중간) ===
+      // 메시지 복잡도에 따라 컨텍스트 윈도우 동적 조절
+      const contextNeeds = this._assessContextNeeds(userMessage);
+      console.log(`[Pipeline] Context needs: level=${contextNeeds.level}, maxMessages=${contextNeeds.maxMessages}, reason=${contextNeeds.reason}`);
+
       // 도구 토큰 예산: 도구당 약 700 토큰 (JSON 스키마 + 설명)
       // options.toolCount로 실제 도구 수 전달, 없으면 기본 10개 가정
       const toolCount = options.toolCount || 10;
       const estimatedToolTokens = toolCount * 700;
       const remainingTokens = this.config.maxTokens - totalTokens - this._estimateTokens(userMessage) - estimatedToolTokens;
-      const historyMessages = await this._getMessagesWithinTokenLimit(sessionId, remainingTokens);
+      const historyMessages = await this._getMessagesWithinTokenLimit(sessionId, remainingTokens, contextNeeds.maxMessages);
 
       messages.push(...historyMessages);
       totalTokens += historyMessages.reduce((sum, m) => sum + this._estimateTokens(m.content), 0);
@@ -179,7 +244,8 @@ class ConversationPipeline {
             compressed: true,
             emergency: true,
             usage: tokenCounter.analyzeUsage(emergencyMessages, this.config.model),
-            contextData
+            contextData,
+            contextNeeds
           };
         }
 
@@ -188,7 +254,8 @@ class ConversationPipeline {
           totalTokens: compressed.totalTokens,
           compressed: true,
           usage: postUsage,
-          contextData
+          contextData,
+          contextNeeds
         };
       }
 
@@ -197,7 +264,8 @@ class ConversationPipeline {
         totalTokens,
         compressed: false,
         usage,
-        contextData
+        contextData,
+        contextNeeds
       };
     } catch (error) {
       console.error('Error building conversation messages:', error);
@@ -211,21 +279,21 @@ class ConversationPipeline {
    * 10% - 느슨한 압축 (주간 요약)
    * 10% - 강한 압축 (월간 요약 또는 오래된 요약)
    */
-  async _getMessagesWithinTokenLimit(sessionId, maxTokens) {
+  async _getMessagesWithinTokenLimit(sessionId, maxTokens, maxMessages = 999) {
     try {
       if (!this.memoryManager) {
         return [];
       }
 
       const messages = [];
-      
+
       // 비율 계산
       const rawTokenBudget = Math.floor(maxTokens * 0.8);      // 80% 원문
       const summaryTokenBudget = Math.floor(maxTokens * 0.2);  // 20% 요약 (추후 10/10 분리)
 
-      // 1. 원문 (80%) - 단기 메모리에서 최신 대화
-      const rawResult = this.memoryManager.shortTerm.getWithinTokenLimit(rawTokenBudget);
-      console.log(`[Pipeline] Context: ${rawResult.messages.length} raw messages, ${rawResult.totalTokens} tokens (budget: ${rawTokenBudget})`);
+      // 1. 원문 (80%) - 단기 메모리에서 최신 대화 (maxMessages로 상한 제한)
+      const rawResult = this.memoryManager.shortTerm.getWithinTokenLimit(rawTokenBudget, maxMessages);
+      console.log(`[Pipeline] Context: ${rawResult.messages.length}/${maxMessages} raw messages, ${rawResult.totalTokens} tokens (budget: ${rawTokenBudget})`);
 
       // 메시지 (content 변경 없이)
       const rawMessages = rawResult.messages.map(m => ({

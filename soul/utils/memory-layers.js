@@ -227,19 +227,24 @@ class ShortTermMemory {
 
   /**
    * 토큰 제한 내 메시지 가져오기 (역순)
+   * @param {number} maxTokens - 토큰 상한
+   * @param {number} maxMessages - 메시지 수 상한 (복잡도 기반 동적 조절)
    */
-  getWithinTokenLimit(maxTokens) {
+  getWithinTokenLimit(maxTokens, maxMessages = 999) {
     const result = [];
     let tokenCount = 0;
+    let msgCount = 0;
 
     // 최신 메시지부터 역순으로
     for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (msgCount >= maxMessages) break;
       const msg = this.messages[i];
       if (tokenCount + msg.tokens > maxTokens) {
         break;
       }
       result.unshift(msg);
       tokenCount += msg.tokens;
+      msgCount++;
     }
 
     return { messages: result, totalTokens: tokenCount };

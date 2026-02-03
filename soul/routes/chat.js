@@ -433,38 +433,15 @@ ${rulesText}</self_notes>\n\n`;
         return result;
       };
 
-      // AI 호출 (도구 포함) - 프로필 설정 적용
+      // === 2단계 도구 호출: 복잡도에 따라 동적 결정 ===
       const totalChars = chatMessages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
-      // 도구 필요 여부 판단 (간단한 대화에는 도구 생략 → 토큰 절약)
-      let needsTools = allTools.length > 0;
-      if (needsTools) {
-        const lastMsg = message.trim();
-        if (lastMsg.length <= 20) {
-          const noToolPatterns = /^(ㅋ{1,}|ㅎ{1,}|ㅇㅇ|ㅇㅋ|ㄱㄱ|ㄴㄴ|ㅜ{1,}|ㅠ{1,}|ㅎㅎ|ㅋㅋ|ㅎㅇ|ㄳ|ㅊㅊ|ok|ㅅㄱ|ㅂㅂ|넵|네|응|어|좋아|ㅇㅈ|감사|고마워|알겠어|그래|오키|굿|잘자|안녕|하이|반가워|수고|대박|실화|진짜|헐|와|오|아|흠|맞아|그렇구나|그렇지|당연|맞네|인정|좋네|괜찮아|화이팅|파이팅|짱|최고|오키도키|ㄹㅇ|ㄱㅅ|ㅈㄱ|ㅊㅋ|그치|맞다|아하|오호|매우 좋아|잘했어|ㅁㅁ)[!?.~ㅋㅎ]*$/i;
-          if (noToolPatterns.test(lastMsg)) {
-            needsTools = false;
-            console.log(`[Chat] Simple message, skipping tools: "${lastMsg}"`);
-          }
-        }
-      }
-
-      const actualToolCount = needsTools ? allTools.length : 0;
-      const toolsTokenEstimate = actualToolCount * 700;
+      const hasTools = allTools.length > 0;
       const systemPromptTokens = Math.ceil(combinedSystemPrompt.length / 4);
       const messageTokens = Math.ceil(totalChars / 4);
-      const totalTokenEstimate = messageTokens + systemPromptTokens + toolsTokenEstimate;
 
-      // 토큰 분류 정보 저장 (대시보드용)
-      tokenBreakdown = {
-        messages: messageTokens,
-        system: systemPromptTokens,
-        tools: toolsTokenEstimate,
-        toolCount: actualToolCount
-      };
-
-      console.log(`[Chat] Sending to AI: ${chatMessages.length} messages, ~${totalChars} chars`)
-      console.log(`[Chat] Token estimate: messages=${messageTokens}, system=${systemPromptTokens}, tools(${actualToolCount})=${toolsTokenEstimate}, total=${totalTokenEstimate}`);
-      console.log(`[Chat] System prompt: ${combinedSystemPrompt.length} chars`);
+      // 컨텍스트 복잡도 정보 (pipeline에서 전달)
+      const contextLevel = conversationData.contextNeeds?.level || 'full';
+      console.log(`[Chat] Context level: ${contextLevel} (${conversationData.contextNeeds?.reason || 'unknown'})`);
 
       // Tool Search 설정 로드
       const toolSearchConfig = await configManager.getConfigValue('toolSearch', {
@@ -472,18 +449,75 @@ ${rulesText}</self_notes>\n\n`;
         type: 'regex',
         alwaysLoad: []
       });
-      const aiResult = await aiService.chat(chatMessages, {
-        systemPrompt: combinedSystemPrompt,
-        maxTokens: aiSettings.maxTokens,
-        temperature: aiSettings.temperature,
-        tools: needsTools ? allTools : null,
-        toolExecutor: needsTools ? toolExecutor : null,
-        thinking: routingResult.thinking || false,
-        // Tool Search 설정 (Claude 전용)
-        enableToolSearch: toolSearchConfig.enabled,
-        toolSearchType: toolSearchConfig.type,
-        alwaysLoadTools: toolSearchConfig.alwaysLoad
-      });
+
+      let aiResult;
+      let actualToolCount = 0;
+      const TOOL_REQUEST_TAG = '[NEED_TOOLS]';
+
+      if (hasTools && contextLevel !== 'minimal') {
+        // minimal이 아닌 경우: 2-phase 도구 호출
+        // 1차 호출: 도구 없이 — 답할 수 있으면 바로 답하고, 못 하면 [NEED_TOOLS]
+        const phase1Prompt = combinedSystemPrompt + `\n\n도구(검색, 기억 조회 등) 없이 답할 수 있으면 바로 답하세요. 외부 정보가 필요해서 답할 수 없으면 "${TOOL_REQUEST_TAG}"만 출력하세요.`;
+
+        console.log(`[Chat] Phase 1: Without tools (${chatMessages.length} messages, ~${totalChars} chars)`);
+
+        const phase1Result = await aiService.chat(chatMessages, {
+          systemPrompt: phase1Prompt,
+          maxTokens: aiSettings.maxTokens,
+          temperature: aiSettings.temperature,
+          tools: null,
+          toolExecutor: null,
+          thinking: routingResult.thinking || false,
+        });
+
+        const phase1Text = typeof phase1Result === 'object' ? phase1Result.text : phase1Result;
+        const phase1Usage = typeof phase1Result === 'object' ? phase1Result.usage : {};
+
+        if (phase1Text && phase1Text.trim().includes(TOOL_REQUEST_TAG)) {
+          // 2차 호출: 도구 포함
+          console.log(`[Chat] Phase 2: AI requested tools, retrying with ${allTools.length} tools`);
+          actualToolCount = allTools.length;
+
+          aiResult = await aiService.chat(chatMessages, {
+            systemPrompt: combinedSystemPrompt,
+            maxTokens: aiSettings.maxTokens,
+            temperature: aiSettings.temperature,
+            tools: allTools,
+            toolExecutor: toolExecutor,
+            thinking: routingResult.thinking || false,
+            enableToolSearch: toolSearchConfig.enabled,
+            toolSearchType: toolSearchConfig.type,
+            alwaysLoadTools: toolSearchConfig.alwaysLoad
+          });
+        } else {
+          // 도구 불필요 — 1차 응답 사용
+          console.log(`[Chat] Phase 1 sufficient, no tools needed`);
+          aiResult = phase1Result;
+        }
+      } else {
+        // minimal 또는 도구 없음: 바로 응답 (Phase 1 스킵)
+        console.log(`[Chat] Direct call (${contextLevel === 'minimal' ? 'minimal context - skip phase1' : 'no tools'})`);
+        aiResult = await aiService.chat(chatMessages, {
+          systemPrompt: combinedSystemPrompt,
+          maxTokens: aiSettings.maxTokens,
+          temperature: aiSettings.temperature,
+          tools: null,
+          toolExecutor: null,
+          thinking: routingResult.thinking || false,
+        });
+      }
+
+      const toolsTokenEstimate = actualToolCount * 700;
+      const totalTokenEstimate = messageTokens + systemPromptTokens + toolsTokenEstimate;
+
+      tokenBreakdown = {
+        messages: messageTokens,
+        system: systemPromptTokens,
+        tools: toolsTokenEstimate,
+        toolCount: actualToolCount
+      };
+
+      console.log(`[Chat] Final: tools(${actualToolCount})=${toolsTokenEstimate}, total=${totalTokenEstimate}`);
 
       // aiResult는 { text, usage } 객체 또는 문자열
       if (typeof aiResult === 'object' && aiResult.text !== undefined) {
