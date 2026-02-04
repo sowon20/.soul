@@ -500,18 +500,20 @@ body {
     display: flex !important;
   }
 
-  /* 모바일에서 사이드바 숨김 시 버튼을 화면 왼쪽에 고정 */
-  .center-group.hide .mobile-menu-btn {
-    position: fixed;
-    left: -14px;
-    right: auto;
-    top: 40px;
-    z-index: 103;
-    opacity: 1 !important;
-    visibility: visible !important;
-    transform: rotate(90deg) !important;
-    display: flex !important;
-  }
+}
+
+/* 모바일 사이드바 숨김 시 토글 버튼 (body 직접 자식으로 이동됨) */
+.mobile-menu-btn-floating {
+  position: fixed !important;
+  left: -14px !important;
+  right: auto !important;
+  top: 40px !important;
+  z-index: 103 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  transform: rotate(90deg) !important;
+  display: flex !important;
 }
 
 /* 900px 이상 데스크톱에서는 토글 버튼을 absolute로 배치 */

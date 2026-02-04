@@ -428,15 +428,15 @@ class SoulApp {
       console.log('✅ 모바일 메뉴 버튼 등록');
       mobileMenuBtn.addEventListener('click', () => {
         console.log('🖱️ 모바일 메뉴 버튼 클릭');
-        leftCard.classList.toggle('hide');
-        centerGroup.classList.toggle('hide');
+        if (leftCard.classList.contains('hide')) {
+          this.showMobileSidebar();
+        } else {
+          this.hideMobileSidebar();
+        }
       });
 
       if (mobileOverlay) {
-        mobileOverlay.addEventListener('click', () => {
-          leftCard.classList.add('hide');
-          centerGroup.classList.add('hide');
-        });
+        mobileOverlay.addEventListener('click', () => this.hideMobileSidebar());
       }
     } else {
       console.log('❌ 모바일 메뉴 요소를 찾을 수 없음');
@@ -447,8 +447,7 @@ class SoulApp {
     if (rightArea && leftCard && centerGroup) {
       rightArea.addEventListener('click', () => {
         if (window.innerWidth < 900 && !leftCard.classList.contains('hide')) {
-          leftCard.classList.add('hide');
-          centerGroup.classList.add('hide');
+          this.hideMobileSidebar();
         }
       });
     }
@@ -767,6 +766,34 @@ class SoulApp {
     });
   }
 
+  showMobileSidebar() {
+    const leftCard = document.querySelector('.left-card');
+    const centerGroup = document.querySelector('.center-group');
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    if (!leftCard || !centerGroup) return;
+    leftCard.classList.remove('hide');
+    centerGroup.classList.remove('hide');
+    // 토글 버튼을 center-group으로 복귀
+    if (mobileMenuBtn && mobileMenuBtn.classList.contains('mobile-menu-btn-floating')) {
+      centerGroup.appendChild(mobileMenuBtn);
+      mobileMenuBtn.classList.remove('mobile-menu-btn-floating');
+    }
+  }
+
+  hideMobileSidebar() {
+    const leftCard = document.querySelector('.left-card');
+    const centerGroup = document.querySelector('.center-group');
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    if (!leftCard || !centerGroup) return;
+    leftCard.classList.add('hide');
+    centerGroup.classList.add('hide');
+    // 모바일에서 토글 버튼을 body로 이동 (transform 영향 회피)
+    if (window.innerWidth < 900 && mobileMenuBtn) {
+      document.body.appendChild(mobileMenuBtn);
+      mobileMenuBtn.classList.add('mobile-menu-btn-floating');
+    }
+  }
+
   initSwipeGesture() {
     const leftCard = document.querySelector('.left-card');
     const centerGroup = document.querySelector('.center-group');
@@ -781,8 +808,6 @@ class SoulApp {
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
       const isHidden = leftCard.classList.contains('hide');
-      // 열기: 왼쪽 가장자리 25px 이내에서 시작
-      // 닫기: 사이드바 열려 있을 때 아무 곳에서나
       swiping = isHidden ? startX < 25 : true;
     }, { passive: true });
 
@@ -793,19 +818,14 @@ class SoulApp {
       const diffX = endX - startX;
       const diffY = Math.abs(endY - startY);
 
-      // 수직 스크롤이 더 크면 무시
       if (diffY > Math.abs(diffX)) return;
 
       const isHidden = leftCard.classList.contains('hide');
 
       if (isHidden && diffX > 50) {
-        // 오른쪽 스와이프 → 열기
-        leftCard.classList.remove('hide');
-        centerGroup.classList.remove('hide');
+        this.showMobileSidebar();
       } else if (!isHidden && diffX < -50) {
-        // 왼쪽 스와이프 → 닫기
-        leftCard.classList.add('hide');
-        centerGroup.classList.add('hide');
+        this.hideMobileSidebar();
       }
 
       swiping = false;
