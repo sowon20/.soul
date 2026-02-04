@@ -702,6 +702,77 @@ class SoulApp {
     panel.style.width = '100%';
     panel.style.minWidth = '0';
     panel.style.maxWidth = 'none';
+
+    // 리사이저 추가
+    this.addCanvasResizer(rightCardTop, panel);
+  }
+
+  /** 모바일: 캔버스/채팅 경계선 드래그 리사이저 */
+  addCanvasResizer(chatArea, canvasPanel) {
+    // 기존 리사이저 제거
+    const existing = document.getElementById('mobileCanvasResizer');
+    if (existing) existing.remove();
+
+    const resizer = document.createElement('div');
+    resizer.id = 'mobileCanvasResizer';
+    resizer.style.cssText = 'height: 16px; margin: -8px 0; cursor: row-resize; display: flex; align-items: center; justify-content: center; flex-shrink: 0; touch-action: none; position: relative; z-index: 5;';
+
+    // 경계 라인
+    const handle = document.createElement('div');
+    handle.style.cssText = 'width: 40px; height: 3px; border-radius: 1.5px; background: rgba(255,255,255,0.3);';
+    resizer.appendChild(handle);
+
+    // 캔버스 패널 바로 앞에 삽입
+    canvasPanel.parentNode.insertBefore(resizer, canvasPanel);
+
+    let startY = 0;
+    let startChatFlex = 0;
+    let startCanvasFlex = 0;
+
+    const onStart = (e) => {
+      e.preventDefault();
+      const touch = e.touches ? e.touches[0] : e;
+      startY = touch.clientY;
+      startChatFlex = parseFloat(chatArea.style.flex) || 0.65;
+      startCanvasFlex = parseFloat(canvasPanel.style.flex) || 0.35;
+      document.addEventListener('touchmove', onMove, { passive: false });
+      document.addEventListener('touchend', onEnd);
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onEnd);
+      handle.style.background = 'rgba(255,255,255,0.6)';
+    };
+
+    const onMove = (e) => {
+      e.preventDefault();
+      const touch = e.touches ? e.touches[0] : e;
+      const container = chatArea.parentNode;
+      const containerHeight = container.clientHeight;
+      const diff = touch.clientY - startY;
+      const diffRatio = diff / containerHeight;
+
+      let newChatFlex = startChatFlex + diffRatio;
+      let newCanvasFlex = startCanvasFlex - diffRatio;
+
+      // 최소/최대 제한
+      if (newChatFlex < 0.3) newChatFlex = 0.3;
+      if (newCanvasFlex < 0.15) newCanvasFlex = 0.15;
+      if (newChatFlex > 0.85) newChatFlex = 0.85;
+      if (newCanvasFlex > 0.7) newCanvasFlex = 0.7;
+
+      chatArea.style.flex = newChatFlex.toString();
+      canvasPanel.style.flex = newCanvasFlex.toString();
+    };
+
+    const onEnd = () => {
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onEnd);
+      handle.style.background = 'rgba(255,255,255,0.3)';
+    };
+
+    resizer.addEventListener('touchstart', onStart, { passive: false });
+    resizer.addEventListener('mousedown', onStart);
   }
 
   /** 모바일: 캔버스 패널을 원래 위치(right-area)로 복원 */
@@ -712,6 +783,10 @@ class SoulApp {
     const rightArea = document.querySelector('.right-area');
     const rightCardTop = document.querySelector('.right-card-top');
     if (!rightArea) return;
+
+    // 리사이저 제거
+    const resizer = document.getElementById('mobileCanvasResizer');
+    if (resizer) resizer.remove();
 
     rightArea.appendChild(panel);
     if (rightCardTop) rightCardTop.style.flex = '';
@@ -810,6 +885,8 @@ class SoulApp {
     const centerGroup = document.querySelector('.center-group');
     const mobileMenuBtn = document.getElementById('mobileMenuBtn');
     if (!leftCard || !centerGroup) return;
+    // 키보드 내리기
+    if (document.activeElement) document.activeElement.blur();
     leftCard.classList.remove('hide');
     centerGroup.classList.remove('hide');
     // 토글 버튼을 center-group으로 복귀
