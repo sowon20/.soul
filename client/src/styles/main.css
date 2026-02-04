@@ -117,7 +117,7 @@ body {
     left: 8px;
     top: 8px;
     bottom: 8px;
-    width: calc(100% - 112px); /* 8px좌 + gap8 + center76 + 우20px (라운드 여유) */
+    width: calc(100% - 116px); /* 8px좌 + gap8 + center76 + 12px우 + 여유 */
     min-width: 0;
     max-width: none;
     z-index: 101;
@@ -182,7 +182,7 @@ body {
 @media (max-width: 899px) {
   .center-group {
     position: fixed;
-    right: 8px;
+    right: 12px;
     top: 8px;
     bottom: 8px;
     z-index: 100;
@@ -505,7 +505,7 @@ body {
 /* 모바일 사이드바 숨김 시 토글 버튼 (body 직접 자식으로 이동됨) */
 .mobile-menu-btn-floating {
   position: fixed !important;
-  left: -14px !important;
+  left: -6px !important;
   right: auto !important;
   top: 40px !important;
   z-index: 103 !important;
