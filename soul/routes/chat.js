@@ -954,8 +954,8 @@ ${toolCatalog}`;
       .replace(/\{(recall_memory|get_profile|update_profile|list_my_rules|add_my_rule|delete_my_rule)[:\s]+.+?\}/gi, '')
       .trim();
     // 동적 도구 이름도 제거
-    if (allTools && allTools.length > 0) {
-      const toolNames = allTools.map(t => t.name).filter(Boolean);
+    if (preloadedTools && preloadedTools.length > 0) {
+      const toolNames = preloadedTools.map(t => t.name).filter(Boolean);
       const escaped = toolNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
       const fakePattern = new RegExp(`\\{(${escaped.join('|')})[:\\s]+.+?\\}`, 'gi');
       finalResponse = finalResponse.replace(fakePattern, '').trim();
