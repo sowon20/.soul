@@ -730,17 +730,10 @@ class SoulApp {
   }
 
   initResponsive() {
-    const leftCard = document.querySelector('.left-card');
-    const centerGroup = document.querySelector('.center-group');
-
     // 초기 상태 설정
     const isMobile = window.innerWidth < 900;
     if (isMobile) {
-      leftCard?.classList.add('hide');
-      centerGroup?.classList.add('hide');
-    } else {
-      leftCard?.classList.remove('hide');
-      centerGroup?.classList.remove('hide');
+      this.hideMobileSidebar();
     }
 
     // 화면 크기 변경 감지
@@ -752,13 +745,9 @@ class SoulApp {
 
       if (wasMobile !== isMobileNow) {
         if (isMobileNow) {
-          // 데스크톱 -> 모바일
-          leftCard?.classList.add('hide');
-          centerGroup?.classList.add('hide');
+          this.hideMobileSidebar();
         } else {
-          // 모바일 -> 데스크톱
-          leftCard?.classList.remove('hide');
-          centerGroup?.classList.remove('hide');
+          this.showMobileSidebar();
         }
       }
 

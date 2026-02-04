@@ -117,7 +117,8 @@ body {
     left: 8px;
     top: 8px;
     bottom: 8px;
-    width: calc(100% - 116px); /* 8px좌 + gap8 + center76 + 12px우 + 여유 */
+    right: 112px; /* center76 + gap8 + 우28px */
+    width: auto;
     min-width: 0;
     max-width: none;
     z-index: 101;
@@ -182,7 +183,7 @@ body {
 @media (max-width: 899px) {
   .center-group {
     position: fixed;
-    right: 12px;
+    right: 28px;
     top: 8px;
     bottom: 8px;
     z-index: 100;
@@ -505,7 +506,7 @@ body {
 /* 모바일 사이드바 숨김 시 토글 버튼 (body 직접 자식으로 이동됨) */
 .mobile-menu-btn-floating {
   position: fixed !important;
-  left: -6px !important;
+  left: -11px !important;
   right: auto !important;
   top: 40px !important;
   z-index: 103 !important;
@@ -977,6 +978,7 @@ body {
   gap: 16px;
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   width: 100%;
 }
 
@@ -1375,6 +1377,7 @@ body {
 .token-usage-highlight {
   margin-top: 14px;
   padding: 12px;
+  overflow: hidden;
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(245, 158, 11, 0.15));
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 10px;
@@ -1402,16 +1405,18 @@ body {
   justify-content: space-around;
   gap: 8px;
   margin-bottom: 8px;
+  overflow: hidden;
 }
 
 .token-stat {
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-width: 0;
   padding: 6px 12px;
   background: rgba(255, 255, 255, 0.5);
   border-radius: 8px;
-  min-width: 70px;
+  flex: 1;
 }
 
 .token-stat-label {
@@ -1425,6 +1430,10 @@ body {
   font-size: 14px;
   font-weight: 700;
   color: #dc2626;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .token-stat-value.warning {

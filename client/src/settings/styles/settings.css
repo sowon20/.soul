@@ -5287,7 +5287,8 @@ textarea.settings-field-input {
 /* 알바 현황 */
 .alba-status {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 4px;
 }
 
