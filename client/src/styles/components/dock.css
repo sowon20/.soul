@@ -80,23 +80,33 @@
   object-fit: contain;
 }
 
-.dock-item:hover {
-  --s: 1.8;
+/* 데스크톱에서만 호버 확대 (터치 디바이스 제외) */
+@media (hover: hover) and (pointer: fine) {
+  .dock-item:hover {
+    --s: 1.8;
+  }
+
+  .dock-item:has(+ .dock-item:hover),
+  .dock-item:hover + .dock-item {
+    --s: 1.6;
+  }
+
+  .dock-item:has(+ .dock-item + .dock-item:hover),
+  .dock-item:hover + .dock-item + .dock-item {
+    --s: 1.4;
+  }
+
+  .dock-item:has(+ .dock-item + .dock-item + .dock-item:hover),
+  .dock-item:hover + .dock-item + .dock-item + .dock-item {
+    --s: 1.1;
+  }
 }
 
-.dock-item:has(+ .dock-item:hover),
-.dock-item:hover + .dock-item {
-  --s: 1.6;
-}
-
-.dock-item:has(+ .dock-item + .dock-item:hover),
-.dock-item:hover + .dock-item + .dock-item {
-  --s: 1.4;
-}
-
-.dock-item:has(+ .dock-item + .dock-item + .dock-item:hover),
-.dock-item:hover + .dock-item + .dock-item + .dock-item {
-  --s: 1.1;
+/* 모바일: 드래그 방지 */
+.dock-item img {
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* Logo Title Styles */

@@ -658,7 +658,13 @@ class SoulApp {
     console.log('🔄 toggleCanvasPanel 호출');
     if (this.elements.canvasPanel) {
       const wasHidden = this.elements.canvasPanel.classList.contains('hide');
-      this.elements.canvasPanel.classList.toggle('hide');
+      if (wasHidden) {
+        this.elements.canvasPanel.classList.remove('hide');
+        this.movCanvasPanelForMobile();
+      } else {
+        this.restoreCanvasPanelFromMobile();
+        this.elements.canvasPanel.classList.add('hide');
+      }
       console.log(`Canvas 패널: ${wasHidden ? '열림' : '닫힘'}`);
     } else {
       console.log('❌ canvasPanel 요소 없음');
@@ -667,8 +673,52 @@ class SoulApp {
 
   closeCanvasPanel() {
     if (this.elements.canvasPanel) {
+      this.restoreCanvasPanelFromMobile();
       this.elements.canvasPanel.classList.add('hide');
     }
+  }
+
+  /** 모바일: 캔버스 패널을 right-container 안으로 이동 (채팅 아래, 독 위) */
+  movCanvasPanelForMobile() {
+    if (window.innerWidth >= 900) return;
+    const panel = this.elements.canvasPanel;
+    if (!panel) return;
+    const rightContainer = document.querySelector('.right-container');
+    const dockArea = document.querySelector('.dock-test-area');
+    const rightCardTop = document.querySelector('.right-card-top');
+    if (!rightContainer) return;
+
+    // dock-test-area 앞에 삽입, 없으면 right-card-bottom 앞에
+    const insertBefore = dockArea || document.querySelector('.right-card-bottom');
+    if (insertBefore) {
+      rightContainer.insertBefore(panel, insertBefore);
+    } else {
+      rightContainer.appendChild(panel);
+    }
+
+    // 비율 설정
+    if (rightCardTop) rightCardTop.style.flex = '0.65';
+    panel.style.flex = '0.35';
+    panel.style.width = '100%';
+    panel.style.minWidth = '0';
+    panel.style.maxWidth = 'none';
+  }
+
+  /** 모바일: 캔버스 패널을 원래 위치(right-area)로 복원 */
+  restoreCanvasPanelFromMobile() {
+    if (window.innerWidth >= 900) return;
+    const panel = this.elements.canvasPanel;
+    if (!panel) return;
+    const rightArea = document.querySelector('.right-area');
+    const rightCardTop = document.querySelector('.right-card-top');
+    if (!rightArea) return;
+
+    rightArea.appendChild(panel);
+    if (rightCardTop) rightCardTop.style.flex = '';
+    panel.style.flex = '';
+    panel.style.width = '';
+    panel.style.minWidth = '';
+    panel.style.maxWidth = '';
   }
 
   toggleDock() {
@@ -1445,6 +1495,7 @@ class SoulApp {
     if (this.canvasTabs.find(t => t.type === 'settings')) {
       this.activateCanvasTab('settings');
       panel.classList.remove('hide');
+      this.movCanvasPanelForMobile();
       return;
     }
 
@@ -1462,6 +1513,7 @@ class SoulApp {
     this.canvasTabs.push({ type: 'settings', title: 'MCP 설정' });
     this.activateCanvasTab('settings');
     panel.classList.remove('hide');
+    this.movCanvasPanelForMobile();
   }
 
   /**
@@ -1884,6 +1936,7 @@ class SoulApp {
     if (existingTab) {
       this.activateCanvasTab(type);
       panel.classList.remove('hide');
+      this.movCanvasPanelForMobile();
       return;
     }
 
@@ -1903,6 +1956,7 @@ class SoulApp {
     
     // 패널 열기
     panel.classList.remove('hide');
+    this.movCanvasPanelForMobile();
     console.log('✅ 캔버스 탭 열림:', type);
   }
 
@@ -1943,6 +1997,7 @@ class SoulApp {
 
     // 탭이 없으면 패널 닫기
     if (this.canvasTabs.length === 0) {
+      this.restoreCanvasPanelFromMobile();
       document.getElementById('canvasPanel')?.classList.add('hide');
       this.activeCanvasTab = null;
     } else if (this.activeCanvasTab === type) {
