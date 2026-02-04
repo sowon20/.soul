@@ -152,15 +152,50 @@ router.post('/ftp/test', async (req, res) => {
     }
     
     await ftp.disconnect();
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: '연결 성공',
-      files: files.length 
+      files: files.length
     });
   } catch (error) {
     console.error('FTP test error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/storage/sftp/test
+ * SFTP 연결 테스트
+ */
+router.post('/sftp/test', async (req, res) => {
+  try {
+    const { host, port, username, password, basePath } = req.body;
+
+    if (!host || !username) {
+      return res.status(400).json({ success: false, error: '호스트와 사용자를 입력해주세요.' });
+    }
+
+    const { SFTPStorage } = require('../utils/sftp-storage');
+    const sftp = new SFTPStorage({ host, port, username, password, basePath: basePath || '/soul/files' });
+
+    await sftp.testConnection();
+    const files = await sftp.listFiles();
+    await sftp.disconnect();
+
+    res.json({
+      success: true,
+      message: '연결 성공',
+      files: files.length
+    });
+  } catch (error) {
+    console.error('SFTP test error:', error);
+    let msg = error.message;
+    if (msg.includes('authentication')) msg = '인증 실패: 사용자 또는 비밀번호를 확인하세요';
+    else if (msg.includes('ECONNREFUSED')) msg = '연결 거부: 호스트와 포트를 확인하세요';
+    else if (msg.includes('ETIMEDOUT') || msg.includes('Timed out')) msg = '연결 시간 초과: 호스트를 확인하세요';
+    else if (msg.includes('ENOTFOUND')) msg = '호스트를 찾을 수 없습니다';
+    res.json({ success: false, error: msg });
   }
 });
 
@@ -362,6 +397,82 @@ router.post('/migrate', async (req, res) => {
 });
 
 /**
+ * POST /api/storage/migrate-files
+ * 파일 저장소 간 데이터 마이그레이션 (공통 커넥터 방식)
+ * source.exportAll() → { path: Buffer } → target.importAll()
+ */
+router.post('/migrate-files', async (req, res) => {
+  try {
+    const { fromType, toType, fromConfig, toConfig } = req.body;
+
+    if (!fromType || !toType) {
+      return res.status(400).json({
+        success: false,
+        error: 'fromType, toType 필드가 필요합니다.'
+      });
+    }
+
+    if (fromType === toType) {
+      return res.status(400).json({
+        success: false,
+        error: '같은 저장소 타입으로는 마이그레이션할 수 없습니다.'
+      });
+    }
+
+    console.log(`[FileMigration] 시작: ${fromType} → ${toType}`);
+
+    const source = await createFileMigrationAdapter(fromType, fromConfig);
+    const target = await createFileMigrationAdapter(toType, toConfig);
+
+    // export
+    console.log('[FileMigration] 파일 내보내기 중...');
+    const data = await source.exportAll((progress) => {
+      console.log(`[FileMigration/Export] ${progress.exported}개 파일 (${progress.currentFile})`);
+    });
+
+    const fileCount = Object.keys(data).length;
+    console.log(`[FileMigration] 내보내기 완료: ${fileCount}개 파일`);
+
+    if (fileCount === 0) {
+      if (source.close) await source.close();
+      if (target.close) await target.close();
+      return res.json({
+        success: true,
+        message: '마이그레이션할 파일이 없습니다.',
+        from: fromType,
+        to: toType,
+        results: { files: 0 }
+      });
+    }
+
+    // import
+    console.log('[FileMigration] 파일 가져오기 중...');
+    const result = await target.importAll(data, (progress) => {
+      console.log(`[FileMigration/Import] ${progress.imported}/${progress.total} 파일 (${progress.currentFile})`);
+    });
+
+    if (source.close) await source.close();
+    if (target.close) await target.close();
+
+    console.log(`[FileMigration] 완료! ${result.files || result.imported}개 파일`);
+
+    res.json({
+      success: true,
+      message: `파일 마이그레이션 완료: ${result.files || result.imported}개 파일`,
+      from: fromType,
+      to: toType,
+      results: { files: result.files || result.imported }
+    });
+  } catch (error) {
+    console.error('[FileMigration] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * 마이그레이션용 어댑터 생성
  * 모든 어댑터는 exportAll(onProgress) / importAll(data, onProgress) 인터페이스를 가짐
  */
@@ -437,8 +548,130 @@ async function createMigrationAdapter(type, config) {
       return oracle;
     }
 
+    case 'oracle-object': {
+      const { OracleObjectStorage } = require('../utils/oracle-object-storage');
+      const localCfgObj = require('../utils/local-config');
+      const fileConfigObj = localCfgObj.readStorageConfigSync();
+      const objConfig = config || fileConfigObj.file?.oracle || {};
+      if (!objConfig?.bucketName) throw new Error('Oracle Object Storage 설정이 없습니다.');
+
+      return new OracleObjectStorage({
+        tenancyId: objConfig.tenancyId,
+        userId: objConfig.userId,
+        region: objConfig.region,
+        fingerprint: objConfig.fingerprint,
+        privateKey: objConfig.privateKey,
+        namespace: objConfig.namespace,
+        bucketName: objConfig.bucketName
+      });
+    }
+
+    case 'sftp': {
+      const { SFTPStorage } = require('../utils/sftp-storage');
+      const localCfgSftp = require('../utils/local-config');
+      const fileConfigSftp = localCfgSftp.readStorageConfigSync();
+      const sftpConfig = config || fileConfigSftp.file?.sftp || {};
+      if (!sftpConfig?.host) throw new Error('SFTP 설정이 없습니다.');
+
+      return new SFTPStorage({
+        host: sftpConfig.host,
+        port: sftpConfig.port || 22,
+        username: sftpConfig.username || sftpConfig.user,
+        password: sftpConfig.password,
+        basePath: sftpConfig.basePath || '/soul/files'
+      });
+    }
+
     default:
       throw new Error(`지원하지 않는 저장소 타입: ${type}`);
+  }
+}
+
+/**
+ * 파일 저장소 마이그레이션용 어댑터 생성
+ * exportAll() → { "path": Buffer } / importAll({ "path": Buffer })
+ */
+async function createFileMigrationAdapter(type, config) {
+  const localCfg = require('../utils/local-config');
+  const fileConfig = localCfg.readStorageConfigSync();
+
+  switch (type) {
+    case 'local': {
+      const filePath = config?.path || fileConfig.file?.local?.path || '~/.soul/files';
+      const expandedPath = filePath.replace(/^~/, require('os').homedir());
+
+      // 로컬 파일 저장소용 간단한 어댑터
+      return {
+        async exportAll(onProgress) {
+          const data = {};
+          let exported = 0;
+          const walk = async (dir, prefix) => {
+            try {
+              const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+              for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+                if (entry.isDirectory()) {
+                  await walk(fullPath, relPath);
+                } else {
+                  data[relPath] = await fs.promises.readFile(fullPath);
+                  exported++;
+                  if (onProgress) onProgress({ exported, currentFile: relPath });
+                }
+              }
+            } catch {}
+          };
+          await walk(expandedPath, '');
+          return data;
+        },
+        async importAll(data, onProgress) {
+          const files = Object.keys(data);
+          let imported = 0;
+          for (const filePath of files) {
+            const fullPath = path.join(expandedPath, filePath);
+            const dir = path.dirname(fullPath);
+            await fs.promises.mkdir(dir, { recursive: true });
+            const content = data[filePath];
+            await fs.promises.writeFile(fullPath, Buffer.isBuffer(content) ? content : Buffer.from(content));
+            imported++;
+            if (onProgress) onProgress({ imported, total: files.length, currentFile: filePath });
+          }
+          return { files: files.length, imported };
+        },
+        async close() {}
+      };
+    }
+
+    case 'sftp': {
+      const { SFTPStorage } = require('../utils/sftp-storage');
+      const sftpConfig = config || fileConfig.file?.sftp || {};
+      if (!sftpConfig?.host) throw new Error('SFTP 설정이 없습니다.');
+      return new SFTPStorage({
+        host: sftpConfig.host,
+        port: sftpConfig.port || 22,
+        username: sftpConfig.username || sftpConfig.user,
+        password: sftpConfig.password,
+        basePath: sftpConfig.basePath || '/soul/files'
+      });
+    }
+
+    case 'oracle': {
+      const { OracleObjectStorage } = require('../utils/oracle-object-storage');
+      const objConfig = config || fileConfig.file?.oracle || {};
+      if (!objConfig?.bucketName) throw new Error('Oracle Object Storage 설정이 없습니다.');
+      return new OracleObjectStorage({
+        tenancyId: objConfig.tenancyId,
+        userId: objConfig.userId,
+        region: objConfig.region,
+        fingerprint: objConfig.fingerprint,
+        privateKey: objConfig.privateKey,
+        namespace: objConfig.namespace,
+        bucketName: objConfig.bucketName
+      });
+    }
+
+    default:
+      throw new Error(`지원하지 않는 파일 저장소 타입: ${type}`);
   }
 }
 
@@ -513,6 +746,46 @@ router.post('/upload-oracle-wallet', walletUpload.single('wallet'), async (req, 
   } catch (error) {
     console.error('Wallet upload error:', error);
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /api/storage/oracle-object/test
+ * Oracle Object Storage 연결 테스트
+ */
+router.post('/oracle-object/test', async (req, res) => {
+  try {
+    const { tenancyId, userId, region, fingerprint, privateKey, namespace, bucketName } = req.body;
+
+    if (!tenancyId || !userId || !fingerprint || !privateKey || !bucketName) {
+      return res.status(400).json({ success: false, error: '필수 정보를 모두 입력하세요.' });
+    }
+
+    // PEM 형식 검증
+    const trimmedKey = (privateKey || '').trim();
+    if (!trimmedKey.match(/^-----BEGIN/)) {
+      return res.status(400).json({ success: false, error: 'PEM 형식이 올바르지 않습니다. Private Key 파일을 확인하세요.' });
+    }
+
+    const { OracleObjectStorage } = require('../utils/oracle-object-storage');
+    const storage = new OracleObjectStorage({
+      tenancyId, userId, region, fingerprint, privateKey, namespace, bucketName
+    });
+
+    await storage.testConnection();
+    const ns = storage.config.namespace;
+    await storage.close();
+
+    res.json({ success: true, message: 'Object Storage 연결 성공', namespace: ns });
+  } catch (error) {
+    console.error('Oracle Object Storage test error:', error);
+    let msg = error.message;
+    if (msg.includes('auto-detect format of key') || msg.includes('Failed to parse')) {
+      msg = 'PEM 키 형식 오류: RSA 또는 EC Private Key 파일인지 확인하세요';
+    } else if (msg.includes('401')) msg = '인증 실패: API Key 정보를 확인하세요';
+    else if (msg.includes('404')) msg = '버킷을 찾을 수 없습니다';
+    else if (msg.includes('ENOTFOUND')) msg = 'Region을 확인하세요';
+    res.json({ success: false, error: msg });
   }
 });
 
@@ -645,6 +918,9 @@ router.get('/usage', async (req, res) => {
       const filePath = storageConf.file?.local?.path || '~/.soul/files';
       result.file.path = filePath;
       result.file.size = await calcDirSize(filePath);
+    } else if (fileType === 'oracle') {
+      result.file.size = null;
+      result.file.info = storageConf.file?.oracle?.bucketName || '';
     } else {
       result.file.size = null;
     }

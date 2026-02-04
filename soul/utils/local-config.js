@@ -44,14 +44,25 @@ const DEFAULT_STORAGE_CONFIG = {
   },
   // 파일 저장소
   file: {
-    type: 'local',  // 'local' | 'oracle' | 'nas'
+    type: 'local',  // 'local' | 'sftp' | 'oracle' | 'nas'
     local: {
       path: path.join(CONFIG_DIR, 'files')
     },
+    sftp: {
+      host: '',
+      port: 22,
+      username: '',
+      password: '',
+      basePath: '/soul/files'
+    },
     oracle: {
-      // Oracle Object Storage 설정 (나중에 구현)
-      bucket: '',
-      namespace: ''
+      tenancyId: '',
+      userId: '',
+      region: '',
+      fingerprint: '',
+      privateKey: '',
+      namespace: '',
+      bucketName: ''
     },
     nas: {
       // NAS/SMB 설정 (나중에 구현)
@@ -70,7 +81,9 @@ const SENSITIVE_FIELDS = [
   ['memory', 'oracle', 'password'],
   ['memory', 'notion', 'token'],
   ['memory', 'ftp', 'password'],
-  ['file', 'nas', 'password']
+  ['file', 'sftp', 'password'],
+  ['file', 'nas', 'password'],
+  ['file', 'oracle', 'privateKey']
 ];
 
 function getNestedValue(obj, keys) {

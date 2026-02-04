@@ -440,6 +440,7 @@ router.get('/storage/available-types', async (req, res) => {
     ],
     file: [
       { type: 'local', name: '로컬', enabled: true, description: '로컬 파일 시스템' },
+      { type: 'sftp', name: 'SFTP', enabled: true, description: '원격 서버 (SSH)' },
       { type: 'oracle', name: 'Oracle Storage', enabled: false, description: 'Oracle Object Storage (준비중)' },
       { type: 'nas', name: 'NAS', enabled: false, description: 'NAS/SMB 공유 (준비중)' }
     ]

@@ -72,7 +72,10 @@ export class StorageSettings {
 
   render() {
     this.container.innerHTML = `<div class="storage-settings">${this.renderContent()}</div>`;
-    this.bindEvents();
+    if (!this._eventsBound) {
+      this.bindEvents();
+      this._eventsBound = true;
+    }
   }
 
   renderContent() {
@@ -162,6 +165,7 @@ export class StorageSettings {
     }
     return [
       { type: 'local', icon: '💻', name: '로컬', desc: '디바이스에 직접 저장' },
+      { type: 'sftp', icon: '🔗', name: 'SFTP', desc: '원격 서버에 파일 저장' },
       { type: 'oracle', icon: '🔶', name: 'Oracle', desc: 'Object Storage' },
       { type: 'nas', icon: '🗄️', name: 'NAS', desc: '준비 중', disabled: true }
     ];
@@ -190,10 +194,17 @@ export class StorageSettings {
 
   getSteps() {
     const type = this.selectedNewType;
-    if (type === 'oracle') {
+    if (type === 'oracle' && this.activeCategory === 'memory') {
       return [
         { id: 'wallet', title: '월렛 업로드', desc: 'Oracle Wallet.zip 파일을 업로드하세요' },
         { id: 'credentials', title: '연결 정보', desc: '사용자와 비밀번호를 입력하세요' },
+        { id: 'connect', title: '연결 & 이전', desc: '연결을 확인하고 데이터를 이전합니다' }
+      ];
+    }
+    if (type === 'oracle' && this.activeCategory === 'file') {
+      return [
+        { id: 'oci-apikey', title: 'API Key', desc: 'OCI API Key 정보를 입력하세요' },
+        { id: 'oci-bucket', title: '버킷 설정', desc: 'Object Storage 버킷 정보를 입력하세요' },
         { id: 'connect', title: '연결 & 이전', desc: '연결을 확인하고 데이터를 이전합니다' }
       ];
     }
@@ -201,6 +212,13 @@ export class StorageSettings {
       return [
         { id: 'token', title: '토큰 입력', desc: 'Notion Integration Token을 입력하세요' },
         { id: 'database', title: '데이터베이스 ID', desc: '대화를 저장할 데이터베이스 ID를 입력하세요' },
+        { id: 'connect', title: '연결 & 이전', desc: '연결을 확인하고 데이터를 이전합니다' }
+      ];
+    }
+    if (type === 'sftp') {
+      return [
+        { id: 'sftp-connection', title: '연결 정보', desc: '서버 주소와 인증 정보를 입력하세요' },
+        { id: 'sftp-path', title: '저장 경로', desc: '파일이 저장될 원격 경로를 설정하세요' },
         { id: 'connect', title: '연결 & 이전', desc: '연결을 확인하고 데이터를 이전합니다' }
       ];
     }
@@ -227,7 +245,7 @@ export class StorageSettings {
           <div class="step-title">${step.title}</div>
           <div class="step-desc">${step.desc}</div>
           ${state === 'active' ? this.renderStepForm(step, index) : ''}
-          ${state === 'error' ? `<div class="step-error-msg">${this.stepData._error || '오류 발생'}</div>` : ''}
+          ${state === 'error' ? `<div class="step-error-msg">${this.stepData._error || '오류 발생'}</div><button class="step-next-btn" data-action="retry-step" data-step="${index}">← 다시 시도</button>` : ''}
           ${state === 'completed' && step.id === 'connect' ? `<div class="step-success-msg">${this.stepData._successMsg || '완료!'}</div>` : ''}
         </div>
       </div>
@@ -311,6 +329,128 @@ export class StorageSettings {
       `;
     }
 
+    if (step.id === 'sftp-connection') {
+      const saved = this.storageConfig[this.activeCategory]?.sftp || {};
+      return `
+        <div class="step-form">
+          <div class="config-field">
+            <label>호스트</label>
+            <input class="config-input" id="obSftpHost" placeholder="192.168.0.100" value="${saved.host || ''}">
+          </div>
+          <div class="config-field">
+            <label>포트</label>
+            <input class="config-input" id="obSftpPort" type="number" placeholder="22" value="${saved.port || 22}">
+          </div>
+          <div class="config-field">
+            <label>사용자</label>
+            <input class="config-input" id="obSftpUsername" placeholder="username" value="${saved.username || ''}">
+          </div>
+          <div class="config-field">
+            <label>비밀번호</label>
+            <input class="config-input" type="password" id="obSftpPassword" placeholder="비밀번호">
+          </div>
+          <div id="sftpConnError" style="display:none; color:#d32f2f; font-size:0.8rem; margin-bottom:8px; padding:6px 8px; background:rgba(211,47,47,0.08); border-radius:6px;"></div>
+          <button class="step-next-btn" data-action="next-step">다음</button>
+        </div>
+      `;
+    }
+
+    if (step.id === 'sftp-path') {
+      const saved = this.storageConfig[this.activeCategory]?.sftp || {};
+      return `
+        <div class="step-form">
+          <div class="config-field">
+            <label>원격 저장 경로</label>
+            <input class="config-input" id="obSftpBasePath" placeholder="/soul/files" value="${saved.basePath || '/soul/files'}">
+          </div>
+          <div style="font-size:0.75rem; color:rgba(0,0,0,0.4); margin-top:-0.25rem;">
+            경로가 없으면 자동 생성됩니다
+          </div>
+          <button class="step-next-btn" data-action="next-step">다음</button>
+        </div>
+      `;
+    }
+
+    if (step.id === 'oci-apikey') {
+      const saved = this.storageConfig.file?.oracle || {};
+      // stepData에 이미 수집된 값이 있으면 우선 사용 (retry 시)
+      const tenancyId = this.stepData.ociTenancyId || saved.tenancyId || '';
+      const userId = this.stepData.ociUserId || saved.userId || '';
+      const region = this.stepData.ociRegion || saved.region || '';
+      const fingerprint = this.stepData.ociFingerprint || saved.fingerprint || '';
+      // 저장된 privateKey가 있고 stepData에 없으면 복원
+      if (!this.stepData.ociPrivateKey && saved.privateKey) {
+        this.stepData.ociPrivateKey = saved.privateKey;
+      }
+      const hasPem = !!(this.stepData.ociPrivateKey || saved.privateKey);
+      return `
+        <div class="step-form">
+          <div style="font-size:0.75rem; color:rgba(0,0,0,0.45); margin-bottom:12px; line-height:1.5; padding:8px 10px; background:rgba(0,0,0,0.03); border-radius:6px;">
+            OCI 콘솔 > Identity > Users > 내 계정 > API Keys에서 키를 생성하면<br>
+            아래 정보를 모두 확인할 수 있습니다. PEM 파일은 키 생성 시 다운로드됩니다.
+          </div>
+          <div class="config-field">
+            <label>Tenancy OCID</label>
+            <input class="config-input" id="obOciTenancy" placeholder="ocid1.tenancy.oc1..aaa..." value="${tenancyId}">
+            <div style="font-size:0.7rem; color:rgba(0,0,0,0.35); margin-top:2px;">Profile(우측 상단) > Tenancy에서 복사</div>
+          </div>
+          <div class="config-field">
+            <label>User OCID</label>
+            <input class="config-input" id="obOciUser" placeholder="ocid1.user.oc1..aaa..." value="${userId}">
+            <div style="font-size:0.7rem; color:rgba(0,0,0,0.35); margin-top:2px;">Profile > My profile > OCID 복사</div>
+          </div>
+          <div class="config-field">
+            <label>Region</label>
+            <input class="config-input" id="obOciRegion" placeholder="ap-chuncheon-1" value="${region}">
+            <div style="font-size:0.7rem; color:rgba(0,0,0,0.35); margin-top:2px;">콘솔 상단 지역 표시에서 확인 (예: ap-chuncheon-1)</div>
+          </div>
+          <div class="config-field">
+            <label>Fingerprint</label>
+            <input class="config-input" id="obOciFingerprint" placeholder="aa:bb:cc:..." value="${fingerprint}">
+            <div style="font-size:0.7rem; color:rgba(0,0,0,0.35); margin-top:2px;">API Key 생성 후 표시되는 fingerprint</div>
+          </div>
+          <div class="config-field">
+            <label>Private Key (PEM)</label>
+            <div class="wallet-upload">
+              <label class="upload-btn">
+                PEM 파일 선택
+                <input type="file" accept=".pem" id="ociPemFile" style="display:none">
+              </label>
+              <span class="wallet-status" id="pemStatus">${hasPem ? '✅ 등록됨' : ''}</span>
+            </div>
+            <div style="font-size:0.7rem; color:rgba(0,0,0,0.35); margin-top:2px;">API Key 생성 시 다운로드한 Private Key 파일 (.pem)</div>
+          </div>
+          <div id="ociApiKeyError" style="display:none; color:#d32f2f; font-size:0.8rem; margin-bottom:8px; padding:6px 8px; background:rgba(211,47,47,0.08); border-radius:6px;"></div>
+          <button class="step-next-btn" data-action="next-step">다음</button>
+        </div>
+      `;
+    }
+
+    if (step.id === 'oci-bucket') {
+      const saved = this.storageConfig.file?.oracle || {};
+      const namespace = this.stepData.ociNamespace || saved.namespace || '';
+      const bucketName = this.stepData.ociBucketName || saved.bucketName || '';
+      return `
+        <div class="step-form">
+          <div style="font-size:0.75rem; color:rgba(0,0,0,0.45); margin-bottom:12px; line-height:1.5; padding:8px 10px; background:rgba(0,0,0,0.03); border-radius:6px;">
+            OCI 콘솔 > Storage > Object Storage > Buckets에서<br>
+            버킷을 미리 만들어두세요. (Private 버킷 권장)
+          </div>
+          <div class="config-field">
+            <label>Namespace</label>
+            <input class="config-input" id="obOciNamespace" placeholder="자동 감지됨 (비워도 됨)" value="${namespace}">
+            <div style="font-size:0.7rem; color:rgba(0,0,0,0.35); margin-top:2px;">비워두면 자동으로 가져옵니다</div>
+          </div>
+          <div class="config-field">
+            <label>버킷 이름</label>
+            <input class="config-input" id="obOciBucket" placeholder="my-soul-files" value="${bucketName}">
+            <div style="font-size:0.7rem; color:rgba(0,0,0,0.35); margin-top:2px;">Bucket Details 페이지에서 이름 복사</div>
+          </div>
+          <button class="step-next-btn" data-action="next-step">다음</button>
+        </div>
+      `;
+    }
+
     if (step.id === 'path') {
       const saved = this.storageConfig[this.activeCategory]?.local || {};
       const defaultPath = this.activeCategory === 'memory' ? '~/.soul/data' : '~/.soul/files';
@@ -366,6 +506,7 @@ export class StorageSettings {
       else if (action === 'back-onboarding') this.handleBackFromOnboarding();
       else if (action === 'next-step') this.handleNextStep();
       else if (action === 'connect-migrate') this.handleConnectAndMigrate();
+      else if (action === 'retry-step') this.handleRetryStep(parseInt(btn.dataset.step));
       else if (action === 'close-browser') this.closeFolderBrowser();
       else if (action === 'select-folder') this.selectFolder();
     });
@@ -373,6 +514,7 @@ export class StorageSettings {
     // 파일 업로드 (이벤트 위임)
     this.container.addEventListener('change', (e) => {
       if (e.target.id === 'walletFile') this.handleWalletUpload(e);
+      if (e.target.id === 'ociPemFile') this.handlePemUpload(e);
     });
 
     // 폴더 브라우저 (이벤트 위임)
@@ -418,6 +560,22 @@ export class StorageSettings {
     this.render();
   }
 
+  handleRetryStep(stepIndex) {
+    // 에러난 스텝 → 이전 스텝의 active로 되돌리기
+    // connect(마지막) 스텝이면 한 칸 전으로, 아니면 그 스텝 자체를 active로
+    this.stepData._error = null;
+    if (stepIndex > 0) {
+      this.stepStates[stepIndex] = 'pending';
+      this.stepStates[stepIndex - 1] = 'active';
+      this.currentStep = stepIndex - 1;
+    } else {
+      this.stepStates[stepIndex] = 'active';
+      this.currentStep = stepIndex;
+    }
+    this.migrating = false;
+    this.render();
+  }
+
   handleBackFromOnboarding() {
     if (this.migrating) return; // 마이그레이션 중 뒤로가기 금지
     this.view = 'select';
@@ -432,12 +590,38 @@ export class StorageSettings {
 
   // ========== 스텝 진행 ==========
 
-  handleNextStep() {
+  async handleNextStep() {
     const steps = this.getSteps();
     const step = steps[this.currentStep];
 
     // 유효성 검사 + 데이터 수집
     if (!this.validateAndCollect(step)) return;
+
+    // SFTP 연결 정보 입력 후 바로 연결 테스트
+    if (step.id === 'sftp-connection') {
+      const nextBtn = this.container.querySelector('[data-action="next-step"]');
+      if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = '연결 확인 중...'; }
+      try {
+        const result = await this.apiClient.post('/storage/sftp/test', {
+          host: this.stepData.sftpHost,
+          port: this.stepData.sftpPort,
+          username: this.stepData.sftpUsername,
+          password: this.stepData.sftpPassword,
+          basePath: '/tmp'
+        });
+        if (!result.success) {
+          if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = '다음'; }
+          const errEl = this.container.querySelector('#sftpConnError');
+          if (errEl) { errEl.textContent = result.error || '연결 실패'; errEl.style.display = 'block'; }
+          return;
+        }
+      } catch (err) {
+        if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = '다음'; }
+        const errEl = this.container.querySelector('#sftpConnError');
+        if (errEl) { errEl.textContent = err.message; errEl.style.display = 'block'; }
+        return;
+      }
+    }
 
     // 완료 처리
     this.stepStates[this.currentStep] = 'completed';
@@ -469,6 +653,45 @@ export class StorageSettings {
       const dbId = this.container.querySelector('#obNotionDbId')?.value?.trim();
       if (!dbId) { alert('데이터베이스 ID를 입력하세요.'); return false; }
       this.stepData.databaseId = dbId;
+      return true;
+    }
+    if (step.id === 'sftp-connection') {
+      const host = this.container.querySelector('#obSftpHost')?.value?.trim();
+      const port = this.container.querySelector('#obSftpPort')?.value || '22';
+      const username = this.container.querySelector('#obSftpUsername')?.value?.trim();
+      const password = this.container.querySelector('#obSftpPassword')?.value;
+      if (!host || !username) { alert('호스트와 사용자를 입력하세요.'); return false; }
+      this.stepData.sftpHost = host;
+      this.stepData.sftpPort = parseInt(port);
+      this.stepData.sftpUsername = username;
+      this.stepData.sftpPassword = password;
+      return true;
+    }
+    if (step.id === 'sftp-path') {
+      const basePath = this.container.querySelector('#obSftpBasePath')?.value?.trim();
+      if (!basePath) { alert('경로를 입력하세요.'); return false; }
+      this.stepData.sftpBasePath = basePath;
+      return true;
+    }
+    if (step.id === 'oci-apikey') {
+      const tenancyId = this.container.querySelector('#obOciTenancy')?.value?.trim();
+      const userId = this.container.querySelector('#obOciUser')?.value?.trim();
+      const region = this.container.querySelector('#obOciRegion')?.value?.trim();
+      const fingerprint = this.container.querySelector('#obOciFingerprint')?.value?.trim();
+      if (!tenancyId || !userId || !region || !fingerprint) { alert('모든 필드를 입력하세요.'); return false; }
+      if (!this.stepData.ociPrivateKey) { alert('PEM 파일을 선택하세요.'); return false; }
+      this.stepData.ociTenancyId = tenancyId;
+      this.stepData.ociUserId = userId;
+      this.stepData.ociRegion = region;
+      this.stepData.ociFingerprint = fingerprint;
+      return true;
+    }
+    if (step.id === 'oci-bucket') {
+      const namespace = this.container.querySelector('#obOciNamespace')?.value?.trim();
+      const bucketName = this.container.querySelector('#obOciBucket')?.value?.trim();
+      if (!bucketName) { alert('버킷 이름을 입력하세요.'); return false; }
+      this.stepData.ociNamespace = namespace || '';
+      this.stepData.ociBucketName = bucketName;
       return true;
     }
     if (step.id === 'path') {
@@ -520,14 +743,17 @@ export class StorageSettings {
         if (actionBtn) actionBtn.innerHTML = '<div class="step-spinner"></div> 데이터 이전 중...';
         this.showProgress(10, '데이터 내보내기 준비 중...');
 
-        const migResult = await this.apiClient.post('/storage/migrate', { fromType, toType });
-
-        if (!migResult.success) {
-          throw new Error(migResult.error || '마이그레이션 실패');
+        if (this.activeCategory === 'memory') {
+          const migResult = await this.apiClient.post('/storage/migrate', { fromType, toType });
+          if (!migResult.success) throw new Error(migResult.error || '마이그레이션 실패');
+          this.showProgress(100, `완료! ${migResult.results?.messages || 0}개 메시지, ${migResult.results?.files || 0}개 파일 이동됨`);
+          this.stepData._successMsg = `✅ ${migResult.results?.messages || 0}개 메시지, ${migResult.results?.files || 0}개 파일 이전 완료`;
+        } else {
+          const migResult = await this.apiClient.post('/storage/migrate-files', { fromType, toType });
+          if (!migResult.success) throw new Error(migResult.error || '파일 마이그레이션 실패');
+          this.showProgress(100, `완료! ${migResult.results?.files || 0}개 파일 이동됨`);
+          this.stepData._successMsg = `✅ ${migResult.results?.files || 0}개 파일 이전 완료`;
         }
-
-        this.showProgress(100, `완료! ${migResult.results?.messages || 0}개 메시지, ${migResult.results?.files || 0}개 파일 이동됨`);
-        this.stepData._successMsg = `✅ ${migResult.results?.messages || 0}개 메시지, ${migResult.results?.files || 0}개 파일 이전 완료`;
       } else {
         this.stepData._successMsg = '✅ 설정 저장 완료';
       }
@@ -568,17 +794,37 @@ export class StorageSettings {
   async testConnection() {
     const type = this.selectedNewType;
     try {
-      if (type === 'oracle') {
+      if (type === 'oracle' && this.activeCategory === 'memory') {
         return await this.apiClient.post('/storage/oracle/test', {
           user: this.stepData.user,
           password: this.stepData.password,
           connectionString: this.stepData.connectionString
         });
       }
+      if (type === 'oracle' && this.activeCategory === 'file') {
+        return await this.apiClient.post('/storage/oracle-object/test', {
+          tenancyId: this.stepData.ociTenancyId,
+          userId: this.stepData.ociUserId,
+          region: this.stepData.ociRegion,
+          fingerprint: this.stepData.ociFingerprint,
+          privateKey: this.stepData.ociPrivateKey,
+          namespace: this.stepData.ociNamespace,
+          bucketName: this.stepData.ociBucketName
+        });
+      }
       if (type === 'notion') {
         return await this.apiClient.post('/storage/notion/test', {
           token: this.stepData.token,
           databaseId: this.stepData.databaseId
+        });
+      }
+      if (type === 'sftp') {
+        return await this.apiClient.post('/storage/sftp/test', {
+          host: this.stepData.sftpHost,
+          port: this.stepData.sftpPort,
+          username: this.stepData.sftpUsername,
+          password: this.stepData.sftpPassword,
+          basePath: this.stepData.sftpBasePath
         });
       }
       // local - 경로 존재 확인
@@ -597,7 +843,7 @@ export class StorageSettings {
     const type = this.selectedNewType;
     this.storageConfig[cat].type = type;
 
-    if (type === 'oracle') {
+    if (type === 'oracle' && cat === 'memory') {
       this.storageConfig[cat].oracle = {
         ...this.storageConfig[cat].oracle,
         user: this.stepData.user,
@@ -605,11 +851,29 @@ export class StorageSettings {
         connectionString: this.stepData.connectionString,
         walletPath: this.stepData.walletPath || this.storageConfig[cat].oracle?.walletPath
       };
+    } else if (type === 'oracle' && cat === 'file') {
+      this.storageConfig[cat].oracle = {
+        tenancyId: this.stepData.ociTenancyId,
+        userId: this.stepData.ociUserId,
+        region: this.stepData.ociRegion,
+        fingerprint: this.stepData.ociFingerprint,
+        privateKey: this.stepData.ociPrivateKey,
+        namespace: this.stepData.ociNamespace,
+        bucketName: this.stepData.ociBucketName
+      };
     } else if (type === 'notion') {
       this.storageConfig[cat].notion = {
         ...this.storageConfig[cat].notion,
         token: this.stepData.token,
         databaseId: this.stepData.databaseId
+      };
+    } else if (type === 'sftp') {
+      this.storageConfig[cat].sftp = {
+        host: this.stepData.sftpHost,
+        port: this.stepData.sftpPort,
+        username: this.stepData.sftpUsername,
+        password: this.stepData.sftpPassword,
+        basePath: this.stepData.sftpBasePath
       };
     } else if (type === 'local') {
       this.storageConfig[cat].local = {
@@ -685,6 +949,30 @@ export class StorageSettings {
       if (statusEl) statusEl.textContent = '❌ 업로드 실패';
       console.error('Wallet upload failed:', error);
     }
+  }
+
+  // ========== PEM 파일 읽기 ==========
+
+  handlePemUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const statusEl = this.container.querySelector('#pemStatus');
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      // PEM 문자열 정규화 (줄바꿈, 공백 정리)
+      const raw = ev.target.result || '';
+      const normalized = raw
+        .replace(/\r\n/g, '\n')   // Windows 줄바꿈 → Unix
+        .replace(/\r/g, '\n')     // 구형 Mac 줄바꿈 → Unix
+        .trim() + '\n';           // 끝에 줄바꿈 하나
+      this.stepData.ociPrivateKey = normalized;
+      if (statusEl) statusEl.textContent = '✅ ' + file.name;
+    };
+    reader.onerror = () => {
+      if (statusEl) statusEl.textContent = '❌ 읽기 실패';
+    };
+    reader.readAsText(file);
   }
 
   // ========== 폴더 브라우저 ==========
