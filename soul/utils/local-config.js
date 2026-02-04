@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { encrypt, decrypt, isEncrypted } = require('./credential-crypto');
 
 // 설정 파일 경로
 const CONFIG_DIR = process.env.SOUL_CONFIG_DIR || path.join(os.homedir(), '.soul');
@@ -63,6 +64,55 @@ const DEFAULT_STORAGE_CONFIG = {
 };
 
 /**
+ * 민감 필드 경로 목록
+ */
+const SENSITIVE_FIELDS = [
+  ['memory', 'oracle', 'password'],
+  ['memory', 'notion', 'token'],
+  ['memory', 'ftp', 'password'],
+  ['file', 'nas', 'password']
+];
+
+function getNestedValue(obj, keys) {
+  return keys.reduce((o, k) => o?.[k], obj);
+}
+
+function setNestedValue(obj, keys, value) {
+  const last = keys[keys.length - 1];
+  const parent = keys.slice(0, -1).reduce((o, k) => {
+    if (!o[k]) o[k] = {};
+    return o[k];
+  }, obj);
+  parent[last] = value;
+}
+
+function encryptSensitiveFields(config) {
+  const result = JSON.parse(JSON.stringify(config));
+  for (const fieldPath of SENSITIVE_FIELDS) {
+    const val = getNestedValue(result, fieldPath);
+    if (val && typeof val === 'string' && !isEncrypted(val)) {
+      setNestedValue(result, fieldPath, encrypt(val));
+    }
+  }
+  return result;
+}
+
+function decryptSensitiveFields(config) {
+  const result = JSON.parse(JSON.stringify(config));
+  for (const fieldPath of SENSITIVE_FIELDS) {
+    const val = getNestedValue(result, fieldPath);
+    if (val && isEncrypted(val)) {
+      try {
+        setNestedValue(result, fieldPath, decrypt(val));
+      } catch (e) {
+        console.error(`[LocalConfig] Failed to decrypt ${fieldPath.join('.')}:`, e.message);
+      }
+    }
+  }
+  return result;
+}
+
+/**
  * 설정 디렉토리 생성
  */
 function ensureConfigDir() {
@@ -83,11 +133,12 @@ function readStorageConfigSync() {
       const content = fs.readFileSync(STORAGE_CONFIG_FILE, 'utf-8');
       const config = JSON.parse(content);
 
-      // 기본값과 병합 (저장된 값 우선)
-      return {
+      // 기본값과 병합 (저장된 값 우선) + 민감 필드 복호화
+      const merged = {
         memory: { ...DEFAULT_STORAGE_CONFIG.memory, ...config.memory },
         file: { ...DEFAULT_STORAGE_CONFIG.file, ...config.file }
       };
+      return decryptSensitiveFields(merged);
     }
 
     return DEFAULT_STORAGE_CONFIG;
@@ -111,14 +162,15 @@ async function writeStorageConfig(config) {
   try {
     ensureConfigDir();
 
-    // 기존 설정과 병합
+    // 기존 설정과 병합 후 민감 필드 암호화하여 저장
     const existing = readStorageConfigSync();
     const merged = {
       memory: { ...existing.memory, ...config.memory },
       file: { ...existing.file, ...config.file }
     };
+    const encrypted = encryptSensitiveFields(merged);
 
-    fs.writeFileSync(STORAGE_CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+    fs.writeFileSync(STORAGE_CONFIG_FILE, JSON.stringify(encrypted, null, 2), 'utf-8');
     console.log('[LocalConfig] Storage config saved');
 
     return merged;

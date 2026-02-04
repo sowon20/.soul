@@ -1,4 +1,25 @@
 
+/* 일시적 토스트 알림 */
+.chat-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  background: var(--bg-tertiary, #333);
+  color: var(--text-secondary, #aaa);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none;
+  z-index: 1000;
+}
+.chat-toast.visible {
+  opacity: 0.85;
+  transform: translateX(-50%) translateY(0);
+}
+
 /* 검색 결과 하이라이트 */
 .search-highlight-message {
   animation: highlightPulse 2s ease-out;
@@ -9,66 +30,135 @@
   100% { background: transparent; }
 }
 
-/* 도구 실행 상태 */
+/* 도구 실행 상태 (실시간) */
+/* 실시간 도구 실행 상태 - 온보딩 스텝 스타일 */
 .tool-execution-status {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px;
+  padding: 8px 16px;
   margin: 8px 0;
 }
 
 .tool-status-item {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.03);
-  border-radius: 8px;
-  font-size: 0.875rem;
-  color: rgba(0, 0, 0, 0.6);
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+  position: relative;
+  font-size: 0.82rem;
+  transition: opacity 0.3s ease;
 }
 
-.tool-status-item.running {
-  background: rgba(59, 130, 246, 0.08);
-  color: rgb(59, 130, 246);
+/* 세로 연결선 */
+.tool-status-item:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 22px;
+  bottom: -6px;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.tool-status-item.success {
-  background: rgba(34, 197, 94, 0.08);
-  color: rgb(34, 197, 94);
-}
-
-.tool-status-item.error {
-  background: rgba(239, 68, 68, 0.08);
-  color: rgb(239, 68, 68);
-}
-
-.tool-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid currentColor;
-  border-top-color: transparent;
+/* 스텝 인디케이터 (동그라미) */
+.tool-step-indicator {
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  margin-top: 1px;
+  position: relative;
+  z-index: 1;
+}
+
+/* 대기 상태 - 빈 동그라미 */
+.tool-status-item .tool-step-indicator {
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  color: transparent;
+}
+
+/* 진행 중 - 스피너 */
+.tool-status-item.running .tool-step-indicator {
+  background: transparent;
+  border: 2px solid rgba(56, 189, 248, 0.4);
+  border-top-color: rgba(56, 189, 248, 0.9);
   animation: toolSpin 0.8s linear infinite;
+}
+
+/* 완료 - 체크 */
+.tool-status-item.done .tool-step-indicator,
+.tool-status-item.success .tool-step-indicator,
+.tool-status-item.need .tool-step-indicator,
+.tool-status-item.selected .tool-step-indicator {
+  background: rgba(74, 222, 128, 0.3);
+  border: 2px solid rgba(74, 222, 128, 0.3);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* 완료 연결선도 초록 */
+.tool-status-item.done:not(:last-child)::before,
+.tool-status-item.success:not(:last-child)::before,
+.tool-status-item.need:not(:last-child)::before,
+.tool-status-item.selected:not(:last-child)::before {
+  background: rgba(74, 222, 128, 0.15);
+}
+
+/* 에러 - 빨간 동그라미 */
+.tool-status-item.error .tool-step-indicator {
+  background: rgba(239, 68, 68, 0.9);
+  border: 2px solid rgba(239, 68, 68, 0.9);
+  color: #fff;
+}
+
+.tool-status-item.error:not(:last-child)::before {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+/* 스텝 내용 */
+.tool-step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-step-title {
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.3;
+}
+
+/* 진행 중 타이틀 강조 */
+.tool-status-item.running .tool-step-title {
+  color: rgba(56, 189, 248, 0.95);
+}
+
+/* 완료된 항목 흐리게 */
+.tool-status-item.done .tool-step-title,
+.tool-status-item.success .tool-step-title,
+.tool-status-item.need .tool-step-title,
+.tool-status-item.selected .tool-step-title {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.tool-step-desc {
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: 1px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 @keyframes toolSpin {
   to { transform: rotate(360deg); }
-}
-
-.tool-icon {
-  font-size: 0.875rem;
-  font-weight: bold;
-}
-
-.tool-display {
-  flex: 1;
-}
-
-.tool-status-text {
-  font-size: 0.75rem;
-  opacity: 0.7;
 }
 
 /* 히스토리 로딩 인디케이터 */

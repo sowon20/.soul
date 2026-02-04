@@ -341,7 +341,8 @@ function createModel(tableName, options = {}) {
         : `SELECT * FROM ${tableName}`;
 
       const stmt = db.prepare(sql);
-      const rows = conditions ? stmt.all(...Object.values(where)) : stmt.all();
+      const values = Object.values(where).map(v => typeof v === 'boolean' ? (v ? 1 : 0) : v);
+      const rows = conditions ? stmt.all(...values) : stmt.all();
 
       return rows.map(row => parseRow(row));
     },
@@ -356,7 +357,8 @@ function createModel(tableName, options = {}) {
 
       const sql = `SELECT * FROM ${tableName} WHERE ${conditions} LIMIT 1`;
       const stmt = db.prepare(sql);
-      const row = stmt.get(...Object.values(where));
+      const values = Object.values(where).map(v => typeof v === 'boolean' ? (v ? 1 : 0) : v);
+      const row = stmt.get(...values);
 
       return row ? parseRow(row) : null;
     },
@@ -411,7 +413,7 @@ function createModel(tableName, options = {}) {
       const stmt = db.prepare(sql);
       const result = stmt.run(
         ...Object.values(updateData).map(serializeValue),
-        ...Object.values(where)
+        ...Object.values(where).map(serializeValue)
       );
 
       return { modifiedCount: result.changes };
@@ -444,7 +446,7 @@ function createModel(tableName, options = {}) {
 
       const sql = `DELETE FROM ${tableName} WHERE ${whereClause}`;
       const stmt = db.prepare(sql);
-      const result = stmt.run(...Object.values(where));
+      const result = stmt.run(...Object.values(where).map(serializeValue));
 
       return { deletedCount: result.changes };
     },
@@ -478,13 +480,13 @@ function createModel(tableName, options = {}) {
         })
         .join(' AND ');
 
-      const whereValues = Object.values(where).flatMap(v => v.$in || [v]);
+      const whereValues = Object.values(where).flatMap(v => v.$in || [v]).map(serializeValue);
 
       const sql = `UPDATE ${tableName} SET ${setClause} WHERE ${whereClause}`;
       const stmt = db.prepare(sql);
       const result = stmt.run(
         ...Object.values(updateData).map(serializeValue),
-        ...Object.values(incData),
+        ...Object.values(incData).map(serializeValue),
         ...whereValues
       );
 
@@ -504,7 +506,8 @@ function createModel(tableName, options = {}) {
         : `SELECT COUNT(*) as count FROM ${tableName}`;
 
       const stmt = db.prepare(sql);
-      const row = conditions ? stmt.get(...Object.values(where)) : stmt.get();
+      const values = Object.values(where).map(v => typeof v === 'boolean' ? (v ? 1 : 0) : v);
+      const row = conditions ? stmt.get(...values) : stmt.get();
 
       return row.count;
     }

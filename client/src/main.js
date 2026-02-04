@@ -233,16 +233,20 @@ class SoulApp {
       const userId = localStorage.getItem('userId') || 'default';
       this.themeManager.setUserId(userId);
       await this.themeManager.applyTheme('default');
+      // 프로필 API 실패해도 프로필 이미지는 별도 시도
+      this.loadProfileImage(userId);
     }
   }
 
   /**
    * Phase P 프로필 정보 로드 및 표시 (center-card 프로필 버튼)
    */
-  async loadProfileImage(userId) {
+  async loadProfileImage(userId, retryCount = 0) {
+    const MAX_RETRIES = 5;
     try {
       // 프로필 전체 정보 로드
       const response = await fetch(`/api/profile/p?userId=${userId}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
 
       if (data.success && data.profile) {
@@ -266,9 +270,15 @@ class SoulApp {
         }
 
         console.log('✅ 프로필 정보 로드 완료');
+      } else if (retryCount < MAX_RETRIES) {
+        setTimeout(() => this.loadProfileImage(userId, retryCount + 1), (retryCount + 1) * 1000);
       }
     } catch (error) {
-      console.warn('프로필 정보 로드 실패:', error);
+      if (retryCount < MAX_RETRIES) {
+        setTimeout(() => this.loadProfileImage(userId, retryCount + 1), (retryCount + 1) * 1000);
+      } else {
+        console.warn('프로필 정보 로드 실패:', error);
+      }
     }
   }
 
@@ -432,6 +442,17 @@ class SoulApp {
       console.log('❌ 모바일 메뉴 요소를 찾을 수 없음');
     }
 
+    // 바깥 클릭 시 사이드바 숨김 (모바일만)
+    const rightArea = document.querySelector('.right-area');
+    if (rightArea && leftCard && centerGroup) {
+      rightArea.addEventListener('click', () => {
+        if (window.innerWidth < 900 && !leftCard.classList.contains('hide')) {
+          leftCard.classList.add('hide');
+          centerGroup.classList.add('hide');
+        }
+      });
+    }
+
     // Scroll to bottom button
     const scrollToBottomBtn = document.getElementById('scrollToBottom');
     const messagesContainer = document.querySelector('.right-card-top');
@@ -515,6 +536,7 @@ class SoulApp {
 
     // Initialize responsive behavior
     this.initResponsive();
+    this.initSwipeGesture();
 
     // Initialize MacOS Dock effect
     this.initMacosDock();
@@ -743,6 +765,51 @@ class SoulApp {
 
       previousWidth = currentWidth;
     });
+  }
+
+  initSwipeGesture() {
+    const leftCard = document.querySelector('.left-card');
+    const centerGroup = document.querySelector('.center-group');
+    if (!leftCard || !centerGroup) return;
+
+    let startX = 0;
+    let startY = 0;
+    let swiping = false;
+
+    document.addEventListener('touchstart', (e) => {
+      if (window.innerWidth >= 900) return;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      const isHidden = leftCard.classList.contains('hide');
+      // 열기: 왼쪽 가장자리 25px 이내에서 시작
+      // 닫기: 사이드바 열려 있을 때 아무 곳에서나
+      swiping = isHidden ? startX < 25 : true;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      if (!swiping || window.innerWidth >= 900) return;
+      const endX = e.changedTouches[0].clientX;
+      const endY = e.changedTouches[0].clientY;
+      const diffX = endX - startX;
+      const diffY = Math.abs(endY - startY);
+
+      // 수직 스크롤이 더 크면 무시
+      if (diffY > Math.abs(diffX)) return;
+
+      const isHidden = leftCard.classList.contains('hide');
+
+      if (isHidden && diffX > 50) {
+        // 오른쪽 스와이프 → 열기
+        leftCard.classList.remove('hide');
+        centerGroup.classList.remove('hide');
+      } else if (!isHidden && diffX < -50) {
+        // 왼쪽 스와이프 → 닫기
+        leftCard.classList.add('hide');
+        centerGroup.classList.add('hide');
+      }
+
+      swiping = false;
+    }, { passive: true });
   }
 
   initCenterMenuButtons() {
@@ -1129,7 +1196,8 @@ class SoulApp {
   /**
    * MacOS 스타일 Dock 초기화 - DB에서 아이템 로드
    */
-  async initMacosDock() {
+  async initMacosDock(retryCount = 0) {
+    const MAX_RETRIES = 5;
     const dock = document.querySelector('.dock');
     if (!dock) {
       console.log('❌ MacOS Dock 요소를 찾을 수 없음');
@@ -1139,15 +1207,17 @@ class SoulApp {
     // DB에서 독 아이템 로드
     try {
       const response = await fetch('/api/config/dock');
-      if (response.ok) {
-        this.dockItems = await response.json();
-        this.renderDock();
-      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      this.dockItems = await response.json();
+      this.renderDock();
+      console.log('✅ MacOS Dock 초기화 완료');
     } catch (error) {
-      console.error('독 설정 로드 실패:', error);
+      if (retryCount < MAX_RETRIES) {
+        setTimeout(() => this.initMacosDock(retryCount + 1), (retryCount + 1) * 1000);
+      } else {
+        console.error('독 설정 로드 실패:', error);
+      }
     }
-
-    console.log('✅ MacOS Dock 초기화 완료');
   }
 
   /**
@@ -1168,6 +1238,16 @@ class SoulApp {
         ${this.dockEditMode && !item.fixed ? '<div class="dock-item-remove">×</div>' : ''}
       </div>
     `).join('');
+
+    // 이미지 로드 실패 시 자동 재시도 (서버 시작 타이밍 문제 대응)
+    dock.querySelectorAll('.dock-item img').forEach(img => {
+      img.addEventListener('error', function retry() {
+        const attempt = (parseInt(this.dataset.retry) || 0) + 1;
+        if (attempt > 5) { this.removeEventListener('error', retry); return; }
+        this.dataset.retry = attempt;
+        setTimeout(() => { this.src = this.src.split('?')[0] + '?t=' + Date.now(); }, attempt * 1000);
+      });
+    });
 
     // 클릭/롱프레스 이벤트 등록
     dock.querySelectorAll('.dock-item').forEach(el => {

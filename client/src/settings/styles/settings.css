@@ -6348,136 +6348,323 @@ textarea.settings-field-input {
 
 /* ============================================
    저장소 설정 스타일 (storage-settings.js)
+   온보딩 스텝 UI
    ============================================ */
 
 .storage-settings {
   padding: 1rem;
+  width: 100%;
+  background: transparent;
 }
 
+/* === 메인 뷰 === */
 .storage-section {
-  background: rgba(255, 255, 255, 0.4);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 12px;
-  padding: 1.5rem;
   margin-bottom: 1.5rem;
 }
 
 .storage-section-title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
   font-size: 1.1rem;
   font-weight: 600;
   color: rgba(0, 0, 0, 0.85);
   margin: 0 0 0.25rem 0;
 }
 
-.section-icon {
-  font-size: 1.2rem;
-}
-
 .storage-section-desc {
   color: rgba(0, 0, 0, 0.5);
   font-size: 0.85rem;
-  margin: 0 0 1rem 0;
+  margin: 0 0 0.75rem 0;
 }
 
-/* 타입 선택 버튼 */
-.storage-type-selector {
-  margin-bottom: 1rem;
+.storage-current-info {
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.75rem;
 }
 
-.type-buttons {
+.info-row {
   display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.3rem 0;
 }
 
-.type-btn {
-  padding: 0.6rem 1rem;
+.info-row + .info-row {
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.info-label {
+  font-size: 0.85rem;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.info-value {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.storage-change-btn {
+  padding: 0.55rem 1.2rem;
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.5);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  color: rgba(0, 0, 0, 0.7);
 }
 
-.type-btn:hover:not(.disabled) {
+.storage-change-btn:hover {
   background: rgba(255, 255, 255, 0.8);
   border-color: rgba(139, 92, 67, 0.3);
 }
 
-.type-btn.active {
-  background: linear-gradient(135deg, #c4956a, #b4855a);
-  color: white;
-  border-color: transparent;
+/* === 선택 레이어 (슬라이드 다운) === */
+.storage-select-layer {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.4s ease, opacity 0.3s ease, margin 0.3s ease;
+  margin-top: 0;
 }
 
-.type-btn.disabled {
-  opacity: 0.5;
+.storage-select-layer.open {
+  max-height: 500px;
+  opacity: 1;
+  margin-top: 0.75rem;
+}
+
+.select-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.select-header h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.8);
+  margin: 0;
+}
+
+.storage-back-btn {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: rgba(0, 0, 0, 0.5);
+  padding: 0.2rem 0.4rem;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.storage-back-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.8);
+}
+
+.type-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.5rem;
+}
+
+/* 타입 카드 버튼 */
+.type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.8rem 0.5rem;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.type-card:hover:not(.disabled) {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(139, 92, 67, 0.3);
+  transform: translateY(-1px);
+}
+
+.type-card.disabled {
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-.type-badge {
-  font-size: 0.65rem;
-  padding: 0.15rem 0.4rem;
-  background: rgba(0, 0, 0, 0.1);
+.type-card.current {
+  border-color: rgba(139, 92, 67, 0.4);
+  background: rgba(196, 149, 106, 0.08);
+}
+
+.type-card-icon { font-size: 1.4rem; }
+.type-card-name { font-size: 0.85rem; font-weight: 600; color: rgba(0, 0, 0, 0.8); }
+.type-card-desc { font-size: 0.7rem; color: rgba(0, 0, 0, 0.45); line-height: 1.3; }
+.type-card-badge {
+  font-size: 0.6rem;
+  padding: 0.1rem 0.35rem;
+  background: rgba(139, 92, 67, 0.15);
+  color: rgba(139, 92, 67, 0.9);
   border-radius: 4px;
 }
 
-.type-btn.active .type-badge {
-  background: rgba(255, 255, 255, 0.3);
+/* === 온보딩 스텝 UI === */
+.storage-onboarding {
+  margin-top: 0.75rem;
 }
 
-/* 설정 패널 */
-.config-panel {
-  display: none;
-  padding: 1rem;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 8px;
-  margin-top: 0.5rem;
-}
-
-.config-panel.active {
-  display: block;
-}
-
-.config-field {
+.onboarding-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin-bottom: 1rem;
 }
 
-.config-field label {
-  display: block;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: rgba(0, 0, 0, 0.7);
-  margin-bottom: 0.4rem;
+.onboarding-header h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.8);
+  margin: 0;
 }
 
-.config-input {
+.onboarding-steps {
+  display: flex;
+  flex-direction: column;
+}
+
+.ob-step {
+  display: flex;
+  gap: 0.75rem;
+  position: relative;
+}
+
+/* 좌측 인디케이터 (아이콘 + 연결선) */
+.step-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 32px;
+}
+
+.step-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+
+.step-icon.pending {
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.3);
+}
+
+.step-icon.active {
+  background: linear-gradient(135deg, #c4956a, #b4855a);
+  color: white;
+}
+
+.step-icon.completed {
+  background: #10b981;
+  color: white;
+}
+
+.step-icon.error {
+  background: #ef4444;
+  color: white;
+}
+
+.step-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.step-line {
+  width: 2px;
+  flex: 1;
+  min-height: 12px;
+  margin: 4px 0;
+  transition: background 0.3s;
+}
+
+.step-line.pending { background: rgba(0, 0, 0, 0.08); }
+.step-line.completed { background: #10b981; }
+.step-line.active { background: linear-gradient(to bottom, #c4956a, rgba(0, 0, 0, 0.08)); }
+
+/* 우측 콘텐츠 */
+.step-body {
+  flex: 1;
+  padding-bottom: 1.25rem;
+  min-width: 0;
+}
+
+.step-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.85);
+  margin: 0 0 0.15rem 0;
+  line-height: 32px;
+  transition: opacity 0.3s;
+}
+
+.step-desc {
+  font-size: 0.8rem;
+  color: rgba(0, 0, 0, 0.45);
+  margin: 0 0 0.5rem 0;
+  line-height: 1.4;
+}
+
+.ob-step.pending .step-title { opacity: 0.4; }
+.ob-step.pending .step-desc { opacity: 0.3; }
+
+/* 스텝 폼 */
+.step-form {
+  padding: 0.75rem 0 0.25rem;
+}
+
+.step-form .config-field {
+  margin-bottom: 0.75rem;
+}
+
+.step-form .config-field label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.6);
+  margin-bottom: 0.3rem;
+}
+
+.step-form .config-input {
   width: 100%;
-  padding: 0.6rem 0.8rem;
+  padding: 0.55rem 0.75rem;
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   background: rgba(255, 255, 255, 0.6);
   transition: all 0.2s;
+  box-sizing: border-box;
 }
 
-.config-input:focus {
+.step-form .config-input:focus {
   outline: none;
   border-color: rgba(139, 92, 67, 0.4);
   background: rgba(255, 255, 255, 0.9);
 }
 
-.config-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
+.step-form select.config-input {
+  appearance: auto;
 }
 
 /* 경로 입력 그룹 */
@@ -6486,38 +6673,36 @@ textarea.settings-field-input {
   gap: 0.5rem;
 }
 
-.path-input-group .config-input {
-  flex: 1;
-}
+.path-input-group .config-input { flex: 1; }
 
 .browse-btn {
-  padding: 0.6rem 1rem;
+  padding: 0.55rem 0.8rem;
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.6);
   cursor: pointer;
-  transition: all 0.2s;
+  font-size: 0.8rem;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
 
-.browse-btn:hover {
-  background: rgba(255, 255, 255, 0.9);
-}
+.browse-btn:hover { background: rgba(255, 255, 255, 0.9); }
 
-/* Wallet 업로드 */
+/* 월렛 업로드 */
 .wallet-upload {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .upload-btn {
-  padding: 0.5rem 1rem;
+  padding: 0.45rem 0.8rem;
   border: 1px dashed rgba(0, 0, 0, 0.2);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.5);
   cursor: pointer;
-  font-size: 0.85rem;
-  transition: all 0.2s;
+  font-size: 0.8rem;
+  transition: all 0.15s;
 }
 
 .upload-btn:hover {
@@ -6526,166 +6711,175 @@ textarea.settings-field-input {
 }
 
 .wallet-status {
-  font-size: 0.85rem;
-  color: rgba(0, 0, 0, 0.6);
-}
-
-/* 연결 테스트 */
-.test-connection {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
-}
-
-.test-btn {
-  padding: 0.5rem 1rem;
-  border: 1px solid rgba(139, 92, 67, 0.3);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.6);
-  color: rgba(139, 92, 67, 0.9);
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.test-btn:hover {
-  background: rgba(139, 92, 67, 0.1);
-}
-
-.test-result {
-  font-size: 0.85rem;
-}
-
-.test-result.success {
-  color: #10b981;
-}
-
-.test-result.error {
-  color: #ef4444;
-}
-
-.test-result.testing {
+  font-size: 0.8rem;
   color: rgba(0, 0, 0, 0.5);
 }
 
-/* 비활성 안내 */
-.disabled-notice {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1.5rem;
-  background: rgba(0, 0, 0, 0.03);
-  border-radius: 8px;
-  color: rgba(0, 0, 0, 0.5);
-}
-
-.notice-icon {
-  font-size: 1.5rem;
-}
-
-/* Notion 도움말 */
-.notion-help {
+/* 스텝 버튼 */
+.step-next-btn {
   margin-top: 0.5rem;
-}
-
-.notion-help a {
-  font-size: 0.8rem;
-  color: rgba(139, 92, 67, 0.8);
-  text-decoration: none;
-}
-
-.notion-help a:hover {
-  text-decoration: underline;
-}
-
-/* 저장 영역 */
-.storage-actions {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem 0;
-}
-
-.save-status {
+  padding: 0.5rem 1.2rem;
+  border: none;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #c4956a, #b4855a);
+  color: white;
   font-size: 0.85rem;
-}
-
-.save-status.saving {
-  color: rgba(0, 0, 0, 0.5);
-}
-
-.save-status.success {
-  color: #10b981;
-}
-
-.save-status.error {
-  color: #ef4444;
-}
-
-/* 마이그레이션 모달 */
-.migration-modal .modal-content {
-  max-width: 450px;
-}
-
-.migration-info {
-  padding: 1rem;
-  background: rgba(59, 130, 246, 0.1);
-  border-radius: 8px;
-  margin-bottom: 1rem;
-}
-
-.migration-info p {
-  margin: 0.25rem 0;
-}
-
-.migration-options {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.migration-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.75rem;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.migration-option:hover {
-  background: rgba(255, 255, 255, 0.5);
+.step-next-btn:hover { opacity: 0.9; }
+.step-next-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.migration-option input[type="radio"] {
-  margin-top: 0.2rem;
+.step-action-btn {
+  margin-top: 0.5rem;
+  padding: 0.6rem 1.5rem;
+  border: none;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #c4956a, #b4855a);
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
-.migration-option .option-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+.step-action-btn:hover { opacity: 0.9; }
+.step-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.migration-option strong {
-  font-size: 0.9rem;
+/* 스피너 */
+.step-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
 }
 
-.migration-option span {
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 진행률 (마이그레이션) */
+.migration-inline-progress {
+  margin-top: 0.75rem;
+}
+
+.progress-bar-track {
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+  margin-bottom: 0.4rem;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #c4956a, #10b981);
+  width: 0%;
+  transition: width 0.4s ease;
+  border-radius: 4px;
+}
+
+.progress-bar-fill.error {
+  background: #ef4444;
+}
+
+.progress-text {
+  font-size: 0.8rem;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+/* 경고 메시지 */
+.migration-warning {
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: rgba(196, 149, 106, 0.1);
+  border-radius: 6px;
   font-size: 0.8rem;
   color: rgba(0, 0, 0, 0.6);
+  line-height: 1.5;
+}
+
+.migration-warning strong {
+  color: rgba(0, 0, 0, 0.8);
+}
+
+/* 에러 메시지 */
+.step-error-msg {
+  margin-top: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: #ef4444;
+}
+
+/* 성공 메시지 */
+.step-success-msg {
+  margin-top: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(16, 185, 129, 0.08);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: #10b981;
 }
 
 /* 폴더 브라우저 모달 */
-.folder-browser-modal .modal-content {
-  max-width: 600px;
-  max-height: 70vh;
+.storage-settings .modal {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
 }
+
+.storage-settings .modal-content {
+  background: #f5ebe0;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  width: 90%;
+  max-width: 500px;
+  overflow: hidden;
+}
+
+.storage-settings .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.storage-settings .modal-header h3 { margin: 0; font-size: 1rem; }
+
+.storage-settings .modal-body { padding: 1.25rem; }
+
+.storage-settings .close-btn {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  color: rgba(0, 0, 0, 0.5);
+  padding: 0.25rem;
+}
+
+.storage-settings .close-btn:hover { color: rgba(0, 0, 0, 0.8); }
+
+.folder-browser-modal .modal-content { max-width: 600px; max-height: 70vh; }
 
 .folder-browser-modal .current-path {
   display: flex;
@@ -6721,10 +6915,7 @@ textarea.settings-field-input {
   border-radius: 8px;
 }
 
-.miller-column {
-  min-width: 200px;
-  padding: 0.5rem;
-}
+.miller-column { min-width: 200px; padding: 0.5rem; }
 
 .folder-item {
   display: flex;
@@ -6736,22 +6927,10 @@ textarea.settings-field-input {
   transition: background 0.15s;
 }
 
-.folder-item:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.folder-item.folder {
-  font-weight: 500;
-}
-
-.item-icon {
-  font-size: 1rem;
-}
-
-.item-name {
-  font-size: 0.85rem;
-}
-
+.folder-item:hover { background: rgba(0, 0, 0, 0.05); }
+.folder-item.folder { font-weight: 500; }
+.item-icon { font-size: 1rem; }
+.item-name { font-size: 0.85rem; }
 .miller-column .empty {
   text-align: center;
   color: rgba(0, 0, 0, 0.4);
@@ -6759,267 +6938,136 @@ textarea.settings-field-input {
   font-size: 0.85rem;
 }
 
-/* 공통 모달 스타일 */
-.storage-settings .modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.storage-settings .modal-content {
-  background: #f5ebe0;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
-  width: 90%;
-  max-width: 500px;
-  overflow: hidden;
-}
-
-.storage-settings .modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-}
-
-.storage-settings .modal-header h3 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.storage-settings .modal-body {
-  padding: 1.25rem;
-}
-
-.storage-settings .modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  padding: 1rem 1.25rem;
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
-}
-
-.storage-settings .close-btn {
-  background: none;
-  border: none;
-  font-size: 1.25rem;
-  cursor: pointer;
-  color: rgba(0, 0, 0, 0.5);
-  padding: 0.25rem;
-}
-
-.storage-settings .close-btn:hover {
-  color: rgba(0, 0, 0, 0.8);
-}
-
 /* ============================================
    저장소 설정 - 다크 테마 (.base-layer)
    ============================================ */
 
-.base-layer .storage-settings {
-  color: rgba(255, 255, 255, 0.9);
-}
+.base-layer .storage-settings { color: rgba(255, 255, 255, 0.9); }
+.base-layer .storage-section-title { color: rgba(255, 255, 255, 0.95); }
+.base-layer .storage-section-desc { color: rgba(255, 255, 255, 0.5); }
 
-.base-layer .storage-section {
-  background: rgba(0, 0, 0, 0.3);
+.base-layer .storage-current-info {
+  background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-.base-layer .storage-section-title {
-  color: rgba(255, 255, 255, 0.95);
+.base-layer .info-label { color: rgba(255, 255, 255, 0.45); }
+.base-layer .info-value { color: rgba(255, 255, 255, 0.9); }
+.base-layer .info-row + .info-row { border-color: rgba(255, 255, 255, 0.06); }
+
+.base-layer .storage-change-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
 }
 
-.base-layer .storage-section-desc {
+.base-layer .storage-change-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.base-layer .select-header h4 { color: rgba(255, 255, 255, 0.9); }
+
+.base-layer .storage-back-btn {
   color: rgba(255, 255, 255, 0.5);
 }
 
-.base-layer .type-btn {
+.base-layer .storage-back-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.base-layer .type-card {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.base-layer .type-card:hover:not(.disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(196, 149, 106, 0.4);
+}
+
+.base-layer .type-card.current {
+  border-color: rgba(196, 149, 106, 0.4);
+  background: rgba(196, 149, 106, 0.1);
+}
+
+.base-layer .type-card-name { color: rgba(255, 255, 255, 0.9); }
+.base-layer .type-card-desc { color: rgba(255, 255, 255, 0.4); }
+
+.base-layer .onboarding-header h4 { color: rgba(255, 255, 255, 0.9); }
+.base-layer .step-title { color: rgba(255, 255, 255, 0.9); }
+.base-layer .step-desc { color: rgba(255, 255, 255, 0.4); }
+
+.base-layer .step-icon.pending {
   background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.3);
 }
 
-.base-layer .type-btn:hover:not(.disabled) {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(196, 149, 106, 0.5);
-}
+.base-layer .step-line.pending { background: rgba(255, 255, 255, 0.08); }
 
-.base-layer .type-btn.active {
-  background: linear-gradient(135deg, #c4956a, #b4855a);
-  color: white;
-}
+.base-layer .step-form .config-field label { color: rgba(255, 255, 255, 0.6); }
 
-.base-layer .type-badge {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.base-layer .config-panel {
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.base-layer .config-field label {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.base-layer .config-input {
+.base-layer .step-form .config-input {
   background: rgba(0, 0, 0, 0.3);
   border-color: rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.9);
 }
 
-.base-layer .config-input::placeholder {
-  color: rgba(255, 255, 255, 0.4);
-}
+.base-layer .step-form .config-input::placeholder { color: rgba(255, 255, 255, 0.35); }
 
-.base-layer .config-input:focus {
+.base-layer .step-form .config-input:focus {
   border-color: rgba(196, 149, 106, 0.5);
   background: rgba(0, 0, 0, 0.4);
 }
 
-.base-layer .browse-btn,
-.base-layer .upload-btn,
-.base-layer .test-btn {
-  background: rgba(255, 255, 255, 0.1);
+.base-layer .browse-btn {
+  background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.8);
 }
 
-.base-layer .browse-btn:hover,
-.base-layer .upload-btn:hover,
-.base-layer .test-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
+.base-layer .browse-btn:hover { background: rgba(255, 255, 255, 0.15); }
 
-.base-layer .wallet-status,
-.base-layer .test-result {
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.base-layer .test-result.success {
-  color: #6ec86e;
-}
-
-.base-layer .test-result.error {
-  color: #e57373;
-}
-
-.base-layer .notion-help a {
-  color: rgba(196, 149, 106, 0.9);
-}
-
-.base-layer .disabled-notice {
+.base-layer .upload-btn {
   background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.5);
-  padding: 1rem;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.7);
 }
 
-.base-layer .storage-actions {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding-top: 0.5rem;
-}
+.base-layer .upload-btn:hover { background: rgba(255, 255, 255, 0.1); }
+.base-layer .wallet-status { color: rgba(255, 255, 255, 0.5); }
 
-.base-layer .save-status {
+.base-layer .progress-bar-track { background: rgba(255, 255, 255, 0.08); }
+.base-layer .progress-text { color: rgba(255, 255, 255, 0.5); }
+
+.base-layer .migration-warning {
+  background: rgba(196, 149, 106, 0.12);
   color: rgba(255, 255, 255, 0.6);
-  font-size: 0.85rem;
 }
 
-.base-layer .save-status.success {
-  color: #6ec86e;
-}
+.base-layer .migration-warning strong { color: rgba(255, 255, 255, 0.85); }
 
-.base-layer .save-status.error {
+.base-layer .step-error-msg {
+  background: rgba(239, 68, 68, 0.12);
   color: #e57373;
 }
 
-/* 모달 다크 테마 */
-.base-layer .storage-settings .modal {
-  background: rgba(0, 0, 0, 0.7);
+.base-layer .step-success-msg {
+  background: rgba(16, 185, 129, 0.12);
+  color: #6ec86e;
 }
 
+.base-layer .step-icon.completed { background: #6ec86e; }
+.base-layer .step-line.completed { background: #6ec86e; }
+.base-layer .step-icon.error { background: #e57373; }
+
+/* 모달 다크 */
+.base-layer .storage-settings .modal { background: rgba(0, 0, 0, 0.7); }
 .base-layer .storage-settings .modal-content {
   background: rgba(30, 30, 35, 0.98);
   border-color: rgba(255, 255, 255, 0.1);
 }
-
-.base-layer .storage-settings .modal-header {
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-.base-layer .storage-settings .modal-header h3 {
-  color: rgba(255, 255, 255, 0.95);
-}
-
-.base-layer .storage-settings .close-btn {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.base-layer .storage-settings .close-btn:hover {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.base-layer .migration-option {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 0.8rem;
-  margin-bottom: 0.5rem;
-  cursor: pointer;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.8rem;
-}
-
-.base-layer .migration-option:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.base-layer .migration-option .option-content strong {
-  color: rgba(255, 255, 255, 0.9);
-  display: block;
-  margin-bottom: 0.2rem;
-}
-
-.base-layer .migration-option .option-content span {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 0.85rem;
-}
-
-/* 저장소 설정 버튼 다크 테마 */
-.base-layer .storage-settings .settings-btn {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.85);
-  padding: 0.7rem 1.5rem;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s;
-}
-
-.base-layer .storage-settings .settings-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.base-layer .storage-settings .settings-btn-primary {
-  background: linear-gradient(135deg, #c4956a, #b4855a);
-  border: none;
-  color: white;
-}
-
-.base-layer .storage-settings .settings-btn-primary:hover {
-  background: linear-gradient(135deg, #d4a57a, #c4956a);
-}
+.base-layer .storage-settings .modal-header { border-color: rgba(255, 255, 255, 0.1); }
+.base-layer .storage-settings .modal-header h3 { color: rgba(255, 255, 255, 0.95); }
+.base-layer .storage-settings .close-btn { color: rgba(255, 255, 255, 0.5); }
+.base-layer .storage-settings .close-btn:hover { color: rgba(255, 255, 255, 0.9); }

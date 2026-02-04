@@ -165,6 +165,9 @@ export class AppSettings {
     // 프로액티브 토글 초기화
     this.initProactiveToggle();
 
+    // 도구 라우팅 토글 초기화
+
+
     // DDNS 초기화
     this.initDDNS();
   }
@@ -200,6 +203,7 @@ export class AppSettings {
       }
     });
   }
+
 
   /**
    * DDNS 설정 초기화

@@ -635,21 +635,30 @@ router.get('/p/summary', async (req, res) => {
 
     const profile = await ProfileModel.getOrCreateDefault(userId);
 
-    let result;
-    if (keywords && keywords.length > 0) {
-      // 키워드로 관련 필드 찾기
-      const matchedFields = profile.findFieldsByKeywords(keywords);
-      result = {
-        basicInfo: profile.generateSummary(scope).basicInfo,
-        matchedFields
-      };
-    } else {
-      // 일반 요약
-      result = profile.generateSummary(scope);
+    // basicInfo에서 값만 추출
+    const basicInfoRaw = profile.basicInfo || {};
+    const basicInfo = {};
+    for (const [key, val] of Object.entries(basicInfoRaw)) {
+      basicInfo[key] = typeof val === 'object' ? val.value : val;
     }
 
-    // 액세스 기록
-    await profile.recordAccess('soul');
+    let result;
+    if (keywords && keywords.length > 0) {
+      // 키워드로 관련 필드 찾기 (customFields에서 검색)
+      const matchedFields = (profile.customFields || []).filter(f => {
+        const text = `${f.label || ''} ${f.value || ''}`.toLowerCase();
+        return keywords.some(k => text.includes(k.toLowerCase()));
+      });
+      result = { basicInfo, matchedFields };
+    } else {
+      result = {
+        basicInfo,
+        customFields: (profile.customFields || []).map(f => ({
+          label: f.label,
+          value: f.value
+        }))
+      };
+    }
 
     res.json({
       success: true,

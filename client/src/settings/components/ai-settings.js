@@ -5230,6 +5230,14 @@ export class AISettings {
   async toggleAlbaActive(roleId, active) {
     try {
       await this.apiClient.patch(`/roles/${roleId}`, { active });
+
+      // tool-worker면 도구 라우팅 enabled도 동기화
+      const role = this.availableRoles.find(r => r.roleId === roleId);
+      const roleConfig = typeof role?.config === 'string' ? JSON.parse(role.config) : (role?.config || {});
+      if (roleConfig.purpose === 'tool-routing') {
+        await this.apiClient.post('/notifications/tool-routing/toggle', { enabled: active });
+      }
+
       await this.loadAvailableRoles();
       this.showSaveStatus(`알바가 ${active ? '활성화' : '비활성화'}되었습니다.`, 'success');
     } catch (error) {
@@ -5406,9 +5414,22 @@ export class AISettings {
     const existingModal = document.querySelector('.alba-modal-overlay');
     if (existingModal) existingModal.remove();
 
-    const config = role.config || {};
+    const rawConfig = role.config || {};
+    const config = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
     const currentServiceId = config.serviceId || '';
     const isEmbedding = config.purpose === 'embedding';
+    const isToolWorker = config.purpose === 'tool-routing';
+
+    // tool-worker면 현재 도구 라우팅 상태 로드
+    let toolRoutingEnabled = false;
+    let toolRoutingMode = 'single';
+    if (isToolWorker) {
+      try {
+        const res = await this.apiClient.get('/notifications/tool-routing/status');
+        toolRoutingEnabled = res.enabled;
+        toolRoutingMode = res.mode || 'single';
+      } catch (e) { /* 기본값 사용 */ }
+    }
 
     // 임베딩 알바는 임베딩 모델 전용 드롭다운
     const modelFieldHtml = isEmbedding
@@ -5434,12 +5455,42 @@ export class AISettings {
             <button type="button" class="alba-modal-close">&times;</button>
           </div>
           <div class="alba-modal-body">
-            <div class="alba-system-badge">ON: AI 모델이 처리 &nbsp;|&nbsp; OFF: 간단 규칙으로 동작</div>
+            ${isToolWorker ? `
+            <div class="alba-modal-field">
+              <label>실행 방식</label>
+              <div style="display:flex;gap:14px;">
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:13px;color:rgba(0,0,0,0.85);">
+                  <input type="radio" name="albaToolRoutingMode" value="single" ${toolRoutingMode === 'single' ? 'checked' : ''}> 단일
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:13px;color:rgba(0,0,0,0.85);">
+                  <input type="radio" name="albaToolRoutingMode" value="chain" ${toolRoutingMode === 'chain' ? 'checked' : ''}> 체인
+                </label>
+              </div>
+              <div class="field-hint">단일: 선택한 모델만 / 체인: 실패 시 다음 모델로 자동 전환</div>
+            </div>
+            ` : `<div class="alba-system-badge">ON: AI 모델이 처리 &nbsp;|&nbsp; OFF: 간단 규칙으로 동작</div>`}
             <div class="alba-modal-field">
               <label>이름</label>
               <input type="text" id="albaName" value="${role.name || ''}" />
             </div>
             ${modelFieldHtml}
+            ${isToolWorker ? `
+            <div class="alba-modal-field" id="albaFallbackSection" style="${toolRoutingMode !== 'chain' ? 'display:none' : ''}">
+              <label>체인 단계 <span class="field-hint">(실패 시 순서대로 시도)</span></label>
+              <div class="alba-chain-steps" id="albaFallbackSteps">
+                ${(config.fallbackModels || []).map((fb, idx) => `
+                  <div class="alba-chain-step">
+                    <div class="step-header">
+                      <span class="step-num">${idx + 1}</span>
+                      <select class="alba-modal-select alba-fallback-model">${this.renderModelOptions(fb.modelId, true)}</select>
+                      <button type="button" class="alba-fallback-remove">&times;</button>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+              <button type="button" class="alba-chain-add-btn" id="addFallbackStep">+ 모델 추가</button>
+            </div>
+            ` : ''}
           </div>
           <div class="alba-modal-footer">
             <div class="alba-modal-footer-right">
@@ -5461,6 +5512,46 @@ export class AISettings {
     // 임베딩 모델 목록 비동기 로드
     if (isEmbedding) {
       this.loadEmbeddingModels(role.preferredModel);
+    }
+
+    // tool-worker: 단일/체인 라디오 변경 시 fallback 섹션 표시/숨김
+    if (isToolWorker) {
+      const fallbackSection = overlay.querySelector('#albaFallbackSection');
+      overlay.querySelectorAll('input[name="albaToolRoutingMode"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+          if (fallbackSection) fallbackSection.style.display = radio.value === 'chain' ? '' : 'none';
+        });
+      });
+
+      // fallback 모델 추가
+      const addFallbackBtn = overlay.querySelector('#addFallbackStep');
+      if (addFallbackBtn) {
+        addFallbackBtn.addEventListener('click', () => {
+          const stepsContainer = overlay.querySelector('#albaFallbackSteps');
+          const count = stepsContainer.querySelectorAll('.alba-chain-step').length;
+          const stepHtml = `
+            <div class="alba-chain-step">
+              <div class="step-header">
+                <span class="step-num">${count + 1}</span>
+                <select class="alba-modal-select alba-fallback-model">${this.renderModelOptions(null, true)}</select>
+                <button type="button" class="alba-fallback-remove">&times;</button>
+              </div>
+            </div>`;
+          stepsContainer.insertAdjacentHTML('beforeend', stepHtml);
+        });
+      }
+
+      // fallback 모델 삭제 (이벤트 위임)
+      const fallbackSteps = overlay.querySelector('#albaFallbackSteps');
+      if (fallbackSteps) {
+        fallbackSteps.addEventListener('click', (e) => {
+          if (e.target.classList.contains('alba-fallback-remove')) {
+            e.target.closest('.alba-chain-step').remove();
+            // 번호 재정렬
+            fallbackSteps.querySelectorAll('.step-num').forEach((num, i) => { num.textContent = i + 1; });
+          }
+        });
+      }
     }
 
     const closeModal = () => overlay.remove();
@@ -5507,6 +5598,31 @@ export class AISettings {
       const updatedConfig = { ...config, serviceId };
 
       try {
+        // tool-worker면 실행 방식(단일/체인) + fallback 모델 저장
+        if (isToolWorker) {
+          const trMode = document.querySelector('input[name="albaToolRoutingMode"]:checked')?.value || 'single';
+          await this.apiClient.post('/notifications/tool-routing/toggle', { mode: trMode });
+
+          // fallback 모델 목록 수집
+          const fallbackModels = Array.from(overlay.querySelectorAll('.alba-fallback-model')).map(select => {
+            const opt = select.options[select.selectedIndex];
+            const optgroup = opt?.closest('optgroup');
+            let fbServiceId = 'openrouter';
+            if (optgroup) {
+              const gl = optgroup.label.toLowerCase();
+              if (gl.includes('openrouter')) fbServiceId = 'openrouter';
+              else if (gl.includes('claude') || gl.includes('anthropic')) fbServiceId = 'anthropic';
+              else if (gl.includes('openai')) fbServiceId = 'openai';
+              else if (gl.includes('google') || gl.includes('gemini')) fbServiceId = 'google';
+              else if (gl.includes('xai') || gl.includes('grok')) fbServiceId = 'xai';
+              else if (gl.includes('ollama')) fbServiceId = 'ollama';
+              else if (gl.includes('hugging')) fbServiceId = 'huggingface';
+            }
+            return { modelId: select.value, serviceId: fbServiceId };
+          }).filter(fb => fb.modelId);
+          updatedConfig.fallbackModels = fallbackModels;
+        }
+
         await this.apiClient.patch(`/roles/${roleId}`, {
           name,
           preferredModel,

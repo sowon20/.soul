@@ -9,6 +9,9 @@ class SoulSocketClient {
     this.socket = null;
     this.connected = false;
     this.notificationPermission = null;
+    this._toolExecutions = []; // 도구 실행 데이터 메모리 저장소
+    this._toolNeeds = []; // {need} 요청 내용
+    this._toolsSelected = []; // 알바가 선택한 도구 이름
   }
 
   /**
@@ -75,6 +78,18 @@ class SoulSocketClient {
 
     this.socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
+    });
+
+    // {need} 요청 감지
+    this.socket.on('tool_need', (data) => {
+      console.log('📋 Tool need:', data);
+      this._handleToolNeed(data);
+    });
+
+    // 알바 도구 선택 완료
+    this.socket.on('tool_selected', (data) => {
+      console.log('🎯 Tool selected:', data);
+      this._handleToolSelected(data);
     });
 
     // 도구 실행 시작
@@ -205,39 +220,111 @@ class SoulSocketClient {
   }
 
   /**
-   * 도구 실행 시작 처리
+   * {need} 요청 처리 - AI가 도구가 필요하다고 판단
    */
-  _handleToolStart(data) {
-    // 실행 중인 도구 표시 영역 찾기/생성
+  _handleToolNeed(data) {
+    this._toolNeeds = data.needs || [];
+
+    let toolStatus = this._getOrCreateToolStatus();
+
+    const needItem = document.createElement('div');
+    needItem.className = 'tool-status-item need';
+    needItem.innerHTML = `
+      <div class="tool-step-indicator">✓</div>
+      <div class="tool-step-content">
+        <div class="tool-step-title">도구 요청</div>
+        <div class="tool-step-desc">${this._escapeHtml(this._toolNeeds.join(', '))}</div>
+      </div>
+    `;
+    toolStatus.appendChild(needItem);
+    this._scrollToBottom();
+  }
+
+  /**
+   * 알바 도구 선택 완료 처리
+   */
+  _handleToolSelected(data) {
+    this._toolsSelected = data.tools || [];
+
+    let toolStatus = this._getOrCreateToolStatus();
+
+    // need 단계를 done으로 전환 (이전 단계 완료 표시)
+    const needItem = toolStatus.querySelector('.tool-status-item.need');
+    if (needItem) needItem.classList.add('done');
+
+    const selectedItem = document.createElement('div');
+    selectedItem.className = 'tool-status-item selected';
+
+    const toolLabels = this._toolsSelected.map(t => this._getKoreanAction(t)).join(', ');
+    selectedItem.innerHTML = `
+      <div class="tool-step-indicator">✓</div>
+      <div class="tool-step-content">
+        <div class="tool-step-title">도구 선택</div>
+        <div class="tool-step-desc">${this._escapeHtml(toolLabels)}</div>
+      </div>
+    `;
+    toolStatus.appendChild(selectedItem);
+    this._scrollToBottom();
+  }
+
+  /**
+   * 도구 상태 영역 가져오기/생성
+   */
+  _getOrCreateToolStatus() {
     let toolStatus = document.querySelector('.tool-execution-status');
     if (!toolStatus) {
       toolStatus = document.createElement('div');
       toolStatus.className = 'tool-execution-status';
-      
-      // typing indicator 위에 삽입
+
       const typingIndicator = document.querySelector('.typing-indicator');
       if (typingIndicator) {
         typingIndicator.parentNode.insertBefore(toolStatus, typingIndicator);
       } else {
-        // 메시지 영역 맨 아래에 추가
         const messagesArea = document.getElementById('messagesArea');
         if (messagesArea) {
           messagesArea.appendChild(toolStatus);
         }
       }
     }
-    
+    return toolStatus;
+  }
+
+  /**
+   * 도구 실행 시작 처리
+   */
+  _handleToolStart(data) {
+    // 메모리에 저장
+    this._toolExecutions.push({
+      name: data.name,
+      display: data.display,
+      input: data.input || {},
+      inputSummary: this._summarizeInput(data.name, data.input),
+      success: null, // pending
+      result: null,
+      error: null,
+      startTime: Date.now()
+    });
+
+    // 실행 중인 도구 표시 영역 찾기/생성
+    let toolStatus = this._getOrCreateToolStatus();
+
     // 도구 실행 표시 추가
     const toolItem = document.createElement('div');
     toolItem.className = 'tool-status-item running';
     toolItem.dataset.toolName = data.name;
+
+    const koreanAction = this._getKoreanAction(data.name);
+    const inputSummary = this._summarizeInput(data.name, data.input);
+
     toolItem.innerHTML = `
-      <span class="tool-spinner"></span>
-      <span class="tool-display">${data.display || data.name}</span>
-      <span class="tool-status-text">실행 중...</span>
+      <div class="tool-step-indicator"></div>
+      <div class="tool-step-content">
+        <div class="tool-step-title">${koreanAction}</div>
+        ${inputSummary ? `<div class="tool-step-desc">${this._escapeHtml(inputSummary)}</div>` : ''}
+      </div>
     `;
     toolStatus.appendChild(toolItem);
-    
+
     // 스크롤
     this._scrollToBottom();
   }
@@ -246,36 +333,64 @@ class SoulSocketClient {
    * 도구 실행 완료 처리
    */
   _handleToolEnd(data) {
+    // 메모리 업데이트
+    const exec = this._toolExecutions.find(
+      t => t.name === data.name && t.success === null
+    );
+    if (exec) {
+      exec.success = data.success;
+      exec.result = data.success ? (data.result || '') : null;
+      exec.error = data.success ? null : (data.error || '');
+      exec.duration = Date.now() - exec.startTime;
+    }
+
+    // 이전 단계(selected)를 done으로
+    const toolStatus = document.querySelector('.tool-execution-status');
+    if (toolStatus) {
+      const prevSelected = toolStatus.querySelector('.tool-status-item.selected:not(.done)');
+      if (prevSelected) prevSelected.classList.add('done');
+    }
+
+    // DOM 업데이트
     const toolItem = document.querySelector(`.tool-status-item[data-tool-name="${data.name}"]`);
     if (toolItem) {
       toolItem.classList.remove('running');
       toolItem.classList.add(data.success ? 'success' : 'error');
+
+      const koreanAction = this._getKoreanAction(data.name);
+      const rawResult = data.success ? (data.result || '') : (data.error || '실패');
+      const resultPreview = this._escapeHtml(this._formatResultPreview(data.name, rawResult));
+
       toolItem.innerHTML = `
-        <span class="tool-icon">${data.success ? '✓' : '✗'}</span>
-        <span class="tool-display">${data.display || data.name}</span>
-        <span class="tool-status-text">${data.success ? '완료' : '실패'}</span>
+        <div class="tool-step-indicator">${data.success ? '✓' : '✗'}</div>
+        <div class="tool-step-content">
+          <div class="tool-step-title">${koreanAction}</div>
+          ${resultPreview ? `<div class="tool-step-desc">${resultPreview}</div>` : ''}
+        </div>
       `;
     }
   }
 
   /**
-   * 도구 실행 결과 요약 가져오기 (접힘 형태로 메시지에 포함시키기 위함)
-   * @returns {Array<{name, display, success}>} 도구 실행 결과 배열
+   * 도구 실행 결과 요약 가져오기 (메모리 기반)
+   * @returns {Object} { tools, toolNeeds, toolsSelected }
    */
   getToolStatusItems() {
-    const toolStatus = document.querySelector('.tool-execution-status');
-    if (!toolStatus) return [];
+    const tools = this._toolExecutions.map(t => ({
+      name: t.name,
+      display: t.display,
+      success: t.success === true,
+      error: t.success === false,
+      inputSummary: t.inputSummary || '',
+      resultPreview: t.success ? (t.result || '').substring(0, 200) : (t.error || ''),
+      duration: t.duration || 0
+    }));
 
-    const items = [];
-    toolStatus.querySelectorAll('.tool-status-item').forEach(item => {
-      items.push({
-        name: item.dataset.toolName || '',
-        display: item.querySelector('.tool-display')?.textContent || item.dataset.toolName || '',
-        success: item.classList.contains('success'),
-        error: item.classList.contains('error'),
-      });
-    });
-    return items;
+    return {
+      tools,
+      toolNeeds: this._toolNeeds.length > 0 ? [...this._toolNeeds] : [],
+      toolsSelected: this._toolsSelected.length > 0 ? [...this._toolsSelected] : []
+    };
   }
 
   /**
@@ -286,6 +401,114 @@ class SoulSocketClient {
     if (toolStatus) {
       toolStatus.remove();
     }
+    this._toolExecutions = [];
+    this._toolNeeds = [];
+    this._toolsSelected = [];
+  }
+
+  /**
+   * 도구 한국어 동작명 매핑
+   */
+  _getKoreanAction(toolName) {
+    const map = {
+      'recall_memory': '기억 검색',
+      'get_profile': '프로필 조회',
+      'update_profile': '정보 저장',
+      'list_my_rules': '규칙 조회',
+      'add_my_rule': '규칙 저장',
+      'delete_my_rule': '규칙 삭제',
+      'send_message': '메시지 전송',
+      'schedule_message': '메시지 예약',
+      'cancel_scheduled_message': '예약 취소',
+      'list_scheduled_messages': '예약 목록'
+    };
+    return map[toolName] || toolName;
+  }
+
+  /**
+   * 도구 입력값 요약
+   */
+  _summarizeInput(toolName, input) {
+    if (!input) return '';
+    switch (toolName) {
+      case 'recall_memory':
+        return input.query ? `'${input.query}'` : '';
+      case 'get_profile':
+        return input.field || '전체';
+      case 'update_profile':
+        return `${input.field}: ${String(input.value || '').substring(0, 50)}`;
+      case 'list_my_rules':
+        return input.category || '전체';
+      case 'add_my_rule':
+        return String(input.rule || '').substring(0, 80);
+      case 'delete_my_rule':
+        return input.ruleId || '';
+      default: {
+        const keys = Object.keys(input);
+        if (keys.length === 0) return '';
+        const first = keys[0];
+        return `${first}: ${String(input[first] || '').substring(0, 60)}`;
+      }
+    }
+  }
+
+  /**
+   * 도구 결과를 사람이 읽기 좋게 변환
+   */
+  _formatResultPreview(toolName, resultText) {
+    if (!resultText) return '';
+    try {
+      const data = typeof resultText === 'string' ? JSON.parse(resultText) : resultText;
+      if (typeof data !== 'object') return String(resultText).substring(0, 100);
+
+      switch (toolName) {
+        case 'get_profile': {
+          if (data.found === false) return data.message || '정보 없음';
+          if (data.field && data.value) return `${data.field}: ${data.value}`;
+          const parts = [];
+          if (data.basicInfo) {
+            for (const [k, v] of Object.entries(data.basicInfo)) {
+              const val = typeof v === 'object' ? v.value : v;
+              if (val) parts.push(`${k}: ${val}`);
+            }
+          }
+          return parts.length > 0 ? parts.join(', ') : '프로필 조회 완료';
+        }
+        case 'recall_memory':
+          if (data.count !== undefined) return `${data.count}건의 기억 발견`;
+          if (data.results?.length > 0) return `${data.results.length}건 발견`;
+          return data.message || '검색 완료';
+        case 'update_profile':
+          return data.success ? `${data.field || '정보'} 저장 완료` : (data.message || '저장 실패');
+        case 'list_my_rules':
+          if (Array.isArray(data.rules)) return `${data.rules.length}개 규칙`;
+          return '규칙 조회 완료';
+        case 'add_my_rule':
+          return data.success ? '규칙 저장 완료' : (data.message || '실패');
+        case 'delete_my_rule':
+          return data.success ? '규칙 삭제 완료' : (data.message || '실패');
+        default: {
+          const summary = [];
+          for (const [k, v] of Object.entries(data)) {
+            if (k === 'success') continue;
+            summary.push(`${k}: ${String(typeof v === 'object' ? JSON.stringify(v).substring(0, 40) : v).substring(0, 50)}`);
+            if (summary.length >= 2) break;
+          }
+          return summary.join(', ') || '완료';
+        }
+      }
+    } catch {
+      return String(resultText).substring(0, 100);
+    }
+  }
+
+  /**
+   * HTML 이스케이프
+   */
+  _escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   /**

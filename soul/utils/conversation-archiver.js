@@ -476,23 +476,44 @@ class ConversationArchiver {
       return await this.notionStorage.getRecentMessages(limit);
     }
 
+    // 디렉토리 스캔 방식 (기한 없음)
     const messages = [];
-    const today = new Date();
-    let daysBack = 0;
-    const maxDaysBack = 30; // 최대 30일 전까지만
+    const conversationsPath = this.conversationsPath;
 
-    while (messages.length < limit && daysBack < maxDaysBack) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - daysBack);
+    try {
+      const allEntries = await fs.readdir(conversationsPath).catch(() => []);
 
-      const dayMessages = await this.getMessagesForDate(date);
+      // 월별 폴더 (최신순)
+      const monthDirs = allEntries
+        .filter(d => /^\d{4}-\d{2}$/.test(d))
+        .sort()
+        .reverse();
 
-      // 최신 메시지가 앞에 오도록
-      for (let i = dayMessages.length - 1; i >= 0 && messages.length < limit; i--) {
-        messages.unshift(dayMessages[i]);
+      for (const monthDir of monthDirs) {
+        const monthPath = path.join(conversationsPath, monthDir);
+
+        const dayEntries = await fs.readdir(monthPath).catch(() => []);
+        const dayFiles = dayEntries
+          .filter(f => /^\d{4}-\d{2}-\d{2}\.json$/.test(f))
+          .sort()
+          .reverse();
+
+        for (const dayFile of dayFiles) {
+          const dayMessages = await this.getMessagesForDate(
+            new Date(dayFile.replace('.json', '') + 'T00:00:00')
+          );
+
+          for (let i = dayMessages.length - 1; i >= 0 && messages.length < limit; i--) {
+            messages.unshift(dayMessages[i]);
+          }
+
+          if (messages.length >= limit) break;
+        }
+
+        if (messages.length >= limit) break;
       }
-
-      daysBack++;
+    } catch (e) {
+      console.error('[Archiver] getRecentMessages error:', e.message);
     }
 
     // limit 초과분 제거 (오래된 것부터)
@@ -509,6 +530,104 @@ class ConversationArchiver {
   async searchByTags(tags, startDate, endDate) {
     // TODO: Phase 1.5.3에서 구현
     return [];
+  }
+
+  /**
+   * 원본 대화에서 키워드 검색
+   * 날짜별 JSON 파일을 역순 순회하며 키워드 매칭
+   * @param {string[]} keywords - 검색 키워드 배열
+   * @param {Object} options - { startDate, endDate, maxDays, limit }
+   * @returns {Array<{ content, role, timestamp, matchedKeywords, matchRatio, source }>}
+   */
+  async searchByKeywords(keywords, options = {}) {
+    const {
+      startDate = null,
+      endDate = null,
+      limit = 20
+    } = options;
+
+    if (!this.initialized) await this.initialize();
+    if (!keywords || keywords.length === 0) return [];
+
+    const keywordsLower = keywords.map(k => k.toLowerCase());
+    const results = [];
+
+    // 실제 존재하는 대화 파일 목록을 디렉토리 스캔으로 수집
+    const conversationFiles = [];
+
+    try {
+      if (this.useFTP) {
+        // FTP: 기존 방식 유지 (날짜 역순회)
+        const today = new Date();
+        const searchEnd = endDate ? new Date(endDate) : today;
+        const searchStart = startDate ? new Date(startDate) : new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+        let current = new Date(searchEnd);
+        while (current >= searchStart) {
+          conversationFiles.push(new Date(current));
+          current.setDate(current.getDate() - 1);
+        }
+      } else {
+        // 로컬: 디렉토리 스캔으로 실제 파일만 수집
+        const monthDirs = await fs.readdir(this.conversationsPath).catch(() => []);
+        for (const monthDir of monthDirs) {
+          const monthPath = path.join(this.conversationsPath, monthDir);
+          const stat = await fs.stat(monthPath).catch(() => null);
+          if (!stat || !stat.isDirectory()) continue;
+
+          const files = await fs.readdir(monthPath).catch(() => []);
+          for (const file of files) {
+            if (!file.endsWith('.json')) continue;
+            const dateStr = file.replace('.json', '');
+            const fileDate = new Date(dateStr + 'T00:00:00');
+            if (isNaN(fileDate.getTime())) continue;
+
+            // 날짜 필터 적용
+            if (startDate && fileDate < new Date(startDate)) continue;
+            if (endDate && fileDate > new Date(endDate)) continue;
+
+            conversationFiles.push(fileDate);
+          }
+        }
+        // 최신순 정렬
+        conversationFiles.sort((a, b) => b - a);
+      }
+    } catch (e) {
+      console.warn('[Archiver] searchByKeywords directory scan failed:', e.message);
+    }
+
+    // 수집된 파일에서 키워드 검색 (전체 탐색 후 관련성 정렬)
+    for (const fileDate of conversationFiles) {
+      try {
+        const dayMessages = await this.getMessagesForDate(fileDate);
+
+        for (let i = dayMessages.length - 1; i >= 0; i--) {
+          const msg = dayMessages[i];
+          const content = (msg.content || msg.text || '').toLowerCase();
+          const matched = keywordsLower.filter(k => content.includes(k));
+
+          if (matched.length > 0) {
+            results.push({
+              content: msg.content || msg.text || '',
+              role: msg.role,
+              timestamp: msg.timestamp,
+              matchedKeywords: matched,
+              matchRatio: matched.length / keywordsLower.length,
+              source: 'original_conversation'
+            });
+          }
+        }
+      } catch (e) {
+        // 파일 읽기 실패는 스킵
+      }
+    }
+
+    // 관련성(매칭 비율) 높은 순으로 정렬, 같으면 최신순
+    results.sort((a, b) => {
+      if (b.matchRatio !== a.matchRatio) return b.matchRatio - a.matchRatio;
+      return (b.timestamp || '').localeCompare(a.timestamp || '');
+    });
+
+    return results.slice(0, limit);
   }
 
   /**

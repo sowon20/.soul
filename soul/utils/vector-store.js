@@ -186,35 +186,39 @@ async function addMessage(message) {
       INSERT INTO messages (session_id, role, content, embedding, timestamp, meta)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
+    const ts = message.timestamp instanceof Date ? message.timestamp.toISOString()
+      : (typeof message.timestamp === 'string' ? message.timestamp : new Date().toISOString());
+    const content = typeof text === 'string' ? text : JSON.stringify(text);
     stmt.run(
       message.sessionId || 'embeddings',
       message.role || 'system',
-      text,
+      content,
       JSON.stringify(embedding),
-      message.timestamp || new Date().toISOString(),
+      ts,
       JSON.stringify({ digestId })
     );
 
     console.log(`[VectorStore] Saved embedding: ${digestId} (${embedding.length}dim)`);
   } catch (error) {
-    console.error('[VectorStore] Failed to add message:', error.message);
+    console.error('[VectorStore] Failed to add message:', error.message, '| text type:', typeof text, '| ts type:', typeof message.timestamp);
   }
 }
 
 /**
  * 유사도 검색 (SQLite cosine similarity)
  */
-async function search(query, limit = 5) {
+async function search(query, limit = 5, options = {}) {
   try {
     const queryEmbedding = await embed(query);
     if (!queryEmbedding) return [];
 
     const Message = require('../models/Message');
-    // Message.findSimilar는 embeddings 세션뿐 아니라 전체에서 검색
     const results = await Message.findSimilar(queryEmbedding, {
       sessionId: 'embeddings',
       limit,
-      minSimilarity: 0.3
+      minSimilarity: 0.3,
+      startDate: options.startDate || null,
+      endDate: options.endDate || null
     });
 
     return results.map(r => ({

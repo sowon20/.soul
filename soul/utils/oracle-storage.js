@@ -23,14 +23,14 @@ class OracleStorage {
   }
 
   /**
-   * 환경변수에서 비밀번호 가져오기
+   * config 또는 환경변수에서 비밀번호 가져오기
    */
   async _getCredentials() {
-    this.password = process.env.ORACLE_PASSWORD;
-    this.encryptionKey = process.env.ORACLE_ENCRYPTION_KEY;
+    this.password = this.config.password || process.env.ORACLE_PASSWORD;
+    this.encryptionKey = this.config.encryptionKey || process.env.ORACLE_ENCRYPTION_KEY;
 
     if (!this.password) {
-      throw new Error('[OracleStorage] Password not found. Set ORACLE_PASSWORD env var.');
+      throw new Error('[OracleStorage] Password not found. Configure Oracle password in Settings > Storage.');
     }
 
     return { password: this.password, encryptionKey: this.encryptionKey };
@@ -41,7 +41,7 @@ class OracleStorage {
    */
   async initialize() {
     try {
-      // 키체인에서 비밀번호 가져오기
+      // 비밀번호 가져오기
       await this._getCredentials();
 
       // Thin 모드 연결 (Oracle Client 불필요)

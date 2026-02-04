@@ -89,6 +89,8 @@ router.post('/', async (req, res) => {
 
     // 실행된 도구 기록 (응답에 포함)
     const executedTools = [];
+    let toolNeeds = []; // {need} 요청 내용
+    let toolsSelected = []; // 알바가 선택한 도구 이름
 
     if (!message) {
       return res.status(400).json({
@@ -206,8 +208,43 @@ ${rulesText}</self_notes>\n\n`;
       context: options.context || {}
     });
 
+    // Tool Routing 설정 로드
+    const toolRoutingConfig = await configManager.getConfigValue('toolRouting', { enabled: false });
+    const isToolRoutingEnabled = toolRoutingConfig?.enabled === true;
+
     // 3단계: 핵심 규칙 (지침 섹션)
-    const instructionsSection = `
+    let instructionsSection;
+    if (isToolRoutingEnabled) {
+      // {need} 모드: 도구 정의 없이, 자연어로 요청
+      instructionsSection = `
+<instructions>
+도구 사용:
+- 직접 사용할 수 있는 도구가 없음
+- 무언가 필요하면 {need} 태그 사용
+- {need} 뒤에 자연어로 원하는 것을 설명
+- 결과가 돌아오면 그걸 바탕으로 답변
+- {need}는 응답 중 아무 위치에나 사용 가능, 여러 개 가능 (각각 별도 줄)
+
+주의:
+- {need}를 쓸 때 주어를 명확히 구분할 것. 사용자의 "나/내"를 "사용자"로 바꿔서 전달
+- 예: 사용자 "내 이름 뭐야?" → {need} 사용자의 이름 찾아줘 (X: 내 이름 찾아줘)
+- 예: 사용자 "내가 뭘 좋아해?" → {need} 사용자가 좋아하는 것 검색 (X: 내가 좋아하는 것)
+- "나/내"가 사용자를 가리키는지, AI를 가리키는지 항상 확인
+- 확실하지 않은 건 추측하지 말고 사용자에게 물어라
+
+메모 남기기:
+- 기억할 것이 있으면 [MEMO: 내용] 태그 사용
+- 예: [MEMO: 사용자는 새벽에 자주 깨어있음]
+- 메모는 사용자에게 보이지 않음
+
+응답 포맷:
+- 긴 문장은 적절히 줄바꿈하여 가독성 유지
+- 한 문단이 3~4문장을 넘기면 줄바꿈으로 나누기
+- 목록이나 단계가 있으면 번호/글머리 기호 활용
+- 핵심 키워드는 **굵게** 강조 가능
+</instructions>`;
+    } else {
+      instructionsSection = `
 <instructions>
 도구 사용:
 - tool_use 기능으로만 호출 (텍스트로 태그 작성 금지)
@@ -218,7 +255,14 @@ ${rulesText}</self_notes>\n\n`;
 - 기억할 것이 있으면 [MEMO: 내용] 태그 사용
 - 예: [MEMO: 사용자는 새벽에 자주 깨어있음]
 - 메모는 사용자에게 보이지 않음
+
+응답 포맷:
+- 긴 문장은 적절히 줄바꿈하여 가독성 유지
+- 한 문단이 3~4문장을 넘기면 줄바꿈으로 나누기
+- 목록이나 단계가 있으면 번호/글머리 기호 활용
+- 핵심 키워드는 **굵게** 강조 가능
 </instructions>`;
+    }
 
     // 최종 조합: 컨텍스트(문서) → 사용자프로필 → 인격 → 지침 순서
     let systemPrompt = '';
@@ -307,7 +351,7 @@ ${rulesText}</self_notes>\n\n`;
 
       // system 메시지 분리
       const systemMessages = conversationData.messages.filter(m => m.role === 'system');
-      const chatMessages = conversationData.messages.filter(m => m.role !== 'system');
+      const chatMessages = conversationData.messages.filter(m => m.role !== 'system' && m.content && (typeof m.content !== 'string' || m.content.trim()));
 
       const combinedSystemPrompt = systemMessages.map(m => m.content).join('\n\n');
       console.log(`[Chat] System messages count: ${systemMessages.length}`);
@@ -366,7 +410,36 @@ ${rulesText}</self_notes>\n\n`;
         }
         return { server: null, tool: name, display: name };
       };
-      
+
+      // 도구 입력값 요약 헬퍼
+      const summarizeToolInput = (toolName, input) => {
+        if (!input) return '';
+        switch (toolName) {
+          case 'recall_memory':
+            return input.query || '';
+          case 'get_profile':
+            return input.field || '전체';
+          case 'update_profile':
+            return `${input.field}: ${String(input.value || '').substring(0, 50)}`;
+          case 'list_my_rules':
+            return input.category || '전체';
+          case 'add_my_rule':
+            return String(input.rule || '').substring(0, 80);
+          case 'delete_my_rule':
+            return input.ruleId || '';
+          case 'send_message':
+            return String(input.message || '').substring(0, 50);
+          case 'schedule_message':
+            return `${input.time || ''} ${String(input.message || '').substring(0, 30)}`;
+          default: {
+            const keys = Object.keys(input);
+            if (keys.length === 0) return '';
+            const firstKey = keys[0];
+            return `${firstKey}: ${String(input[firstKey] || '').substring(0, 60)}`;
+          }
+        }
+      };
+
       // 통합 도구 실행기 (소켓 이벤트 포함)
       const toolExecutor = async (toolName, input) => {
         const parsed = parseToolName(toolName);
@@ -397,7 +470,9 @@ ${rulesText}</self_notes>\n\n`;
           executedTools.push({
             name: toolName,
             display: parsed.display,
-            success: true
+            success: true,
+            inputSummary: summarizeToolInput(toolName, input),
+            resultPreview: typeof result === 'string' ? result.substring(0, 200) : JSON.stringify(result).substring(0, 200)
           });
           
           // 도구 실행 완료 알림
@@ -415,7 +490,8 @@ ${rulesText}</self_notes>\n\n`;
             name: toolName,
             display: parsed.display,
             success: false,
-            error: toolError.message
+            error: toolError.message,
+            inputSummary: summarizeToolInput(toolName, input)
           });
           
           // 도구 실행 실패 알림
@@ -452,84 +528,198 @@ ${rulesText}</self_notes>\n\n`;
 
       let aiResult;
       let actualToolCount = 0;
-      const TOOL_REQUEST_TAG = '[NEED_TOOLS]';
 
-      // 기억/과거 관련 키워드가 있으면 Phase 1 스킵 → 바로 도구와 함께 호출
-      const lastUserMsg = chatMessages.filter(m => m.role === 'user').pop()?.content || '';
-      const memoryKeywords = /기억|작년|예전|지난번|저번|과거|이전에|그때[는넌]?|그땐|몇\s?달\s?전|몇\s?주\s?전|어제|지난\s?주|지난\s?달|작업하던|이야기하던|뭐였|뭐라고\s?불|recall|remember/i;
-      const needsMemory = memoryKeywords.test(lastUserMsg);
+      if (isToolRoutingEnabled) {
+        // === {need} 모드: 전체 대화로 호출, {need} 감지 시 도구만 쥐어줌 ===
+        console.log(`[Chat] Tool Routing ON — first call without tools (${chatMessages.length} messages)`);
+        aiResult = await aiService.chat(chatMessages, {
+          systemPrompt: combinedSystemPrompt,
+          maxTokens: aiSettings.maxTokens,
+          temperature: aiSettings.temperature,
+          tools: null,
+          toolExecutor: null,
+          thinking: routingResult.thinking || false,
+        });
 
-      if (hasTools && contextLevel !== 'minimal') {
-        if (needsMemory) {
-          // 기억/과거 질문: Phase 1 스킵, 바로 도구와 함께 호출
-          console.log(`[Chat] Memory-related query detected, skipping Phase 1 → direct with tools (${allTools.length})`);
-          actualToolCount = allTools.length;
+        // {need} 감지 및 처리
+        let responseText = typeof aiResult === 'object' ? aiResult.text : aiResult;
+        const needPattern = /\{need\}\s*(.+?)(?:\n|$)/g;
+        const needs = [];
+        let match;
+        while ((match = needPattern.exec(responseText)) !== null) {
+          needs.push(match[1].trim());
+        }
 
-          aiResult = await aiService.chat(chatMessages, {
+        if (needs.length > 0) {
+          console.log(`[Chat] {need} detected: ${needs.length} requests`);
+
+          toolNeeds = needs;
+
+          // {need} 요청을 클라이언트에 전송
+          if (global.io) {
+            global.io.emit('tool_need', {
+              needs: needs,
+              message: needs.join(', ')
+            });
+          }
+
+          // tool-worker 알바: 도구 선택만 담당 (실행은 주모델이)
+          const toolWorkerRole = await Role.findOne({ roleId: 'tool-worker', isActive: true });
+          const routingMode = toolRoutingConfig?.mode || 'single';
+
+          // 도구 카탈로그 (이름 + 설명만, 가벼움)
+          const toolCatalog = allTools.map(t => `- ${t.name}: ${t.description}`).join('\n');
+          const toolSelectionPrompt = `요청을 분석하여 필요한 도구 이름을 JSON 배열로만 반환하세요.
+응답 형식: ["도구이름1", "도구이름2"]
+도구를 실행하지 마세요. 이름만 선택하세요. 최대 5개.
+
+사용 가능한 도구:
+${toolCatalog}`;
+
+          let selectedToolNames = new Set();
+
+          if (toolWorkerRole) {
+            const rawConfig = toolWorkerRole.config || {};
+            const roleConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
+            const primaryModel = toolWorkerRole.preferredModel || 'openai/gpt-oss-20b:free';
+            const primaryService = roleConfig.serviceId || 'openrouter';
+
+            const modelChain = routingMode === 'chain'
+              ? [{ modelId: primaryModel, serviceId: primaryService }, ...(roleConfig.fallbackModels || [])]
+              : [{ modelId: primaryModel, serviceId: primaryService }];
+
+            console.log(`[Chat] tool-worker ${routingMode} mode (${modelChain.length} models) — tool selection only`);
+
+            // 모든 {need}를 합쳐서 한 번에 도구 선택 요청
+            const combinedNeeds = needs.join('\n');
+            let selectionSuccess = false;
+
+            for (const modelInfo of modelChain) {
+              const _twStart = Date.now();
+              try {
+                console.log(`[Chat] tool-selector 시도: ${modelInfo.modelId}`);
+                const twService = await AIServiceFactory.createService(modelInfo.serviceId, modelInfo.modelId);
+                const twResult = await twService.chat(
+                  [{ role: 'user', content: combinedNeeds }],
+                  {
+                    systemPrompt: toolSelectionPrompt,
+                    maxTokens: roleConfig.maxTokens || 500,
+                    temperature: roleConfig.temperature || 0.2,
+                    tools: null,
+                    toolExecutor: null
+                  }
+                );
+                const resultText = typeof twResult === 'object' ? twResult.text : twResult;
+                console.log(`[Chat] ✅ tool-selector ${modelInfo.modelId} 성공 (${Date.now() - _twStart}ms): ${resultText}`);
+
+                // JSON 배열 파싱
+                const jsonMatch = (resultText || '').match(/\[[\s\S]*?\]/);
+                if (jsonMatch) {
+                  const parsed = JSON.parse(jsonMatch[0]);
+                  if (Array.isArray(parsed)) {
+                    parsed.slice(0, 5).forEach(name => {
+                      if (typeof name === 'string') selectedToolNames.add(name.trim());
+                    });
+                  }
+                }
+                // 알바 사용량 기록
+                const twUsage = typeof twResult === 'object' ? twResult.usage : null;
+                if (twUsage) {
+                  const twInput = twUsage.input_tokens || 0;
+                  const twOutput = twUsage.output_tokens || 0;
+                  UsageStats.addUsage({
+                    tier: 'tool-worker',
+                    modelId: modelInfo.modelId,
+                    serviceId: modelInfo.serviceId,
+                    inputTokens: twInput,
+                    outputTokens: twOutput,
+                    totalTokens: twInput + twOutput,
+                    cost: 0, // 무료 모델 또는 별도 계산
+                    latency: Date.now() - _twStart,
+                    sessionId,
+                    category: 'tool-selection'
+                  }).catch(err => console.error('Tool-worker usage save error:', err));
+                }
+
+                selectionSuccess = true;
+                break;
+              } catch (twErr) {
+                console.warn(`[Chat] ❌ tool-selector ${modelInfo.modelId} 실패 (${Date.now() - _twStart}ms): ${twErr.message}`);
+              }
+            }
+
+            if (!selectionSuccess || selectedToolNames.size === 0) {
+              // 알바 실패 시 폴백: builtin 도구 전부 제공
+              console.warn('[Chat] tool-selector 실패, builtin 도구 전체 제공');
+              const { builtinTools } = require('../utils/builtin-tools');
+              builtinTools.forEach(t => selectedToolNames.add(t.name));
+            }
+          } else {
+            // tool-worker 없으면 builtin 전부 제공
+            console.warn('[Chat] tool-worker 역할 없음, builtin 도구 전체 제공');
+            const { builtinTools } = require('../utils/builtin-tools');
+            builtinTools.forEach(t => selectedToolNames.add(t.name));
+          }
+
+          // 선택된 도구의 전체 스키마 추출
+          const selectedTools = allTools.filter(t => selectedToolNames.has(t.name));
+          console.log(`[Chat] 선택된 도구 (${selectedTools.length}개): ${selectedTools.map(t => t.name).join(', ')}`);
+
+          toolsSelected = selectedTools.map(t => t.name);
+
+          // 알바 도구 선택 결과를 클라이언트에 전송
+          if (global.io) {
+            global.io.emit('tool_selected', {
+              tools: toolsSelected,
+              display: toolsSelected.join(', ')
+            });
+          }
+
+          // 주모델 재호출: 1차 응답 이어서 + 도구만 쥐어줌 (대화 전체 재전송 X)
+          const cleanedResponse = responseText.replace(/\{need\}\s*.+?(?:\n|$)/g, '').trim();
+          const lastUserMessage = chatMessages[chatMessages.length - 1];
+          const currentMessages = [
+            lastUserMessage,
+            { role: 'assistant', content: cleanedResponse || '(도구를 사용하여 확인하겠습니다)' },
+            { role: 'user', content: '도구가 준비되었습니다. 사용하여 답변해주세요.' }
+          ];
+
+          console.log(`[Chat] 2차 호출: 도구 ${selectedTools.length}개 쥐어줌 (메시지 ${currentMessages.length}개, 전체 ${chatMessages.length}개 재전송 안함)`);
+
+          aiResult = await aiService.chat(currentMessages, {
             systemPrompt: combinedSystemPrompt,
             maxTokens: aiSettings.maxTokens,
             temperature: aiSettings.temperature,
-            tools: allTools,
+            tools: selectedTools,
             toolExecutor: toolExecutor,
             thinking: routingResult.thinking || false,
-            enableToolSearch: toolSearchConfig.enabled,
-            toolSearchType: toolSearchConfig.type,
-            alwaysLoadTools: toolSearchConfig.alwaysLoad
           });
-        } else {
-        // minimal이 아닌 경우: 2-phase 도구 호출
-        // 1차 호출: 도구 없이 — 답할 수 있으면 바로 답하고, 못 하면 [NEED_TOOLS]
-        const phase1Prompt = combinedSystemPrompt + `\n\n도구(검색, 기억 조회 등) 없이 답할 수 있으면 바로 답하세요. 외부 정보가 필요해서 답할 수 없으면 "${TOOL_REQUEST_TAG}"만 출력하세요.`;
-
-        console.log(`[Chat] Phase 1: Without tools (${chatMessages.length} messages, ~${totalChars} chars)`);
-
-        let phase1Result;
-        let phase1NeedsTools = false;
-
-        try {
-          phase1Result = await aiService.chat(chatMessages, {
-            systemPrompt: phase1Prompt,
-            maxTokens: aiSettings.maxTokens,
-            temperature: aiSettings.temperature,
-            tools: null,
-            toolExecutor: null,
-            thinking: routingResult.thinking || false,
-          });
-
-          const phase1Text = typeof phase1Result === 'object' ? phase1Result.text : phase1Result;
-          // 빈 응답이면 도구가 필요한 것으로 간주
-          phase1NeedsTools = !phase1Text || !phase1Text.trim() || phase1Text.trim().includes(TOOL_REQUEST_TAG);
-        } catch (phase1Err) {
-          // 모델이 도구 없이도 도구를 호출하려 한 경우 → Phase 2로 폴백
-          console.log(`[Chat] Phase 1 failed (model tried tool call?), falling back to Phase 2: ${phase1Err.message}`);
-          phase1NeedsTools = true;
         }
 
-        if (phase1NeedsTools) {
-          // 2차 호출: 도구 포함
-          console.log(`[Chat] Phase 2: AI requested tools, retrying with ${allTools.length} tools`);
-          actualToolCount = allTools.length;
+        // 실제 실행된 도구 수 또는 선택된 도구 수 중 큰 값
+        actualToolCount = Math.max(
+          executedTools.length,
+          (typeof selectedToolNames !== 'undefined' && selectedToolNames) ? selectedToolNames.size : 0
+        );
+      } else if (hasTools && contextLevel !== 'minimal') {
+        // 기존 방식: 도구와 함께 호출
+        console.log(`[Chat] Calling with ${allTools.length} tools (${chatMessages.length} messages, ~${totalChars} chars)`);
+        actualToolCount = allTools.length;
 
-          aiResult = await aiService.chat(chatMessages, {
-            systemPrompt: combinedSystemPrompt,
-            maxTokens: aiSettings.maxTokens,
-            temperature: aiSettings.temperature,
-            tools: allTools,
-            toolExecutor: toolExecutor,
-            thinking: routingResult.thinking || false,
-            enableToolSearch: toolSearchConfig.enabled,
-            toolSearchType: toolSearchConfig.type,
-            alwaysLoadTools: toolSearchConfig.alwaysLoad
-          });
-        } else {
-          // 도구 불필요 — 1차 응답 사용
-          console.log(`[Chat] Phase 1 sufficient, no tools needed`);
-          aiResult = phase1Result;
-        }
-        }
+        aiResult = await aiService.chat(chatMessages, {
+          systemPrompt: combinedSystemPrompt,
+          maxTokens: aiSettings.maxTokens,
+          temperature: aiSettings.temperature,
+          tools: allTools,
+          toolExecutor: toolExecutor,
+          thinking: routingResult.thinking || false,
+          enableToolSearch: toolSearchConfig.enabled,
+          toolSearchType: toolSearchConfig.type,
+          alwaysLoadTools: toolSearchConfig.alwaysLoad
+        });
       } else {
-        // minimal 또는 도구 없음: 바로 응답 (Phase 1 스킵)
-        console.log(`[Chat] Direct call (${contextLevel === 'minimal' ? 'minimal context - skip phase1' : 'no tools'})`);
+        // minimal 또는 도구 없음: 도구 없이 응답
+        console.log(`[Chat] Direct call (${contextLevel === 'minimal' ? 'minimal context' : 'no tools'})`);
         aiResult = await aiService.chat(chatMessages, {
           systemPrompt: combinedSystemPrompt,
           maxTokens: aiSettings.maxTokens,
@@ -552,10 +742,12 @@ ${rulesText}</self_notes>\n\n`;
 
       console.log(`[Chat] Final: tools(${actualToolCount})=${toolsTokenEstimate}, total=${totalTokenEstimate}`);
 
-      // aiResult는 { text, usage } 객체 또는 문자열
+      // aiResult는 { text, usage, systemFallback? } 객체 또는 문자열
+      let systemFallback = false;
       if (typeof aiResult === 'object' && aiResult.text !== undefined) {
         aiResponse = aiResult.text;
         actualUsage = aiResult.usage || {};
+        systemFallback = aiResult.systemFallback || false;
       } else {
         aiResponse = aiResult;
         actualUsage = {};
@@ -637,6 +829,25 @@ ${rulesText}</self_notes>\n\n`;
           const responseTime = Date.now() - startTime;
           await role.recordUsage(true, roleResult.length, responseTime);
 
+          // 알바 사용량을 UsageStats에도 기록
+          const delegateUsage = typeof roleResultObj === 'object' ? roleResultObj.usage : null;
+          if (delegateUsage) {
+            const dInput = delegateUsage.input_tokens || 0;
+            const dOutput = delegateUsage.output_tokens || 0;
+            UsageStats.addUsage({
+              tier: 'delegate',
+              modelId: roleModelId,
+              serviceId: roleServiceName,
+              inputTokens: dInput,
+              outputTokens: dOutput,
+              totalTokens: dInput + dOutput,
+              cost: 0,
+              latency: responseTime,
+              sessionId,
+              category: 'delegate'
+            }).catch(err => console.error('Delegate usage save error:', err));
+          }
+
           console.log(`[Chat] @${roleId} 작업 완료`);
         } else {
           console.warn(`[Chat] 요청한 역할 @${roleId}를 찾을 수 없음`);
@@ -699,7 +910,9 @@ ${rulesText}</self_notes>\n\n`;
           serviceId: routingResult.serviceId,
           tier
         },
-        toolsUsed: executedTools.length > 0 ? executedTools : undefined
+        toolsUsed: executedTools.length > 0 ? executedTools : undefined,
+        toolNeeds: toolNeeds.length > 0 ? toolNeeds : undefined,
+        toolsSelected: toolsSelected.length > 0 ? toolsSelected : undefined
       });
       console.log('[Chat] Response saved successfully');
     } catch (saveError) {
@@ -789,6 +1002,8 @@ ${rulesText}</self_notes>\n\n`;
       message: finalResponse,
       reply: finalResponse, // 프론트엔드 호환성
       toolsUsed: executedTools, // 사용된 도구 목록
+      toolNeeds: toolNeeds.length > 0 ? toolNeeds : undefined, // {need} 요청 내용
+      toolsSelected: toolsSelected.length > 0 ? toolsSelected : undefined, // 알바 선택 도구
       usage: conversationData.usage,
       tokenUsage: detailedTokenUsage, // 상세 토큰 사용량 (실시간용)
       compressed: conversationData.compressed,
@@ -810,7 +1025,8 @@ ${rulesText}</self_notes>\n\n`;
         valid: validation.valid,
         score: validation.score,
         issues: validation.issues
-      }
+      },
+      ...(systemFallback ? { systemFallback: true } : {})
     });
   } catch (error) {
     console.error('Error in chat endpoint:', error);
@@ -917,7 +1133,9 @@ router.get('/history/:sessionId', async (req, res) => {
         // 라우팅 정보 (assistant 메시지용)
         routing: m.routing || null,
         // 도구 사용 정보 (있으면 포함)
-        toolsUsed: m.metadata?.toolsUsed || m.toolsUsed || null
+        toolsUsed: m.metadata?.toolsUsed || m.toolsUsed || null,
+        toolNeeds: m.metadata?.toolNeeds || null,
+        toolsSelected: m.metadata?.toolsSelected || null
       })),
       total: messages.length
     });

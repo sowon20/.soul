@@ -49,6 +49,29 @@ Role.initializeDefaultRoles = async function() {
         serviceId: 'openrouter',
         purpose: 'embedding'
       })
+    },
+    {
+      roleId: 'tool-worker',
+      name: '도구 실행',
+      description: '{need} 요청을 받아 적절한 도구를 선택하고 실행합니다.',
+      systemPrompt: `당신은 도구 선택 전문가입니다.
+요청을 분석하여 필요한 도구 이름을 JSON 배열로만 반환합니다.
+응답 형식: ["도구이름1", "도구이름2"]
+도구를 실행하지 마세요. 이름만 선택하세요.`,
+      preferredModel: 'openai/gpt-oss-20b:free',
+      tools: '[]',
+      isActive: 1,
+      isSystem: 1,
+      config: JSON.stringify({
+        serviceId: 'openrouter',
+        temperature: 0.2,
+        maxTokens: 1000,
+        purpose: 'tool-routing',
+        fallbackModels: [
+          { modelId: 'google/gemini-2.0-flash-exp:free', serviceId: 'openrouter' },
+          { modelId: 'meta-llama/llama-4-scout:free', serviceId: 'openrouter' }
+        ]
+      })
     }
   ];
 

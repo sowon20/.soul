@@ -1,6 +1,6 @@
 /**
  * Storage Settings Component
- * 저장소 설정 - 메모리/대화와 파일 저장소 분리
+ * 저장소 설정 - 온보딩 스텝 UI
  */
 
 export class StorageSettings {
@@ -11,16 +11,29 @@ export class StorageSettings {
       memory: { type: 'local', local: {}, oracle: {}, notion: {}, ftp: {} },
       file: { type: 'local', local: {}, oracle: {}, nas: {} }
     };
-    this.originalConfig = null; // 원본 설정 저장
+    this.originalConfig = null;
     this.availableTypes = { memory: [], file: [] };
+    this.usageInfo = { memory: {}, file: {} };
+
+    // UI 상태
+    this.activeCategory = null;   // 'memory' | 'file' | null
+    this.view = 'main';           // 'main' | 'select' | 'onboarding'
+    this.selectedNewType = null;
+    this.currentStep = 0;
+    this.stepStates = [];
+    this.stepData = {};
+    this.migrating = false;
+
+    // 폴더 브라우저
+    this.currentBrowseTarget = null;
+    this.currentPath = '/';
   }
 
   async init(container) {
     this.container = container;
     await this.loadConfig();
-    await this.loadAvailableTypes();
+    await Promise.all([this.loadAvailableTypes(), this.loadUsage()]);
     this.render();
-    this.bindEvents();
   }
 
   async loadConfig() {
@@ -28,7 +41,6 @@ export class StorageSettings {
       const response = await this.apiClient.get('/config/storage');
       if (response) {
         this.storageConfig = response;
-        // 원본 설정 깊은 복사로 저장
         this.originalConfig = JSON.parse(JSON.stringify(response));
       }
     } catch (error) {
@@ -39,347 +51,586 @@ export class StorageSettings {
   async loadAvailableTypes() {
     try {
       const response = await this.apiClient.get('/config/storage/available-types');
-      if (response) {
-        this.availableTypes = response;
-      }
+      if (response) this.availableTypes = response;
     } catch (error) {
       console.error('Failed to load available types:', error);
     }
   }
 
+  async loadUsage() {
+    try {
+      const response = await this.apiClient.get('/storage/usage');
+      if (response?.success) {
+        this.usageInfo = { memory: response.memory || {}, file: response.file || {} };
+      }
+    } catch (error) {
+      console.error('Failed to load usage:', error);
+    }
+  }
+
+  // ========== 렌더링 ==========
+
   render() {
-    const memoryType = this.storageConfig.memory?.type || 'local';
+    this.container.innerHTML = `<div class="storage-settings">${this.renderContent()}</div>`;
+    this.bindEvents();
+  }
+
+  renderContent() {
+    if (this.view === 'main') return this.renderMainView();
+    if (this.view === 'select') return this.renderMainView(); // 메인 + 선택 레이어
+    if (this.view === 'onboarding') return this.renderOnboardingView();
+    return '';
+  }
+
+  renderMainView() {
+    const memInfo = this.usageInfo.memory || {};
+    const fileInfo = this.usageInfo.file || {};
+    const memType = this.storageConfig.memory?.type || 'local';
     const fileType = this.storageConfig.file?.type || 'local';
 
-    this.container.innerHTML = `
-      <div class="storage-settings">
-        <!-- 메모리/대화 저장소 -->
-        <section class="storage-section">
-          <h3 class="storage-section-title">
-            <span class="section-icon">🧠</span>
-            메모리 & 대화 저장소
-          </h3>
-          <p class="storage-section-desc">대화 기록, 기억, 설정이 저장되는 위치</p>
+    return `
+      ${this.renderSection('memory', '메모리 저장소', '대화내용과 기억이 저장되는 위치', memType, memInfo)}
+      ${this.renderSection('file', '파일 저장소', '첨부파일과 이미지가 저장되는 위치', fileType, fileInfo)}
+    `;
+  }
 
-          <div class="storage-type-selector" data-storage="memory">
-            ${this.renderTypeButtons('memory', memoryType)}
+  renderSection(category, title, desc, type, info) {
+    const typeName = this.getTypeName(category, type);
+    const sizeStr = info.size != null ? this.formatSize(info.size) : '-';
+    const pathOrInfo = info.path || info.info || '-';
+    const isSelectOpen = this.view === 'select' && this.activeCategory === category;
+
+    return `
+      <div class="storage-section" data-category="${category}">
+        <h3 class="storage-section-title">${title}</h3>
+        <p class="storage-section-desc">${desc}</p>
+        <div class="storage-current-info">
+          <div class="info-row">
+            <span class="info-label">타입</span>
+            <span class="info-value">${typeName}</span>
           </div>
-
-          <div class="storage-config-panels" data-storage="memory">
-            ${this.renderMemoryPanels(memoryType)}
+          <div class="info-row">
+            <span class="info-label">${type === 'local' ? '경로' : '연결 정보'}</span>
+            <span class="info-value" style="font-size:0.8rem; word-break:break-all;">${pathOrInfo}</span>
           </div>
-        </section>
-
-        <!-- 파일 저장소 -->
-        <section class="storage-section">
-          <h3 class="storage-section-title">
-            <span class="section-icon">📁</span>
-            파일 저장소
-          </h3>
-          <p class="storage-section-desc">첨부파일, 이미지 등이 저장되는 위치</p>
-
-          <div class="storage-type-selector" data-storage="file">
-            ${this.renderTypeButtons('file', fileType)}
+          <div class="info-row">
+            <span class="info-label">용량</span>
+            <span class="info-value">${sizeStr}</span>
           </div>
-
-          <div class="storage-config-panels" data-storage="file">
-            ${this.renderFilePanels(fileType)}
-          </div>
-        </section>
-
-        <!-- 저장 버튼 -->
-        <div class="storage-actions">
-          <button class="settings-btn settings-btn-primary" id="saveStorageBtn">
-            💾 저장
-          </button>
-          <span class="save-status" id="storageSaveStatus"></span>
         </div>
-
-        <!-- 마이그레이션 모달 -->
-        ${this.renderMigrationModal()}
-
-        <!-- 폴더 브라우저 모달 -->
-        ${this.renderFolderBrowserModal()}
+        <button class="storage-change-btn" data-action="change" data-category="${category}">저장소 변경</button>
+        ${this.renderSelectLayer(category, type, isSelectOpen)}
       </div>
     `;
   }
 
-  renderTypeButtons(storageCategory, currentType) {
-    const types = this.availableTypes[storageCategory] || [];
-
+  renderSelectLayer(category, currentType, isOpen) {
+    const types = this.getAvailableTypes(category);
     return `
-      <div class="type-buttons">
-        ${types.map(t => `
-          <button class="type-btn ${currentType === t.type ? 'active' : ''} ${!t.enabled ? 'disabled' : ''}"
-                  data-type="${t.type}"
-                  ${!t.enabled ? 'disabled' : ''}>
-            <span class="type-name">${t.name}</span>
-            ${!t.enabled ? '<span class="type-badge">준비중</span>' : ''}
-          </button>
-        `).join('')}
+      <div class="storage-select-layer ${isOpen ? 'open' : ''}" data-select-category="${category}">
+        <div class="select-header">
+          <button class="storage-back-btn" data-action="back-select" data-category="${category}">←</button>
+          <h4>저장소 선택</h4>
+        </div>
+        <div class="type-cards">
+          ${types.map(t => {
+            const isCurrent = t.type === currentType;
+            const disabled = t.disabled ? 'disabled' : '';
+            const cls = isCurrent ? 'current' : (t.disabled ? 'disabled' : '');
+            return `
+              <button class="type-card ${cls}" data-action="select-type" data-category="${category}" data-type="${t.type}" ${disabled}>
+                <span class="type-card-icon">${t.icon}</span>
+                <span class="type-card-name">${t.name}</span>
+                <span class="type-card-desc">${t.desc}</span>
+                ${isCurrent ? '<span class="type-card-badge">사용 중</span>' : ''}
+              </button>
+            `;
+          }).join('')}
+        </div>
       </div>
     `;
   }
 
-  renderMemoryPanels(currentType) {
-    const config = this.storageConfig.memory || {};
+  getAvailableTypes(category) {
+    if (category === 'memory') {
+      return [
+        { type: 'local', icon: '💻', name: '로컬', desc: '디바이스에 직접 저장' },
+        { type: 'oracle', icon: '🔶', name: 'Oracle', desc: 'Autonomous DB' },
+        { type: 'notion', icon: '📝', name: 'Notion', desc: 'Notion 데이터베이스' },
+        { type: 'ftp', icon: '🗄️', name: 'FTP', desc: '준비 중', disabled: true }
+      ];
+    }
+    return [
+      { type: 'local', icon: '💻', name: '로컬', desc: '디바이스에 직접 저장' },
+      { type: 'oracle', icon: '🔶', name: 'Oracle', desc: 'Object Storage' },
+      { type: 'nas', icon: '🗄️', name: 'NAS', desc: '준비 중', disabled: true }
+    ];
+  }
+
+  // ========== 온보딩 ==========
+
+  renderOnboardingView() {
+    const steps = this.getSteps();
+    const typeName = this.getTypeName(this.activeCategory, this.selectedNewType);
+    const categoryName = this.activeCategory === 'memory' ? '메모리 저장소' : '파일 저장소';
 
     return `
-      <!-- 로컬 -->
-      <div class="config-panel ${currentType === 'local' ? 'active' : ''}" data-type="local">
-        <div class="config-field">
-          <label>저장 경로</label>
-          <div class="path-input-group">
-            <input type="text" id="memoryLocalPath" class="config-input"
-                   value="${config.local?.path || '~/.soul/data'}"
-                   placeholder="~/.soul/data">
-            <button class="browse-btn" data-target="memoryLocalPath">📁</button>
-          </div>
+      <div class="storage-onboarding">
+        <div class="onboarding-header">
+          <button class="storage-back-btn" data-action="back-onboarding">←</button>
+          <h4>${categoryName} → ${typeName}</h4>
+        </div>
+        <div class="onboarding-steps">
+          ${steps.map((step, i) => this.renderStep(step, i, steps.length)).join('')}
         </div>
       </div>
+      ${this.renderFolderBrowserModal()}
+    `;
+  }
 
-      <!-- Oracle -->
-      <div class="config-panel ${currentType === 'oracle' ? 'active' : ''}" data-type="oracle">
-        <div class="config-field">
-          <label>Wallet 파일</label>
+  getSteps() {
+    const type = this.selectedNewType;
+    if (type === 'oracle') {
+      return [
+        { id: 'wallet', title: '월렛 업로드', desc: 'Oracle Wallet.zip 파일을 업로드하세요' },
+        { id: 'credentials', title: '연결 정보', desc: '사용자와 비밀번호를 입력하세요' },
+        { id: 'connect', title: '연결 & 이전', desc: '연결을 확인하고 데이터를 이전합니다' }
+      ];
+    }
+    if (type === 'notion') {
+      return [
+        { id: 'token', title: '토큰 입력', desc: 'Notion Integration Token을 입력하세요' },
+        { id: 'database', title: '데이터베이스 ID', desc: '대화를 저장할 데이터베이스 ID를 입력하세요' },
+        { id: 'connect', title: '연결 & 이전', desc: '연결을 확인하고 데이터를 이전합니다' }
+      ];
+    }
+    // local
+    return [
+      { id: 'path', title: '폴더 선택', desc: '데이터를 저장할 폴더를 선택하세요' },
+      { id: 'connect', title: '확인 & 이전', desc: '경로를 확인하고 데이터를 이전합니다' }
+    ];
+  }
+
+  renderStep(step, index, total) {
+    const state = this.stepStates[index] || 'pending';
+    const isLast = index === total - 1;
+
+    return `
+      <div class="ob-step ${state}" data-step="${index}">
+        <div class="step-indicator">
+          <div class="step-icon ${state}">
+            ${this.renderStepIcon(state, index)}
+          </div>
+          ${!isLast ? `<div class="step-line ${state}"></div>` : ''}
+        </div>
+        <div class="step-body">
+          <div class="step-title">${step.title}</div>
+          <div class="step-desc">${step.desc}</div>
+          ${state === 'active' ? this.renderStepForm(step, index) : ''}
+          ${state === 'error' ? `<div class="step-error-msg">${this.stepData._error || '오류 발생'}</div>` : ''}
+          ${state === 'completed' && step.id === 'connect' ? `<div class="step-success-msg">${this.stepData._successMsg || '완료!'}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  renderStepIcon(state, index) {
+    if (state === 'completed') return '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
+    if (state === 'active') return `<div class="step-spinner" style="display:none"></div><span>${index + 1}</span>`;
+    if (state === 'error') return '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    return `<span>${index + 1}</span>`;
+  }
+
+  renderStepForm(step, index) {
+    const type = this.selectedNewType;
+
+    if (step.id === 'wallet') {
+      return `
+        <div class="step-form">
           <div class="wallet-upload">
-            <input type="file" id="memoryOracleWallet" accept=".zip" style="display:none">
-            <button class="upload-btn" id="uploadMemoryWalletBtn">📁 Wallet.zip 업로드</button>
-            <span class="wallet-status" id="memoryWalletStatus">
-              ${config.oracle?.walletPath ? '✅ 설정됨' : '⚪ 미설정'}
-            </span>
+            <label class="upload-btn">
+              📦 Wallet.zip 선택
+              <input type="file" accept=".zip" id="walletFile" style="display:none">
+            </label>
+            <span class="wallet-status" id="walletStatus">${this.stepData.walletUploaded ? '✅ 업로드됨' : ''}</span>
           </div>
         </div>
-        <div class="config-grid">
+      `;
+    }
+
+    if (step.id === 'credentials') {
+      const tnsNames = this.stepData.tnsNames || [];
+      const saved = this.storageConfig[this.activeCategory]?.oracle || {};
+      return `
+        <div class="step-form">
           <div class="config-field">
             <label>연결 문자열</label>
-            <select id="memoryOracleConnection" class="config-input">
-              <option value="">-- Wallet 업로드 후 선택 --</option>
-              ${config.oracle?.connectionString ?
-                `<option value="${config.oracle.connectionString}" selected>${config.oracle.connectionString}</option>` : ''}
+            <select class="config-input" id="obConnectionString">
+              ${tnsNames.map(n => `<option value="${n}" ${n === saved.connectionString ? 'selected' : ''}>${n}</option>`).join('')}
             </select>
           </div>
           <div class="config-field">
             <label>사용자</label>
-            <input type="text" id="memoryOracleUser" class="config-input"
-                   value="${config.oracle?.user || ''}" placeholder="ADMIN">
+            <input class="config-input" id="obUser" value="${saved.user || 'ADMIN'}" placeholder="ADMIN">
           </div>
           <div class="config-field">
             <label>비밀번호</label>
-            <input type="password" id="memoryOraclePassword" class="config-input" placeholder="********">
+            <input class="config-input" type="password" id="obPassword" placeholder="비밀번호">
           </div>
+          <button class="step-next-btn" data-action="next-step">다음</button>
         </div>
-        <div class="test-connection">
-          <button class="test-btn" id="testMemoryOracleBtn">🔌 연결 테스트</button>
-          <span class="test-result" id="memoryOracleTestResult"></span>
-        </div>
-      </div>
+      `;
+    }
 
-      <!-- Notion -->
-      <div class="config-panel ${currentType === 'notion' ? 'active' : ''}" data-type="notion">
-        <div class="config-field">
-          <label>Integration Token</label>
-          <input type="password" id="memoryNotionToken" class="config-input"
-                 value="${config.notion?.token ? '********' : ''}"
-                 placeholder="secret_xxxxx">
-        </div>
-        <div class="config-field">
-          <label>Database ID</label>
-          <input type="text" id="memoryNotionDbId" class="config-input"
-                 value="${config.notion?.databaseId || ''}"
-                 placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-        </div>
-        <div class="notion-help">
-          <a href="https://developers.notion.com/docs/getting-started" target="_blank">
-            📖 Notion API 설정 가이드
-          </a>
-        </div>
-        <div class="test-connection">
-          <button class="test-btn" id="testMemoryNotionBtn">🔌 연결 테스트</button>
-          <span class="test-result" id="memoryNotionTestResult"></span>
-        </div>
-      </div>
-
-      <!-- FTP (비활성) -->
-      <div class="config-panel ${currentType === 'ftp' ? 'active' : ''}" data-type="ftp">
-        <div class="disabled-notice">
-          <span class="notice-icon">🚧</span>
-          <span>FTP 저장소는 현재 준비 중입니다.</span>
-        </div>
-      </div>
-    `;
-  }
-
-  renderFilePanels(currentType) {
-    const config = this.storageConfig.file || {};
-
-    return `
-      <!-- 로컬 -->
-      <div class="config-panel ${currentType === 'local' ? 'active' : ''}" data-type="local">
-        <div class="config-field">
-          <label>저장 경로</label>
-          <div class="path-input-group">
-            <input type="text" id="fileLocalPath" class="config-input"
-                   value="${config.local?.path || '~/.soul/files'}"
-                   placeholder="~/.soul/files">
-            <button class="browse-btn" data-target="fileLocalPath">📁</button>
+    if (step.id === 'token') {
+      const saved = this.storageConfig[this.activeCategory]?.notion || {};
+      return `
+        <div class="step-form">
+          <div class="config-field">
+            <label>Integration Token</label>
+            <input class="config-input" type="password" id="obNotionToken" placeholder="secret_..." value="${saved.token && saved.token !== '********' ? saved.token : ''}">
           </div>
-        </div>
-      </div>
-
-      <!-- Oracle Storage (비활성) -->
-      <div class="config-panel ${currentType === 'oracle' ? 'active' : ''}" data-type="oracle">
-        <div class="disabled-notice">
-          <span class="notice-icon">🚧</span>
-          <span>Oracle Object Storage는 현재 준비 중입니다.</span>
-        </div>
-      </div>
-
-      <!-- NAS (비활성) -->
-      <div class="config-panel ${currentType === 'nas' ? 'active' : ''}" data-type="nas">
-        <div class="disabled-notice">
-          <span class="notice-icon">🚧</span>
-          <span>NAS/SMB 저장소는 현재 준비 중입니다.</span>
-        </div>
-      </div>
-    `;
-  }
-
-  renderMigrationModal() {
-    return `
-      <div class="modal migration-modal" id="migrationModal" style="display:none">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3>저장소 변경</h3>
-            <button class="close-btn" id="closeMigrationModal">✕</button>
+          <div style="font-size:0.75rem; color:rgba(0,0,0,0.4); margin-top:-0.25rem;">
+            <a href="https://www.notion.so/my-integrations" target="_blank" style="color:rgba(139,92,67,0.8);">Notion Integration 생성하기 →</a>
           </div>
-          <div class="modal-body">
-            <div class="migration-info" id="migrationInfo"></div>
-            <p style="margin: 0.8rem 0; color: var(--text-secondary); font-size: 0.9rem;">
-              기존 대화 데이터를 새 저장소로 이동합니다.
-            </p>
-            <div class="migration-progress" id="migrationProgress" style="display:none">
-              <div style="background: var(--bg-tertiary); border-radius: 4px; height: 6px; overflow: hidden; margin: 1rem 0;">
-                <div id="migrationProgressBar" style="height: 100%; background: var(--accent-primary); width: 0%; transition: width 0.3s;"></div>
-              </div>
-              <span id="migrationProgressText" style="font-size: 0.85rem; color: var(--text-secondary);"></span>
+          <button class="step-next-btn" data-action="next-step">다음</button>
+        </div>
+      `;
+    }
+
+    if (step.id === 'database') {
+      const saved = this.storageConfig[this.activeCategory]?.notion || {};
+      return `
+        <div class="step-form">
+          <div class="config-field">
+            <label>데이터베이스 ID</label>
+            <input class="config-input" id="obNotionDbId" placeholder="xxxxxxxx-xxxx-..." value="${saved.databaseId || ''}">
+          </div>
+          <button class="step-next-btn" data-action="next-step">다음</button>
+        </div>
+      `;
+    }
+
+    if (step.id === 'path') {
+      const saved = this.storageConfig[this.activeCategory]?.local || {};
+      const defaultPath = this.activeCategory === 'memory' ? '~/.soul/data' : '~/.soul/files';
+      return `
+        <div class="step-form">
+          <div class="config-field">
+            <label>저장 경로</label>
+            <div class="path-input-group">
+              <input class="config-input" id="obLocalPath" value="${saved.path || defaultPath}">
+              <button class="browse-btn" data-target="obLocalPath">찾기</button>
             </div>
           </div>
-          <div class="modal-actions" id="migrationActions">
-            <button class="settings-btn" id="cancelMigration">취소</button>
-            <button class="settings-btn settings-btn-primary" id="confirmMigration">마이그레이션 시작</button>
+          <button class="step-next-btn" data-action="next-step">다음</button>
+        </div>
+      `;
+    }
+
+    if (step.id === 'connect') {
+      return `
+        <div class="step-form">
+          <div class="migration-warning">
+            <strong>저장소를 옮깁니다.</strong><br>
+            메모리 용량에 따라 다소 시간이 걸릴 수 있습니다.<br>
+            이 창을 닫지 마세요. 기존 데이터는 보존됩니다.
+          </div>
+          <button class="step-action-btn" data-action="connect-migrate" ${this.migrating ? 'disabled' : ''}>
+            ${this.migrating ? '<div class="step-spinner"></div> 이전 중...' : '🔗 연결 테스트 & 데이터 이전'}
+          </button>
+          <div class="migration-inline-progress" id="migrationProgress" style="display:none">
+            <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
+            <div class="progress-text" id="progressText"></div>
           </div>
         </div>
-      </div>
-    `;
+      `;
+    }
+
+    return '';
   }
 
-  renderFolderBrowserModal() {
-    return `
-      <div class="modal folder-browser-modal" id="folderBrowserModal" style="display:none">
-        <div class="modal-content miller-columns">
-          <div class="modal-header">
-            <h3>📁 폴더 선택</h3>
-            <button class="close-btn" id="closeFolderBrowser">✕</button>
-          </div>
-          <div class="current-path">
-            <span id="currentPathDisplay">/</span>
-            <button class="select-btn" id="selectCurrentFolder">✓ 선택</button>
-          </div>
-          <div class="miller-columns-container" id="millerColumns"></div>
-        </div>
-      </div>
-    `;
-  }
+  // ========== 이벤트 ==========
 
   bindEvents() {
-    // 타입 선택 버튼
-    this.container.querySelectorAll('.type-btn:not(.disabled)').forEach(btn => {
-      btn.addEventListener('click', (e) => this.handleTypeSelect(e));
+    this.container.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+
+      const action = btn.dataset.action;
+      const category = btn.dataset.category;
+
+      if (action === 'change') this.handleOpenSelect(category);
+      else if (action === 'back-select') this.handleCloseSelect(category);
+      else if (action === 'select-type') this.handleTypeSelect(category, btn.dataset.type);
+      else if (action === 'back-onboarding') this.handleBackFromOnboarding();
+      else if (action === 'next-step') this.handleNextStep();
+      else if (action === 'connect-migrate') this.handleConnectAndMigrate();
+      else if (action === 'close-browser') this.closeFolderBrowser();
+      else if (action === 'select-folder') this.selectFolder();
     });
 
-    // 저장 버튼
-    this.container.querySelector('#saveStorageBtn')?.addEventListener('click', () => this.save());
-
-    // 폴더 찾아보기
-    this.container.querySelectorAll('.browse-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => this.openFolderBrowser(e));
+    // 파일 업로드 (이벤트 위임)
+    this.container.addEventListener('change', (e) => {
+      if (e.target.id === 'walletFile') this.handleWalletUpload(e);
     });
 
-    // 연결 테스트 버튼들
-    this.container.querySelector('#testMemoryOracleBtn')?.addEventListener('click', () => this.testOracleConnection('memory'));
-    this.container.querySelector('#testMemoryNotionBtn')?.addEventListener('click', () => this.testNotionConnection('memory'));
-
-    // Wallet 업로드
-    this.container.querySelector('#uploadMemoryWalletBtn')?.addEventListener('click', () => {
-      this.container.querySelector('#memoryOracleWallet').click();
+    // 폴더 브라우저 (이벤트 위임)
+    this.container.addEventListener('click', (e) => {
+      const browseBtn = e.target.closest('.browse-btn');
+      if (browseBtn) this.openFolderBrowser(browseBtn.dataset.target);
     });
-    this.container.querySelector('#memoryOracleWallet')?.addEventListener('change', (e) => this.handleWalletUpload(e, 'memory'));
-
-    // 모달 닫기
-    this.container.querySelector('#closeMigrationModal')?.addEventListener('click', () => this.closeMigrationModal());
-    this.container.querySelector('#cancelMigration')?.addEventListener('click', () => this.closeMigrationModal());
-    this.container.querySelector('#closeFolderBrowser')?.addEventListener('click', () => this.closeFolderBrowser());
-
-    // 마이그레이션 확인
-    this.container.querySelector('#confirmMigration')?.addEventListener('click', () => this.confirmMigration());
-
-    // 폴더 선택
-    this.container.querySelector('#selectCurrentFolder')?.addEventListener('click', () => this.selectFolder());
   }
 
-  handleTypeSelect(e) {
-    const btn = e.target.closest('.type-btn');
-    if (!btn || btn.disabled) return;
+  handleOpenSelect(category) {
+    this.activeCategory = category;
+    this.view = 'select';
+    // 슬라이드 애니메이션: 재렌더 후 open 클래스
+    this.render();
+    requestAnimationFrame(() => {
+      const layer = this.container.querySelector(`[data-select-category="${category}"]`);
+      if (layer) layer.classList.add('open');
+    });
+  }
 
-    const selector = btn.closest('.storage-type-selector');
-    const storageCategory = selector.dataset.storage;
-    const newType = btn.dataset.type;
-    const currentType = this.storageConfig[storageCategory]?.type;
+  handleCloseSelect(category) {
+    const layer = this.container.querySelector(`[data-select-category="${category}"]`);
+    if (layer) layer.classList.remove('open');
+    setTimeout(() => {
+      this.view = 'main';
+      this.activeCategory = null;
+      this.render();
+    }, 300);
+  }
 
-    // 같은 타입이면 무시
-    if (newType === currentType) return;
+  handleTypeSelect(category, type) {
+    const currentType = this.storageConfig[category]?.type || 'local';
+    if (type === currentType) return;
 
-    // 버튼 활성화 상태 변경
-    selector.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
+    this.activeCategory = category;
+    this.selectedNewType = type;
+    this.view = 'onboarding';
+    const steps = this.getSteps();
+    this.stepStates = steps.map((_, i) => i === 0 ? 'active' : 'pending');
+    this.currentStep = 0;
+    this.stepData = {};
+    this.migrating = false;
+    this.render();
+  }
 
-    // 패널 표시 변경
-    const panels = this.container.querySelector(`.storage-config-panels[data-storage="${storageCategory}"]`);
-    panels.querySelectorAll('.config-panel').forEach(p => p.classList.remove('active'));
-    panels.querySelector(`.config-panel[data-type="${newType}"]`)?.classList.add('active');
+  handleBackFromOnboarding() {
+    if (this.migrating) return; // 마이그레이션 중 뒤로가기 금지
+    this.view = 'select';
+    this.selectedNewType = null;
+    this.stepData = {};
+    this.render();
+    requestAnimationFrame(() => {
+      const layer = this.container.querySelector(`[data-select-category="${this.activeCategory}"]`);
+      if (layer) layer.classList.add('open');
+    });
+  }
 
-    // 설정 업데이트
-    if (!this.storageConfig[storageCategory]) {
-      this.storageConfig[storageCategory] = {};
+  // ========== 스텝 진행 ==========
+
+  handleNextStep() {
+    const steps = this.getSteps();
+    const step = steps[this.currentStep];
+
+    // 유효성 검사 + 데이터 수집
+    if (!this.validateAndCollect(step)) return;
+
+    // 완료 처리
+    this.stepStates[this.currentStep] = 'completed';
+    this.currentStep++;
+    if (this.currentStep < steps.length) {
+      this.stepStates[this.currentStep] = 'active';
     }
-    this.storageConfig[storageCategory].type = newType;
+    this.render();
   }
 
-  async save() {
-    // 현재 입력값 수집
-    this.collectInputValues();
+  validateAndCollect(step) {
+    if (step.id === 'credentials') {
+      const conn = this.container.querySelector('#obConnectionString')?.value;
+      const user = this.container.querySelector('#obUser')?.value?.trim();
+      const pw = this.container.querySelector('#obPassword')?.value;
+      if (!user || !pw) { alert('사용자와 비밀번호를 입력하세요.'); return false; }
+      this.stepData.connectionString = conn;
+      this.stepData.user = user;
+      this.stepData.password = pw;
+      return true;
+    }
+    if (step.id === 'token') {
+      const token = this.container.querySelector('#obNotionToken')?.value?.trim();
+      if (!token) { alert('토큰을 입력하세요.'); return false; }
+      this.stepData.token = token;
+      return true;
+    }
+    if (step.id === 'database') {
+      const dbId = this.container.querySelector('#obNotionDbId')?.value?.trim();
+      if (!dbId) { alert('데이터베이스 ID를 입력하세요.'); return false; }
+      this.stepData.databaseId = dbId;
+      return true;
+    }
+    if (step.id === 'path') {
+      const path = this.container.querySelector('#obLocalPath')?.value?.trim();
+      if (!path) { alert('경로를 입력하세요.'); return false; }
+      this.stepData.path = path;
+      return true;
+    }
+    return true;
+  }
 
-    // 타입 변경 감지
-    const memoryTypeChanged = this.originalConfig?.memory?.type !== this.storageConfig.memory?.type;
-    const fileTypeChanged = this.originalConfig?.file?.type !== this.storageConfig.file?.type;
+  // ========== 연결 & 이전 ==========
 
-    if (memoryTypeChanged || fileTypeChanged) {
-      // 마이그레이션 모달 표시
-      const fromMemory = this.getTypeName('memory', this.originalConfig?.memory?.type);
-      const toMemory = this.getTypeName('memory', this.storageConfig.memory?.type);
-      const fromFile = this.getTypeName('file', this.originalConfig?.file?.type);
-      const toFile = this.getTypeName('file', this.storageConfig.file?.type);
+  async handleConnectAndMigrate() {
+    if (this.migrating) return;
+    this.migrating = true;
+    this.stepData._error = null;
 
-      let changes = [];
-      if (memoryTypeChanged) changes.push(`메모리/대화: ${fromMemory} → ${toMemory}`);
-      if (fileTypeChanged) changes.push(`파일: ${fromFile} → ${toFile}`);
+    // 버튼 상태 업데이트
+    const actionBtn = this.container.querySelector('[data-action="connect-migrate"]');
+    if (actionBtn) {
+      actionBtn.disabled = true;
+      actionBtn.innerHTML = '<div class="step-spinner"></div> 연결 테스트 중...';
+    }
 
-      this.showMigrationModal(changes.join('<br>'));
-    } else {
-      // 타입 변경 없으면 바로 저장
+    // 스피너 표시
+    const spinner = this.container.querySelector('.ob-step.active .step-icon span');
+    const spinnerEl = this.container.querySelector('.ob-step.active .step-icon .step-spinner');
+    if (spinner) spinner.style.display = 'none';
+    if (spinnerEl) spinnerEl.style.display = 'block';
+
+    try {
+      // 1. 연결 테스트
+      const testResult = await this.testConnection();
+      if (!testResult.success) {
+        throw new Error(testResult.error || '연결 실패');
+      }
+
+      // 2. 새 설정 먼저 저장 (타입 + 연결 정보)
+      if (actionBtn) actionBtn.innerHTML = '<div class="step-spinner"></div> 설정 저장 중...';
+      this.applyNewConfig();
       await this.doSave();
+
+      // 3. 마이그레이션
+      const fromType = this.originalConfig?.[this.activeCategory]?.type || 'local';
+      const toType = this.selectedNewType;
+
+      if (fromType !== toType) {
+        if (actionBtn) actionBtn.innerHTML = '<div class="step-spinner"></div> 데이터 이전 중...';
+        this.showProgress(10, '데이터 내보내기 준비 중...');
+
+        const migResult = await this.apiClient.post('/storage/migrate', { fromType, toType });
+
+        if (!migResult.success) {
+          throw new Error(migResult.error || '마이그레이션 실패');
+        }
+
+        this.showProgress(100, `완료! ${migResult.results?.messages || 0}개 메시지, ${migResult.results?.files || 0}개 파일 이동됨`);
+        this.stepData._successMsg = `✅ ${migResult.results?.messages || 0}개 메시지, ${migResult.results?.files || 0}개 파일 이전 완료`;
+      } else {
+        this.stepData._successMsg = '✅ 설정 저장 완료';
+      }
+
+      // 4. 성공
+      this.stepStates[this.currentStep] = 'completed';
+      this.originalConfig = JSON.parse(JSON.stringify(this.storageConfig));
+      this.migrating = false;
+      this.render();
+
+      // 2초 후 메인으로
+      setTimeout(async () => {
+        this.view = 'main';
+        this.activeCategory = null;
+        this.selectedNewType = null;
+        await this.loadUsage();
+        this.render();
+      }, 2500);
+
+    } catch (error) {
+      console.error('Connect & migrate failed:', error);
+
+      // 실패 시 설정 복원
+      try {
+        this.storageConfig = JSON.parse(JSON.stringify(this.originalConfig));
+        await this.doSave();
+      } catch (e) {
+        console.error('Rollback failed:', e);
+      }
+
+      this.stepStates[this.currentStep] = 'error';
+      this.stepData._error = error.message;
+      this.migrating = false;
+      this.render();
     }
+  }
+
+  async testConnection() {
+    const type = this.selectedNewType;
+    try {
+      if (type === 'oracle') {
+        return await this.apiClient.post('/storage/oracle/test', {
+          user: this.stepData.user,
+          password: this.stepData.password,
+          connectionString: this.stepData.connectionString
+        });
+      }
+      if (type === 'notion') {
+        return await this.apiClient.post('/storage/notion/test', {
+          token: this.stepData.token,
+          databaseId: this.stepData.databaseId
+        });
+      }
+      // local - 경로 존재 확인
+      const checkResult = await this.apiClient.get(`/storage/browse/check?path=${encodeURIComponent(this.stepData.path)}`);
+      if (!checkResult?.valid) {
+        return { success: false, error: checkResult?.error || '경로를 찾을 수 없습니다' };
+      }
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  applyNewConfig() {
+    const cat = this.activeCategory;
+    const type = this.selectedNewType;
+    this.storageConfig[cat].type = type;
+
+    if (type === 'oracle') {
+      this.storageConfig[cat].oracle = {
+        ...this.storageConfig[cat].oracle,
+        user: this.stepData.user,
+        password: this.stepData.password,
+        connectionString: this.stepData.connectionString,
+        walletPath: this.stepData.walletPath || this.storageConfig[cat].oracle?.walletPath
+      };
+    } else if (type === 'notion') {
+      this.storageConfig[cat].notion = {
+        ...this.storageConfig[cat].notion,
+        token: this.stepData.token,
+        databaseId: this.stepData.databaseId
+      };
+    } else if (type === 'local') {
+      this.storageConfig[cat].local = {
+        path: this.stepData.path
+      };
+    }
+  }
+
+  showProgress(pct, text) {
+    const progressEl = this.container.querySelector('#migrationProgress');
+    const fillEl = this.container.querySelector('#progressFill');
+    const textEl = this.container.querySelector('#progressText');
+    if (progressEl) progressEl.style.display = 'block';
+    if (fillEl) fillEl.style.width = pct + '%';
+    if (textEl) textEl.textContent = text;
+  }
+
+  // ========== 유틸 ==========
+
+  async doSave() {
+    await this.apiClient.put('/config/storage', this.storageConfig);
   }
 
   getTypeName(category, type) {
@@ -387,119 +638,22 @@ export class StorageSettings {
     return found?.name || type || '로컬';
   }
 
-  async doSave() {
-    const status = this.container.querySelector('#storageSaveStatus');
-    status.textContent = '저장 중...';
-    status.className = 'save-status saving';
-
-    try {
-      // API 호출
-      const response = await this.apiClient.put('/config/storage', this.storageConfig);
-
-      status.textContent = '✅ 저장되었습니다';
-      status.className = 'save-status success';
-
-      // 원본 설정 업데이트
-      this.originalConfig = JSON.parse(JSON.stringify(this.storageConfig));
-    } catch (error) {
-      console.error('Failed to save storage config:', error);
-      status.textContent = '❌ 저장 실패';
-      status.className = 'save-status error';
-    }
+  formatSize(bytes) {
+    if (bytes == null) return '-';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
   }
 
-  collectInputValues() {
-    // 메모리 저장소
-    const memoryType = this.storageConfig.memory?.type || 'local';
-    if (memoryType === 'local') {
-      this.storageConfig.memory.local = {
-        path: this.container.querySelector('#memoryLocalPath')?.value || '~/.soul/data'
-      };
-    } else if (memoryType === 'oracle') {
-      const password = this.container.querySelector('#memoryOraclePassword')?.value;
-      this.storageConfig.memory.oracle = {
-        ...this.storageConfig.memory.oracle,
-        connectionString: this.container.querySelector('#memoryOracleConnection')?.value || '',
-        user: this.container.querySelector('#memoryOracleUser')?.value || '',
-        ...(password && password !== '********' ? { password } : {})
-      };
-    } else if (memoryType === 'notion') {
-      const token = this.container.querySelector('#memoryNotionToken')?.value;
-      this.storageConfig.memory.notion = {
-        ...this.storageConfig.memory.notion,
-        databaseId: this.container.querySelector('#memoryNotionDbId')?.value || '',
-        ...(token && token !== '********' ? { token } : {})
-      };
-    }
+  // ========== 월렛 업로드 ==========
 
-    // 파일 저장소
-    const fileType = this.storageConfig.file?.type || 'local';
-    if (fileType === 'local') {
-      this.storageConfig.file.local = {
-        path: this.container.querySelector('#fileLocalPath')?.value || '~/.soul/files'
-      };
-    }
-  }
-
-  async restartServer() {
-    try {
-      await this.apiClient.post('/config/restart');
-      alert('서버가 재시작됩니다. 잠시 후 페이지를 새로고침하세요.');
-    } catch (error) {
-      console.error('Failed to restart server:', error);
-      alert('서버 재시작 실패. 수동으로 재시작하세요.');
-    }
-  }
-
-  async testOracleConnection(category) {
-    const resultEl = this.container.querySelector(`#${category}OracleTestResult`);
-    resultEl.textContent = '테스트 중...';
-    resultEl.className = 'test-result testing';
-
-    try {
-      const response = await this.apiClient.post('/config/storage/oracle/test');
-      if (response.success) {
-        resultEl.textContent = '✅ 연결 성공';
-        resultEl.className = 'test-result success';
-      } else {
-        resultEl.textContent = '❌ ' + (response.message || '연결 실패');
-        resultEl.className = 'test-result error';
-      }
-    } catch (error) {
-      resultEl.textContent = '❌ ' + error.message;
-      resultEl.className = 'test-result error';
-    }
-  }
-
-  async testNotionConnection(category) {
-    const resultEl = this.container.querySelector(`#${category}NotionTestResult`);
-    resultEl.textContent = '테스트 중...';
-    resultEl.className = 'test-result testing';
-
-    try {
-      const response = await this.apiClient.post('/storage/test-notion', {
-        token: this.container.querySelector(`#${category}NotionToken`)?.value,
-        databaseId: this.container.querySelector(`#${category}NotionDbId`)?.value
-      });
-      if (response.success) {
-        resultEl.textContent = '✅ 연결 성공';
-        resultEl.className = 'test-result success';
-      } else {
-        resultEl.textContent = '❌ ' + (response.message || '연결 실패');
-        resultEl.className = 'test-result error';
-      }
-    } catch (error) {
-      resultEl.textContent = '❌ ' + error.message;
-      resultEl.className = 'test-result error';
-    }
-  }
-
-  async handleWalletUpload(e, category) {
+  async handleWalletUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
 
-    const statusEl = this.container.querySelector(`#${category}WalletStatus`);
-    statusEl.textContent = '업로드 중...';
+    const statusEl = this.container.querySelector('#walletStatus');
+    if (statusEl) statusEl.textContent = '업로드 중...';
 
     try {
       const formData = new FormData();
@@ -512,72 +666,69 @@ export class StorageSettings {
 
       const result = await response.json();
       if (result.success) {
-        statusEl.textContent = '✅ 업로드됨';
-        this.storageConfig[category].oracle.walletPath = result.walletPath;
-
-        // TNS 목록 업데이트
+        if (statusEl) statusEl.textContent = '✅ 업로드됨';
+        this.stepData.walletPath = result.walletPath;
+        this.stepData.walletUploaded = true;
         if (result.tnsNames) {
-          const select = this.container.querySelector(`#${category}OracleConnection`);
-          select.innerHTML = result.tnsNames.map(name =>
-            `<option value="${name}">${name}</option>`
-          ).join('');
+          this.stepData.tnsNames = result.tnsNames;
         }
+
+        // 자동 다음 스텝
+        this.stepStates[this.currentStep] = 'completed';
+        this.currentStep++;
+        this.stepStates[this.currentStep] = 'active';
+        this.render();
       } else {
-        statusEl.textContent = '❌ 실패: ' + result.error;
+        if (statusEl) statusEl.textContent = '❌ ' + (result.error || '업로드 실패');
       }
     } catch (error) {
-      statusEl.textContent = '❌ 업로드 실패';
+      if (statusEl) statusEl.textContent = '❌ 업로드 실패';
       console.error('Wallet upload failed:', error);
     }
   }
 
-  // 폴더 브라우저
-  currentBrowseTarget = null;
-  currentPath = '/';
+  // ========== 폴더 브라우저 ==========
 
-  openFolderBrowser(e) {
-    const btn = e.target.closest('.browse-btn');
-    this.currentBrowseTarget = btn.dataset.target;
+  openFolderBrowser(target) {
+    this.currentBrowseTarget = target;
     this.currentPath = '/';
-
     const modal = this.container.querySelector('#folderBrowserModal');
-    modal.style.display = 'flex';
-
-    this.loadFolderContents('/');
+    if (modal) {
+      modal.style.display = 'flex';
+      this.loadFolderContents('/');
+    }
   }
 
   closeFolderBrowser() {
-    this.container.querySelector('#folderBrowserModal').style.display = 'none';
+    const modal = this.container.querySelector('#folderBrowserModal');
+    if (modal) modal.style.display = 'none';
   }
 
-  async loadFolderContents(path) {
+  async loadFolderContents(folderPath) {
     try {
-      const response = await this.apiClient.get(`/storage/browse?path=${encodeURIComponent(path)}`);
+      const response = await this.apiClient.get(`/storage/browse?path=${encodeURIComponent(folderPath)}`);
       const container = this.container.querySelector('#millerColumns');
+      this.currentPath = folderPath;
 
-      // 경로 표시 업데이트
-      this.currentPath = path;
-      this.container.querySelector('#currentPathDisplay').textContent = path;
+      const pathDisplay = this.container.querySelector('#currentPathDisplay');
+      if (pathDisplay) pathDisplay.textContent = folderPath;
 
-      // 폴더 목록 렌더링
-      container.innerHTML = `
-        <div class="miller-column">
-          ${response.items?.map(item => `
-            <div class="folder-item ${item.isDirectory ? 'folder' : 'file'}"
-                 data-path="${item.path}">
-              <span class="item-icon">${item.isDirectory ? '📁' : '📄'}</span>
-              <span class="item-name">${item.name}</span>
-            </div>
-          `).join('') || '<div class="empty">빈 폴더</div>'}
-        </div>
-      `;
+      if (container) {
+        container.innerHTML = `
+          <div class="miller-column">
+            ${response.items?.map(item => `
+              <div class="folder-item ${item.isDirectory ? 'folder' : 'file'}" data-path="${item.path}">
+                <span class="item-icon">${item.isDirectory ? '📁' : '📄'}</span>
+                <span class="item-name">${item.name}</span>
+              </div>
+            `).join('') || '<div class="empty">빈 폴더</div>'}
+          </div>
+        `;
 
-      // 폴더 클릭 이벤트
-      container.querySelectorAll('.folder-item.folder').forEach(item => {
-        item.addEventListener('click', () => {
-          this.loadFolderContents(item.dataset.path);
+        container.querySelectorAll('.folder-item.folder').forEach(item => {
+          item.addEventListener('click', () => this.loadFolderContents(item.dataset.path));
         });
-      });
+      }
     } catch (error) {
       console.error('Failed to load folder:', error);
     }
@@ -586,100 +737,29 @@ export class StorageSettings {
   selectFolder() {
     if (this.currentBrowseTarget) {
       const input = this.container.querySelector(`#${this.currentBrowseTarget}`);
-      if (input) {
-        input.value = this.currentPath;
-      }
+      if (input) input.value = this.currentPath;
     }
     this.closeFolderBrowser();
   }
 
-  // 마이그레이션 모달
-  pendingMigration = null;
-
-  showMigrationModal(changesHtml) {
-    this.pendingMigration = true;
-
-    const modal = this.container.querySelector('#migrationModal');
-    const info = this.container.querySelector('#migrationInfo');
-
-    info.innerHTML = `
-      <div style="margin-bottom: 0.5rem; padding: 0.8rem; background: rgba(196, 149, 106, 0.15); border-radius: 8px;">
-        <strong>${changesHtml}</strong>
+  renderFolderBrowserModal() {
+    return `
+      <div class="modal folder-browser-modal" id="folderBrowserModal" style="display:none">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>폴더 선택</h3>
+            <button class="close-btn" data-action="close-browser">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="current-path">
+              <span id="currentPathDisplay">/</span>
+              <button class="select-btn" data-action="select-folder">선택</button>
+            </div>
+            <div class="miller-columns-container" id="millerColumns"></div>
+          </div>
+        </div>
       </div>
     `;
-
-    // 진행률 숨기고 버튼 초기화
-    const progress = this.container.querySelector('#migrationProgress');
-    if (progress) progress.style.display = 'none';
-    const actions = this.container.querySelector('#migrationActions');
-    if (actions) actions.style.display = 'flex';
-
-    modal.style.display = 'flex';
-  }
-
-  closeMigrationModal() {
-    this.container.querySelector('#migrationModal').style.display = 'none';
-    this.pendingMigration = null;
-  }
-
-  async confirmMigration() {
-    if (!this.pendingMigration) return;
-
-    const fromType = this.originalConfig?.memory?.type || 'local';
-    const toType = this.storageConfig.memory?.type || 'local';
-
-    // 버튼 비활성화 + 진행률 표시
-    const confirmBtn = this.container.querySelector('#confirmMigration');
-    const cancelBtn = this.container.querySelector('#cancelMigration');
-    const progress = this.container.querySelector('#migrationProgress');
-    const progressText = this.container.querySelector('#migrationProgressText');
-    const progressBar = this.container.querySelector('#migrationProgressBar');
-
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = '마이그레이션 중...';
-    cancelBtn.style.display = 'none';
-    progress.style.display = 'block';
-    progressText.textContent = '데이터 내보내기 준비 중...';
-    progressBar.style.width = '10%';
-
-    try {
-      // 1. 마이그레이션 실행
-      progressText.textContent = '데이터 이동 중...';
-      progressBar.style.width = '30%';
-
-      const result = await this.apiClient.post('/storage/migrate', {
-        fromType,
-        toType
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || '마이그레이션 실패');
-      }
-
-      progressBar.style.width = '80%';
-      progressText.textContent = `${result.results?.messages || 0}개 메시지 이동 완료. 설정 저장 중...`;
-
-      // 2. 새 설정 저장
-      await this.doSave();
-
-      progressBar.style.width = '100%';
-      progressText.textContent = `완료! ${result.results?.messages || 0}개 메시지, ${result.results?.files || 0}개 파일 이동됨`;
-
-      // 3초 후 모달 닫기
-      setTimeout(() => {
-        this.closeMigrationModal();
-      }, 2000);
-    } catch (error) {
-      console.error('Migration failed:', error);
-      progressBar.style.width = '0%';
-      progressBar.style.background = '#e74c3c';
-      progressText.textContent = `실패: ${error.message}`;
-
-      // 버튼 복원
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = '다시 시도';
-      cancelBtn.style.display = 'block';
-    }
   }
 }
 

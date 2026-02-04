@@ -664,8 +664,11 @@ class ConversationPipeline {
       if (tz) userTimezone = tz;
 
       if (profile.permissions.autoIncludeInContext) {
-        const profileSummary = profile.generateSummary(profile.permissions.readScope);
-        const basicInfo = profileSummary.basicInfo || {};
+        const basicInfoRaw = profile.basicInfo || {};
+        const basicInfo = {};
+        for (const [key, val] of Object.entries(basicInfoRaw)) {
+          basicInfo[key] = typeof val === 'object' ? val.value : val;
+        }
 
         const name = basicInfo.name || '';
         const nickname = basicInfo.nickname ? ` (${basicInfo.nickname})` : '';
@@ -677,11 +680,12 @@ class ConversationPipeline {
         if (location) profileSection += `위치: ${location}\n`;
 
         // 커스텀 필드
-        if (profileSummary.customFields && profileSummary.customFields.length > 0) {
-          const fields = profileSummary.customFields.filter(f => f.value);
+        const customFields = profile.customFields || [];
+        if (customFields.length > 0) {
+          const fields = customFields.filter(f => f.value);
           for (const field of fields) {
-            const value = field.value.length > 50
-              ? field.value.substring(0, 47) + '...'
+            const value = String(field.value).length > 50
+              ? String(field.value).substring(0, 47) + '...'
               : field.value;
             profileSection += `${field.label}: ${value}\n`;
           }
@@ -721,7 +725,7 @@ class ConversationPipeline {
 - 과거 대화 → recall_memory(키워드)
 - 프로필 상세 → get_profile()
 
-판단: 추측하려는 순간 = 도구 써야 하는 순간
+판단: 모르겠으면 사용자에게 묻기 전에 도구부터 써. recall_memory로 검색하고, list_my_rules로 확인하고, 그래도 없으면 그때 물어봐. "힌트 줘", "알려줘"는 최후의 수단.
 </core_principles>`;
 
     // === 최종 조합: 문서(상단) → 인격 → 지침(하단) ===
@@ -797,6 +801,15 @@ class ConversationPipeline {
 - 새로 알게 된 건 저장 (update_profile)
 - 추측 금지: 모르면 찾고, 없으면 솔직히 말하기
 - 일관된 인격 유지
+
+**기억 관리 규칙:**
+- 기억은 살아있는 데이터. 새 정보가 나오면 기존 기억을 delete_my_rule → add_my_rule로 업데이트
+- 같은 주제의 기억이 이미 있으면 덮어쓰기 (삭제 후 재저장). 중복 쌓지 않기
+- 대화 원문 복붙 금지. 반드시 사실로 정리해서 저장
+- 사용자가 부정/정정한 건 부정형으로 저장 ("X가 아님", "X를 싫어함")
+- 확인되지 않은 추측은 저장 금지. 사용자가 명확히 말한 것만 저장
+- "유저는 ~" 형태의 영구적 사실만 (일시적 감정/상황 제외)
+- recall_memory/list_my_rules로 조회했을 때 틀린 기억이 보이면 즉시 정정
 
 **대화 스타일:**
 - 편한 대화체, 핵심만 간결하게

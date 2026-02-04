@@ -88,8 +88,10 @@ class SessionDigest {
       // Step 3: 메모리 필터링 + 저장
       const savedMemories = await this._filterAndSaveMemories(chunkResults);
 
-      // Step 4: 액션아이템 수집
+      // Step 4: 액션아이템 + 키워드/엔티티 수집
       const actions = chunkResults.flatMap(r => r.actions || []).filter(Boolean);
+      const keywords = [...new Set(chunkResults.flatMap(r => r.keywords || []).filter(Boolean))];
+      const entities = [...new Set(chunkResults.flatMap(r => r.entities || []).filter(Boolean))];
 
       const digest = {
         sessionId,
@@ -97,6 +99,8 @@ class SessionDigest {
         messageRange: { from: this.lastDigestIndex, to: messages.length },
         summary: sessionSummary,
         memories: savedMemories,
+        keywords,
+        entities,
         actions,
         chunks: chunkResults.length,
         processingTime: Date.now() - startTime
@@ -180,10 +184,15 @@ class SessionDigest {
    * LLM 청크 처리 — JSON 한 줄 프롬프트 (파싱 안정성)
    */
   async _processChunkWithLLM(conversationText, alba) {
-    // 오미 피드백: 프롬프트를 JSON 한 줄짜리로 못 박기
-    const systemPrompt = `대화 조각을 분석해서 아래 JSON 형식으로만 한 줄로 응답해. 다른 텍스트 없이 JSON만.
-{"summary":"핵심 내용 2-3문장","memories":["유저에 대한 영구적 사실/취향/목표 0~5개"],"actions":["유저가 할 일/결정 0~5개, 동사로 시작"]}
-규칙: memories는 "유저는 ~" 형태만. 일시적(오늘 기분, 어제 일)은 제외. 성격/취향/습관/관계/목표만.`;
+    const systemPrompt = `대화 조각을 분석해서 아래 JSON 형식으로만 응답해. 다른 텍스트 없이 JSON만.
+{"summary":"핵심 내용 2-3문장","memories":["유저에 대한 영구적 사실/취향/목표 0~5개"],"keywords":["이 대화의 핵심 검색 키워드 3~10개"],"entities":["고유명사/인물/관계/호칭/장소/서비스명 등"],"actions":["유저가 할 일/결정 0~5개, 동사로 시작"]}
+규칙:
+- memories는 "유저는 ~" 형태의 확정된 사실만. 일시적(오늘 기분, 어제 일) 제외
+- 유저가 부정/정정한 내용은 부정형으로 저장
+- 확인 안 된 추측은 저장 금지
+- keywords: 나중에 이 대화를 찾을 때 쓸 검색어. 동의어/유사어도 포함 (예: 별명→호칭,이름,닉네임)
+- entities: 사람 이름, AI 호칭, 관계("엄마=영희"), 서비스명, 프로젝트명 등 고유명사는 빠짐없이
+- 호칭/별명/관계 정보는 memories와 entities 양쪽에 반드시 기록`;
 
     try {
       const result = await alba._callLLM(systemPrompt, conversationText);
@@ -195,6 +204,8 @@ class SessionDigest {
         return {
           summary: parsed.summary || '',
           memories: Array.isArray(parsed.memories) ? parsed.memories : [],
+          keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
+          entities: Array.isArray(parsed.entities) ? parsed.entities : [],
           actions: Array.isArray(parsed.actions) ? parsed.actions : []
         };
       }
@@ -209,9 +220,15 @@ class SessionDigest {
    * Ollama 없을 때 digest-worker 역할의 모델로 시도
    */
   async _processChunkWithDigestLLM(conversationText) {
-    const systemPrompt = `대화 조각을 분석해서 아래 JSON 형식으로만 한 줄로 응답해. 다른 텍스트 없이 JSON만.
-{"summary":"핵심 내용 2-3문장","memories":["유저에 대한 영구적 사실/취향/목표 0~5개"],"actions":["유저가 할 일/결정 0~5개, 동사로 시작"]}
-규칙: memories는 "유저는 ~" 형태만. 일시적(오늘 기분, 어제 일)은 제외. 성격/취향/습관/관계/목표만.`;
+    const systemPrompt = `대화 조각을 분석해서 아래 JSON 형식으로만 응답해. 다른 텍스트 없이 JSON만.
+{"summary":"핵심 내용 2-3문장","memories":["유저에 대한 영구적 사실/취향/목표 0~5개"],"keywords":["이 대화의 핵심 검색 키워드 3~10개"],"entities":["고유명사/인물/관계/호칭/장소/서비스명 등"],"actions":["유저가 할 일/결정 0~5개, 동사로 시작"]}
+규칙:
+- memories는 "유저는 ~" 형태의 확정된 사실만. 일시적(오늘 기분, 어제 일) 제외
+- 유저가 부정/정정한 내용은 부정형으로 저장
+- 확인 안 된 추측은 저장 금지
+- keywords: 나중에 이 대화를 찾을 때 쓸 검색어. 동의어/유사어도 포함 (예: 별명→호칭,이름,닉네임)
+- entities: 사람 이름, AI 호칭, 관계("엄마=영희"), 서비스명, 프로젝트명 등 고유명사는 빠짐없이
+- 호칭/별명/관계 정보는 memories와 entities 양쪽에 반드시 기록`;
 
     try {
       const result = await this._callDigestLLM(systemPrompt, conversationText);
@@ -223,6 +240,8 @@ class SessionDigest {
         return {
           summary: parsed.summary || '',
           memories: Array.isArray(parsed.memories) ? parsed.memories : [],
+          keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
+          entities: Array.isArray(parsed.entities) ? parsed.entities : [],
           actions: Array.isArray(parsed.actions) ? parsed.actions : []
         };
       }
@@ -264,7 +283,7 @@ class SessionDigest {
       }
 
       // 3) 서비스 인스턴스 생성 + 호출
-      const service = AIServiceFactory.createService(serviceId, aiService.apiKey, modelId);
+      const service = await AIServiceFactory.createService(serviceId, modelId);
       if (!service) return null;
 
       const messages = [
@@ -315,6 +334,10 @@ class SessionDigest {
       /(?:직업|일|회사|학교|전공|근무|개발|코딩)[^\n.]{5,40}/g,
       // 목표/계획
       /(?:목표|계획|하려고|할 예정|되고 싶|만들고 싶|하고 싶)[^\n.]{5,40}/g,
+      // 호칭/별명
+      /(?:부르|불러|호칭|별명|이름은|이름이)[^\n.]{3,40}/g,
+      // 관계 정보
+      /(?:엄마|아빠|형|누나|동생|언니|오빠|남편|아내|친구|동료|여자친구|남자친구|반려)[^\n.]{3,40}/g,
     ];
 
     for (const msg of userMsgs) {
@@ -334,7 +357,20 @@ class SessionDigest {
       }
     }
 
-    return { summary, memories, actions: [] };
+    // 규칙 기반 키워드 추출
+    const keywordSet = new Set();
+    for (const msg of [...userMsgs, ...assistantMsgs]) {
+      const text = (msg.content || '').substring(0, 300);
+      // 2글자 이상 한글 단어 추출
+      const words = text.match(/[가-힣]{2,10}/g) || [];
+      for (const w of words) {
+        if (!/^(그래서|그리고|하지만|근데|그런데|아니면|그러면|이거|저거|여기|거기)$/.test(w)) {
+          keywordSet.add(w);
+        }
+      }
+    }
+
+    return { summary, memories, keywords: [...keywordSet].slice(0, 10), entities: [], actions: [] };
   }
 
   /**
@@ -485,15 +521,26 @@ class SessionDigest {
       const vectorStore = require('./vector-store');
       let embedded = 0;
 
-      // 1. 세션 요약 임베딩
+      // 키워드+엔티티를 태그로 활용
+      const extraTags = [
+        ...(digest.keywords || []),
+        ...(digest.entities || [])
+      ];
+
+      // 1. 세션 요약 임베딩 (키워드/엔티티 포함)
       if (digest.summary && digest.summary.length >= 10) {
+        // 요약 + 키워드/엔티티를 합쳐서 임베딩 (검색 적중률 향상)
+        const enrichedSummary = extraTags.length > 0
+          ? `${digest.summary}\n[키워드: ${extraTags.join(', ')}]`
+          : digest.summary;
+
         await vectorStore.addMessage({
           id: `digest_summary_${Date.now()}`,
-          content: digest.summary,
+          content: enrichedSummary,
           role: 'system',
           sessionId: 'embeddings',
           timestamp: digest.timestamp,
-          tags: ['digest', 'summary']
+          tags: ['digest', 'summary', ...extraTags]
         });
         embedded++;
       }
@@ -509,13 +556,13 @@ class SessionDigest {
           role: 'system',
           sessionId: 'embeddings',
           timestamp: digest.timestamp,
-          tags: ['digest', 'memory']
+          tags: ['digest', 'memory', ...extraTags]
         });
         embedded++;
       }
 
       if (embedded > 0) {
-        console.log(`[SessionDigest] Embedded ${embedded} items`);
+        console.log(`[SessionDigest] Embedded ${embedded} items (tags: ${extraTags.length} keywords/entities)`);
       }
     } catch (e) {
       console.warn('[SessionDigest] Embedding failed:', e.message);

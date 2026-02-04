@@ -95,15 +95,30 @@ Message.findSimilar = async function(queryEmbedding, options = {}) {
   const {
     sessionId = 'main-conversation',
     limit = 10,
-    minSimilarity = 0.5
+    minSimilarity = 0.5,
+    startDate = null,
+    endDate = null
   } = options;
+
+  // 동적 WHERE 절 (시간 필터 지원)
+  let whereClause = 'session_id = ? AND embedding IS NOT NULL';
+  const params = [sessionId];
+
+  if (startDate) {
+    whereClause += ' AND timestamp >= ?';
+    params.push(startDate instanceof Date ? startDate.toISOString() : startDate);
+  }
+  if (endDate) {
+    whereClause += ' AND timestamp <= ?';
+    params.push(endDate instanceof Date ? endDate.toISOString() : endDate);
+  }
 
   const stmt = db.db.prepare(`
     SELECT * FROM messages
-    WHERE session_id = ? AND embedding IS NOT NULL
+    WHERE ${whereClause}
   `);
 
-  const messages = stmt.all(sessionId).map(row => parseRow(row));
+  const messages = stmt.all(...params).map(row => parseRow(row));
 
   // 코사인 유사도 계산
   const cosineSimilarity = (a, b) => {

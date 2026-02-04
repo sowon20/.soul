@@ -391,6 +391,104 @@ ${messages.map(m => `[${m.role}] ${m.content}`).join('\n')}
   }
 
   /**
+   * {need} 요청 처리 — 자연어를 받아서 적절한 도구를 선택하고 실행
+   * @param {string} needText - 자연어 요청 (예: "과거에 사용자가 좋아한다고 했던 음식 찾아줘")
+   * @param {Array} tools - 사용 가능한 도구 목록
+   * @param {Function} toolExecutor - 도구 실행 함수 (name, input) => result
+   * @returns {string} 실행 결과 (자연어)
+   */
+  async executeNeedRequest(needText, tools, toolExecutor) {
+    if (!this.initialized) {
+      return `[도구 라우팅 실패] 알바(Ollama)가 초기화되지 않았습니다.`;
+    }
+
+    try {
+      console.log(`[AlbaWorker] {need} 요청: ${needText}`);
+
+      // 1. 임베딩 기반으로 관련 도구 선택
+      const selectedTools = await this.selectTools(needText, tools, 3);
+      if (!selectedTools || selectedTools.length === 0) {
+        return `[도구 라우팅] 적합한 도구를 찾지 못했습니다. 요청: ${needText}`;
+      }
+
+      // 2. 도구 설명을 LLM에 전달하여 어떤 도구를 어떤 파라미터로 호출할지 결정
+      const toolDescriptions = selectedTools.map(t => {
+        const schema = t.input_schema || t.parameters || {};
+        const props = schema.properties || {};
+        const required = schema.required || [];
+        const params = Object.entries(props).map(([k, v]) => {
+          const req = required.includes(k) ? '(필수)' : '(선택)';
+          return `    - ${k} ${req}: ${v.description || v.type || ''}`;
+        }).join('\n');
+        return `  ${t.name}: ${t.description || ''}\n    파라미터:\n${params}`;
+      }).join('\n\n');
+
+      const decisionPrompt = `사용자 요청을 처리할 도구를 선택하고 파라미터를 결정해.
+
+사용 가능한 도구:
+${toolDescriptions}
+
+규칙:
+- 반드시 JSON으로만 응답
+- 여러 도구가 필요하면 배열로
+- 도구가 필요 없으면 빈 배열 []
+
+출력 형식:
+[{"tool": "도구이름", "params": {"key": "value"}}]`;
+
+      const decisionResult = await this._callLLM(decisionPrompt, `요청: ${needText}`);
+      if (!decisionResult) {
+        return `[도구 라우팅 실패] LLM이 도구 선택에 실패했습니다.`;
+      }
+
+      // 3. JSON 파싱
+      let toolCalls;
+      try {
+        const match = decisionResult.match(/\[[\s\S]*\]/);
+        toolCalls = match ? JSON.parse(match[0]) : [];
+      } catch (e) {
+        console.warn('[AlbaWorker] Tool call JSON parse failed:', decisionResult);
+        return `[도구 라우팅 실패] 도구 호출 형식 오류`;
+      }
+
+      if (!toolCalls || toolCalls.length === 0) {
+        return `[도구 라우팅] 이 요청에 적합한 도구가 없습니다.`;
+      }
+
+      // 4. 도구 실행
+      const results = [];
+      for (const call of toolCalls) {
+        try {
+          const toolName = call.tool;
+          const params = call.params || {};
+          console.log(`[AlbaWorker] 도구 실행: ${toolName}`, JSON.stringify(params));
+          const result = await toolExecutor(toolName, params);
+          results.push({ tool: toolName, success: true, result });
+        } catch (err) {
+          console.error(`[AlbaWorker] 도구 실행 실패: ${call.tool}`, err.message);
+          results.push({ tool: call.tool, success: false, error: err.message });
+        }
+      }
+
+      // 5. 결과를 자연어로 정리
+      const summaryParts = results.map(r => {
+        if (r.success) {
+          const resultStr = typeof r.result === 'string' ? r.result : JSON.stringify(r.result);
+          return `[${r.tool}] ${resultStr}`;
+        } else {
+          return `[${r.tool}] 실패: ${r.error}`;
+        }
+      });
+
+      return summaryParts.join('\n\n');
+
+    } catch (error) {
+      console.error('[AlbaWorker] executeNeedRequest error:', error);
+      return `[도구 라우팅 실패] ${error.message}`;
+    }
+  }
+
+  /**
    * 작업 큐에 추가
    */
   addToQueue(task) {

@@ -340,9 +340,9 @@ export class ChatManager {
       // 메시지 ID 설정 (검색 결과 이동용)
       messageDiv.dataset.messageId = messageId;
 
-      // Set content
+      // Set content (줄바꿈 보존)
       const content = messageDiv.querySelector('.message-content');
-      content.textContent = message.content;
+      content.innerHTML = this.escapeHtml(message.content);
 
       // Set timestamp
       const timestamp = messageDiv.querySelector('.message-time');
@@ -372,6 +372,10 @@ export class ChatManager {
       // tool_use 태그 분리
       displayContent = displayContent.replace(/<tool_use>[\s\S]*?<\/tool_use>/g, '').trim();
       
+      // marked 전처리: **...** 닫힘 직후 한글이 오면 marked가 bold 인식 못함 → 직접 변환
+      if (window.marked) {
+        displayContent = displayContent.replace(/\*\*(.+?)\*\*(?=[가-힣])/g, '<strong>$1</strong>');
+      }
       const renderedContent = window.marked ? window.marked.parse(displayContent) : this.escapeHtml(displayContent);
       content.innerHTML = renderedContent;
 
@@ -455,30 +459,105 @@ export class ChatManager {
         content.insertBefore(toolContainer, content.firstChild);
       }
 
-      // 도구 실행 결과 접힘 표시 (toolsUsed가 있는 경우)
+      // 도구 사용 과정 표시 (온보딩 스텝 스타일)
       if (message.toolsUsed && message.toolsUsed.length > 0) {
         const toolsContainer = document.createElement('div');
-        toolsContainer.className = 'ai-tools-used-container';
+        toolsContainer.className = 'ai-tool-thinking-container';
 
+        // 토글 버튼
         const toolsToggle = document.createElement('button');
         toolsToggle.type = 'button';
-        toolsToggle.className = 'ai-tools-used-toggle';
+        toolsToggle.className = 'ai-tool-thinking-toggle';
         const allSuccess = message.toolsUsed.every(t => t.success);
+        const statusClass = allSuccess ? 'success' : 'warning';
         const icon = allSuccess ? '✓' : '⚠';
-        toolsToggle.innerHTML = `<span class="tools-used-icon ${allSuccess ? 'success' : 'warning'}">${icon}</span> <span>도구 사용 ${message.toolsUsed.length}개</span>`;
+        const totalSteps = (message.toolNeeds?.length ? 1 : 0) + (message.toolsSelected?.length ? 1 : 0) + message.toolsUsed.length;
+        toolsToggle.innerHTML = `<span class="tool-thinking-icon ${statusClass}">${icon}</span> <span>도구 사용 ${totalSteps}단계</span><span class="tool-thinking-chevron">›</span>`;
         toolsToggle.addEventListener('click', function(e) {
           e.preventDefault();
           e.stopPropagation();
           this.parentElement.classList.toggle('expanded');
         });
 
+        // 도구별 상세 과정
         const toolsContent = document.createElement('div');
-        toolsContent.className = 'ai-tools-used-content';
+        toolsContent.className = 'ai-tool-thinking-content';
+
+        const koreanActions = {
+          'recall_memory': '기억 검색',
+          'get_profile': '프로필 조회',
+          'update_profile': '정보 저장',
+          'list_my_rules': '규칙 조회',
+          'add_my_rule': '규칙 저장',
+          'delete_my_rule': '규칙 삭제',
+          'send_message': '메시지 전송',
+          'schedule_message': '메시지 예약',
+          'cancel_scheduled_message': '예약 취소',
+          'list_scheduled_messages': '예약 목록'
+        };
+
+        const escapeHtml = (text) => {
+          const div = document.createElement('div');
+          div.textContent = text;
+          return div.innerHTML;
+        };
+
+        const formatResult = (toolName, resultText) => {
+          if (!resultText) return '';
+          try {
+            const data = typeof resultText === 'string' ? JSON.parse(resultText) : resultText;
+            return this._formatToolResult(toolName, data);
+          } catch {
+            return String(resultText).substring(0, 200);
+          }
+        };
+
+        // 1. {need} 요청 단계
+        if (message.toolNeeds && message.toolNeeds.length > 0) {
+          const needStep = document.createElement('div');
+          needStep.className = 'tool-thinking-step need';
+          needStep.innerHTML = `
+            <div class="tool-thinking-indicator">✓</div>
+            <div class="tool-thinking-content-wrap">
+              <div class="tool-thinking-action">도구 요청</div>
+              <div class="tool-thinking-result">${escapeHtml(message.toolNeeds.join(', '))}</div>
+            </div>
+          `;
+          toolsContent.appendChild(needStep);
+        }
+
+        // 2. 알바 도구 선택 단계
+        if (message.toolsSelected && message.toolsSelected.length > 0) {
+          const selectedStep = document.createElement('div');
+          selectedStep.className = 'tool-thinking-step selected';
+          const selectedLabels = message.toolsSelected.map(t => koreanActions[t] || t).join(', ');
+          selectedStep.innerHTML = `
+            <div class="tool-thinking-indicator">✓</div>
+            <div class="tool-thinking-content-wrap">
+              <div class="tool-thinking-action">도구 선택</div>
+              <div class="tool-thinking-result">${escapeHtml(selectedLabels)}</div>
+            </div>
+          `;
+          toolsContent.appendChild(selectedStep);
+        }
+
+        // 3. 도구 실행 단계
         for (const tool of message.toolsUsed) {
-          const item = document.createElement('div');
-          item.className = `ai-tools-used-item ${tool.success ? 'success' : 'error'}`;
-          item.innerHTML = `<span class="tool-result-icon">${tool.success ? '✓' : '✗'}</span> <span>${tool.display || tool.name}</span>`;
-          toolsContent.appendChild(item);
+          const step = document.createElement('div');
+          step.className = `tool-thinking-step ${tool.success ? 'success' : 'error'}`;
+
+          const actionName = koreanActions[tool.name] || tool.display || tool.name;
+          const inputText = tool.inputSummary || '';
+          const resultText = formatResult(tool.name, tool.resultPreview || '');
+
+          step.innerHTML = `
+            <div class="tool-thinking-indicator">${tool.success ? '✓' : '✗'}</div>
+            <div class="tool-thinking-content-wrap">
+              <div class="tool-thinking-action">${escapeHtml(actionName)}${inputText ? `<span class="tool-thinking-input">${escapeHtml(inputText)}</span>` : ''}</div>
+              ${resultText ? `<div class="tool-thinking-result">${escapeHtml(resultText)}</div>` : ''}
+            </div>
+          `;
+          toolsContent.appendChild(step);
         }
 
         toolsContainer.appendChild(toolsToggle);
@@ -536,6 +615,64 @@ export class ChatManager {
       this.attachAssistantMessageActions(messageDiv, message);
 
       return messageDiv;
+    }
+  }
+
+  /**
+   * 도구 결과 JSON을 사람이 읽기 좋게 포맷팅
+   */
+  _formatToolResult(toolName, data) {
+    if (!data || typeof data !== 'object') return String(data || '');
+
+    switch (toolName) {
+      case 'get_profile': {
+        if (data.found === false) return data.message || '정보 없음';
+        if (data.field && data.value) return `${data.field}: ${data.value}`;
+        // 전체 프로필
+        const parts = [];
+        if (data.basicInfo) {
+          for (const [k, v] of Object.entries(data.basicInfo)) {
+            const val = typeof v === 'object' ? v.value : v;
+            if (val) parts.push(`${k}: ${val}`);
+          }
+        }
+        return parts.length > 0 ? parts.join(', ') : '프로필 조회 완료';
+      }
+
+      case 'recall_memory': {
+        if (data.count !== undefined) return `${data.count}건의 기억 발견`;
+        if (data.results?.length > 0) return `${data.results.length}건 발견`;
+        if (data.found === false) return data.message || '관련 기억 없음';
+        return '검색 완료';
+      }
+
+      case 'update_profile':
+        if (data.success) return `${data.field || '정보'} 저장 완료`;
+        return data.message || '저장 실패';
+
+      case 'list_my_rules': {
+        if (Array.isArray(data.rules)) return `${data.rules.length}개 규칙`;
+        if (data.count !== undefined) return `${data.count}개 규칙`;
+        return '규칙 조회 완료';
+      }
+
+      case 'add_my_rule':
+        return data.success ? '규칙 저장 완료' : (data.message || '저장 실패');
+
+      case 'delete_my_rule':
+        return data.success ? '규칙 삭제 완료' : (data.message || '삭제 실패');
+
+      default: {
+        // 범용: 주요 필드만 간략히 표시
+        const summary = [];
+        for (const [k, v] of Object.entries(data)) {
+          if (k === 'success') continue;
+          const val = typeof v === 'object' ? JSON.stringify(v).substring(0, 50) : String(v);
+          summary.push(`${k}: ${val.substring(0, 60)}`);
+          if (summary.length >= 3) break;
+        }
+        return summary.join(', ') || '완료';
+      }
     }
   }
 
@@ -1037,8 +1174,13 @@ export class ChatManager {
 
       // 도구 실행 결과 수집 (접힘 형태로 메시지에 포함)
       let toolItems = [];
+      let toolNeeds = [];
+      let toolsSelected = [];
       if (window.soulApp?.socketClient) {
-        toolItems = window.soulApp.socketClient.getToolStatusItems();
+        const statusData = window.soulApp.socketClient.getToolStatusItems();
+        toolItems = statusData.tools || [];
+        toolNeeds = statusData.toolNeeds || [];
+        toolsSelected = statusData.toolsSelected || [];
         window.soulApp.socketClient.clearToolStatus();
       }
       // 서버 응답의 toolsUsed가 있으면 그것도 합침
@@ -1048,7 +1190,16 @@ export class ChatManager {
           display: t.display || t.name,
           success: t.success !== false,
           error: t.success === false,
+          inputSummary: t.inputSummary || '',
+          resultPreview: t.resultPreview || '',
         }));
+      }
+      // 서버 응답의 toolNeeds/toolsSelected 합침
+      if (response.toolNeeds?.length > 0 && toolNeeds.length === 0) {
+        toolNeeds = response.toolNeeds;
+      }
+      if (response.toolsSelected?.length > 0 && toolsSelected.length === 0) {
+        toolsSelected = response.toolsSelected;
       }
 
       // Add assistant response
@@ -1060,7 +1211,14 @@ export class ChatManager {
         timestamp: new Date(response.timestamp || Date.now()),
         routing: response.routing || null,
         toolsUsed: toolItems.length > 0 ? toolItems : null,
+        toolNeeds: toolNeeds.length > 0 ? toolNeeds : null,
+        toolsSelected: toolsSelected.length > 0 ? toolsSelected : null,
       });
+
+      // system fallback 알림 (일시적, 저장 안 됨)
+      if (response.systemFallback) {
+        this.showToast(`system→user 변환됨 (${response.routing?.modelId || 'unknown'})`, 5000);
+      }
 
       // 대시보드 실시간 업데이트 (마지막 요청 정보)
       if (response.tokenUsage) {
@@ -1075,8 +1233,13 @@ export class ChatManager {
 
       // 도구 실행 결과 수집 (에러 시에도 보존)
       let errorToolItems = [];
+      let errorToolNeeds = [];
+      let errorToolsSelected = [];
       if (window.soulApp?.socketClient) {
-        errorToolItems = window.soulApp.socketClient.getToolStatusItems();
+        const errorStatusData = window.soulApp.socketClient.getToolStatusItems();
+        errorToolItems = errorStatusData.tools || [];
+        errorToolNeeds = errorStatusData.toolNeeds || [];
+        errorToolsSelected = errorStatusData.toolsSelected || [];
         window.soulApp.socketClient.clearToolStatus();
       }
 
@@ -1102,6 +1265,8 @@ export class ChatManager {
         content: errorContent,
         timestamp: new Date(),
         toolsUsed: errorToolItems.length > 0 ? errorToolItems : null,
+        toolNeeds: errorToolNeeds.length > 0 ? errorToolNeeds : null,
+        toolsSelected: errorToolsSelected.length > 0 ? errorToolsSelected : null,
       });
 
       console.error('메시지 전송 실패:', error);
@@ -1236,5 +1401,20 @@ export class ChatManager {
    */
   getLastMessage() {
     return this.messages[this.messages.length - 1] || null;
+  }
+
+  showToast(text, duration = 4000) {
+    const toast = document.createElement('div');
+    toast.className = 'chat-toast';
+    toast.textContent = text;
+    const container = this.chatContainer || document.querySelector('.chat-messages');
+    if (container) {
+      container.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add('visible'));
+      setTimeout(() => {
+        toast.classList.remove('visible');
+        setTimeout(() => toast.remove(), 300);
+      }, duration);
+    }
   }
 }

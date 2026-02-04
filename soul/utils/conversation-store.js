@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { OracleStorage } = require('./oracle-storage');
 const { getArchiverAsync } = require('./conversation-archiver');
+const localConfig = require('./local-config');
 
 // 스토리지 설정 캐시 (서버 재시작 시 초기화됨)
 let storageConfig = null;
@@ -42,12 +43,16 @@ async function getStorageConfig() {
     const SystemConfig = require('../models/SystemConfig');
     const config = await SystemConfig.findOne({ configKey: 'memory' });
 
+    // local-config에서 복호화된 credentials 가져오기
+    const fileConfig = localConfig.readStorageConfigSync();
+
     // FTP 설정이 있으면 FTP 사용 (storagePath 불필요)
     if (config?.value?.storageType === 'ftp' && config?.value?.ftp) {
+      const ftpFromFile = fileConfig.memory?.ftp || {};
       storageConfig = {
         type: 'ftp',
         path: null,
-        ftp: config.value.ftp
+        ftp: { ...config.value.ftp, password: ftpFromFile.password || config.value.ftp.password }
       };
       storageConfigLoaded = true;
       console.log('[ConversationStore] Storage config: FTP', config.value.ftp.host);
@@ -56,10 +61,11 @@ async function getStorageConfig() {
 
     // Oracle 설정
     if (config?.value?.storageType === 'oracle') {
+      const oracleFromFile = fileConfig.memory?.oracle || {};
       storageConfig = {
         type: 'oracle',
         path: config.value.storagePath || null,
-        oracle: config.value.oracle || {}
+        oracle: { ...config.value.oracle, password: oracleFromFile.password, encryptionKey: oracleFromFile.encryptionKey }
       };
       storageConfigLoaded = true;
       console.log('[ConversationStore] Storage config: Oracle DB');
@@ -550,7 +556,6 @@ class ConversationStore {
 
   async getMessagesBefore(beforeTimestamp, limit = 20) {
     await this.init();
-    const allLines = await this.readAllLines();
     const beforeDate = new Date(beforeTimestamp);
 
     if (isNaN(beforeDate.getTime())) {
@@ -558,17 +563,78 @@ class ConversationStore {
       return [];
     }
 
-    const filtered = [];
-    for (let i = allLines.length - 1; i >= 0 && filtered.length < limit; i--) {
-      try {
-        const msg = JSON.parse(allLines[i]);
-        if (new Date(msg.timestamp) < beforeDate) {
-          filtered.unshift(msg);
-        }
-      } catch {}
-    }
+    // 아카이브 JSON 파일에서 before 이전 메시지 탐색 (기한 없음)
+    const config = await getStorageConfig();
+    if (!config.path) return [];
+    const resolvedPath = config.path.replace(/^~/, require('os').homedir());
+    const conversationsPath = path.join(resolvedPath, 'conversations');
 
-    return filtered;
+    try {
+      if (!fs.existsSync(conversationsPath)) return [];
+
+      // 월별 폴더 (최신순)
+      const monthDirs = fs.readdirSync(conversationsPath)
+        .filter(d => /^\d{4}-\d{2}$/.test(d))
+        .sort()
+        .reverse();
+
+      const results = [];
+
+      for (const monthDir of monthDirs) {
+        // 이 월이 before보다 미래면 스킵하되, 같은 월이면 탐색 필요
+        // (월 단위로 크게 거르기)
+        const monthPath = path.join(conversationsPath, monthDir);
+
+        const dayFiles = fs.readdirSync(monthPath)
+          .filter(f => /^\d{4}-\d{2}-\d{2}\.json$/.test(f))
+          .sort()
+          .reverse(); // 최신 날짜부터
+
+        for (const dayFile of dayFiles) {
+          const dateStr = dayFile.replace('.json', '');
+          // before 날짜보다 크게 미래인 파일은 스킵 (1일 여유)
+          const fileDate = new Date(dateStr + 'T23:59:59');
+          if (fileDate > new Date(beforeDate.getTime() + 86400000)) continue;
+
+          const filePath = path.join(monthPath, dayFile);
+          const content = fs.readFileSync(filePath, 'utf-8');
+          const dayMessages = JSON.parse(content);
+
+          // before 이전 메시지만 필터 (역순으로)
+          for (let i = dayMessages.length - 1; i >= 0; i--) {
+            const m = dayMessages[i];
+            const msgTime = new Date(m.timestamp);
+            if (msgTime < beforeDate) {
+              results.unshift({
+                id: m.id || `${m.timestamp}_${m.role}`,
+                role: m.role,
+                text: m.content,
+                content: m.content,
+                timestamp: m.timestamp,
+                tags: m.tags || [],
+                tokens: m.tokens || 0,
+                metadata: m.metadata || {},
+                routing: m.routing || null
+              });
+
+              if (results.length >= limit) break;
+            }
+          }
+
+          if (results.length >= limit) break;
+        }
+
+        if (results.length >= limit) break;
+      }
+
+      // 시간순 정렬
+      results.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      console.log(`[ConversationStore] getMessagesBefore: ${results.length} messages before ${beforeTimestamp}`);
+      return results.slice(-limit);
+    } catch (e) {
+      console.error('[ConversationStore] getMessagesBefore archive error:', e.message);
+      return [];
+    }
   }
 
   async getMessagesAround(messageId, limit = 40) {

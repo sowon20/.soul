@@ -649,34 +649,19 @@ router.get('/server-status', async (req, res) => {
  */
 router.get('/storage/oracle', async (req, res) => {
   try {
-    const { OracleStorage } = require('../utils/oracle-storage');
+    const localConfig = require('../utils/local-config');
+    const storageConf = localConfig.readStorageConfigSync();
+    const oracleConf = storageConf.memory?.oracle || {};
 
-    // 키체인 또는 환경변수에서 설정 여부 확인
-    let hasPassword = false;
-    let hasEncryptionKey = false;
-
-    try {
-      const keytar = require('keytar');
-      hasPassword = !!(await keytar.getPassword('soul-oracle-db', 'password'));
-      hasEncryptionKey = !!(await keytar.getPassword('soul-oracle-db', 'encryptionKey'));
-    } catch (e) {
-      // keytar not available, check env vars
-      hasPassword = !!process.env.ORACLE_PASSWORD;
-      hasEncryptionKey = !!process.env.ORACLE_ENCRYPTION_KEY;
-    }
-
-    // DB 설정에서 Oracle 활성화 여부 확인
-    const oracleConfig = await configManager.getConfigValue('oracle_storage', {
-      enabled: false,
-      connectString: 'database_low',
-      walletDir: './config/oracle'
-    });
+    const hasPassword = !!oracleConf.password;
+    const hasEncryptionKey = !!oracleConf.encryptionKey;
 
     res.json({
       success: true,
       configured: hasPassword,
       encrypted: hasEncryptionKey,
-      ...oracleConfig
+      connectString: oracleConf.connectionString || 'database_low',
+      user: oracleConf.user || ''
     });
   } catch (error) {
     console.error('Error reading Oracle config:', error);
@@ -709,22 +694,32 @@ router.put('/storage/oracle', async (req, res) => {
 
 /**
  * POST /api/config/storage/oracle/credentials
- * Oracle 비밀번호/암호화키 키체인에 저장
+ * Oracle 비밀번호/암호화키 저장 (암호화)
  */
 router.post('/storage/oracle/credentials', async (req, res) => {
   try {
-    const { password, encryptionKey } = req.body;
+    const { password, encryptionKey, user, connectionString } = req.body;
 
     if (!password) {
       return res.status(400).json({ success: false, error: 'password is required' });
     }
 
-    const { OracleStorage } = require('../utils/oracle-storage');
-    await OracleStorage.setCredentials(password, encryptionKey);
+    const localConfig = require('../utils/local-config');
+    const storageConf = localConfig.readStorageConfigSync();
+
+    storageConf.memory.oracle = {
+      ...storageConf.memory.oracle,
+      password,
+      ...(encryptionKey ? { encryptionKey } : {}),
+      ...(user ? { user } : {}),
+      ...(connectionString ? { connectionString } : {})
+    };
+
+    await localConfig.writeStorageConfig(storageConf);
 
     res.json({
       success: true,
-      message: 'Credentials saved to keychain',
+      message: 'Credentials saved (encrypted)',
       hasEncryptionKey: !!encryptionKey
     });
   } catch (error) {
@@ -735,14 +730,20 @@ router.post('/storage/oracle/credentials', async (req, res) => {
 
 /**
  * DELETE /api/config/storage/oracle/credentials
- * Oracle 키체인에서 비밀번호 삭제
+ * Oracle 비밀번호 삭제
  */
 router.delete('/storage/oracle/credentials', async (req, res) => {
   try {
-    const { OracleStorage } = require('../utils/oracle-storage');
-    await OracleStorage.deleteCredentials();
+    const localConfig = require('../utils/local-config');
+    const storageConf = localConfig.readStorageConfigSync();
 
-    res.json({ success: true, message: 'Credentials deleted from keychain' });
+    if (storageConf.memory?.oracle) {
+      delete storageConf.memory.oracle.password;
+      delete storageConf.memory.oracle.encryptionKey;
+    }
+
+    await localConfig.writeStorageConfig(storageConf);
+    res.json({ success: true, message: 'Credentials deleted' });
   } catch (error) {
     console.error('Error deleting Oracle credentials:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -756,15 +757,15 @@ router.delete('/storage/oracle/credentials', async (req, res) => {
 router.post('/storage/oracle/test', async (req, res) => {
   try {
     const { OracleStorage } = require('../utils/oracle-storage');
-
-    const oracleConfig = await configManager.getConfigValue('oracle_storage', {
-      connectString: 'database_low',
-      walletDir: './config/oracle'
-    });
+    const localConfig = require('../utils/local-config');
+    const storageConf = localConfig.readStorageConfigSync();
+    const oracleConf = storageConf.memory?.oracle || {};
+    const { user, password, connectionString, connectString } = req.body;
 
     const storage = new OracleStorage({
-      connectString: oracleConfig.connectString,
-      walletDir: oracleConfig.walletDir
+      user: user || oracleConf.user || 'ADMIN',
+      connectString: connectString || connectionString || oracleConf.connectionString || 'database_low',
+      password: password || oracleConf.password
     });
 
     await storage.initialize();

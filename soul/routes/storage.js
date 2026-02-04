@@ -382,8 +382,9 @@ async function createMigrationAdapter(type, config) {
     }
 
     case 'ftp': {
-      const memoryConfig = await configManager.getMemoryConfig();
-      const ftpConfig = config || memoryConfig?.ftp;
+      const localCfgFtp = require('../utils/local-config');
+      const fileConfigFtp = localCfgFtp.readStorageConfigSync();
+      const ftpConfig = config || fileConfigFtp.memory?.ftp || {};
       if (!ftpConfig?.host) throw new Error('FTP 설정이 없습니다.');
 
       const { FTPStorage } = require('../utils/ftp-storage');
@@ -403,8 +404,9 @@ async function createMigrationAdapter(type, config) {
     }
 
     case 'notion': {
-      const memoryConfig = await configManager.getMemoryConfig();
-      const notionConfig = config || memoryConfig?.notion;
+      const localCfgNotion = require('../utils/local-config');
+      const fileConfigNotion = localCfgNotion.readStorageConfigSync();
+      const notionConfig = config || fileConfigNotion.memory?.notion || {};
       if (!notionConfig?.token) throw new Error('Notion 설정이 없습니다.');
 
       const { NotionStorage } = require('../utils/notion-storage');
@@ -421,13 +423,15 @@ async function createMigrationAdapter(type, config) {
 
     case 'oracle': {
       const { OracleStorage } = require('../utils/oracle-storage');
-      const memoryConfig = await configManager.getMemoryConfig();
-      const oracleConfig = config || memoryConfig?.oracle || {};
+      const localCfg = require('../utils/local-config');
+      const fileConfig = localCfg.readStorageConfigSync();
+      const oracleConfig = config || fileConfig.memory?.oracle || {};
 
       const oracle = new OracleStorage({
         user: oracleConfig.user || 'ADMIN',
         connectString: oracleConfig.connectionString || oracleConfig.connectString || 'database_low',
-        walletDir: oracleConfig.walletPath || undefined
+        walletDir: oracleConfig.walletPath || undefined,
+        password: oracleConfig.password
       });
       await oracle.initialize();
       return oracle;
@@ -522,14 +526,15 @@ router.post('/oracle/test', async (req, res) => {
     const { OracleStorage } = require('../utils/oracle-storage');
     const connStr = connectString || connectionString;
 
-    // 임시로 환경변수에 비밀번호 설정 (테스트용)
-    if (password) {
-      process.env.ORACLE_PASSWORD = password;
-    }
+    // local-config에서 저장된 credentials 가져오기 (UI에서 안 보낸 경우)
+    const localCfg = require('../utils/local-config');
+    const fileConfig = localCfg.readStorageConfigSync();
+    const savedOracle = fileConfig.memory?.oracle || {};
 
     const oracle = new OracleStorage({
-      user: user || 'ADMIN',
-      connectString: connStr || 'database_high'
+      user: user || savedOracle.user || 'ADMIN',
+      connectString: connStr || savedOracle.connectionString || 'database_low',
+      password: password || savedOracle.password
     });
 
     await oracle.initialize();
@@ -575,6 +580,109 @@ router.get('/oracle-wallet-status', async (req, res) => {
     });
   } catch (error) {
     res.json({ success: true, uploaded: false, tnsNames: [] });
+  }
+});
+
+/**
+ * GET /api/storage/usage
+ * 현재 저장소 용량 조회
+ */
+router.get('/usage', async (req, res) => {
+  try {
+    const localConfig = require('../utils/local-config');
+    const storageConf = localConfig.readStorageConfigSync();
+    const memType = storageConf.memory?.type || 'local';
+    const fileType = storageConf.file?.type || 'local';
+
+    const calcDirSize = async (dirPath) => {
+      const expandedPath = dirPath.replace(/^~/, require('os').homedir());
+      try {
+        await fs.promises.access(expandedPath);
+      } catch { return 0; }
+      let totalSize = 0;
+      const walk = async (dir) => {
+        try {
+          const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+              await walk(fullPath);
+            } else {
+              try {
+                const stat = await fs.promises.stat(fullPath);
+                totalSize += stat.size;
+              } catch {}
+            }
+          }
+        } catch {}
+      };
+      await walk(expandedPath);
+      return totalSize;
+    };
+
+    const result = { memory: { type: memType }, file: { type: fileType } };
+
+    // 메모리 저장소 정보
+    if (memType === 'local') {
+      const memPath = storageConf.memory?.local?.path || '~/.soul/data';
+      result.memory.path = memPath;
+      // 설정된 경로가 없으면 ~/.soul/ 전체 기준으로 계산
+      let size = await calcDirSize(memPath);
+      if (size === 0) {
+        const soulDir = path.join(require('os').homedir(), '.soul');
+        size = await calcDirSize(soulDir);
+        result.memory.path = '~/.soul';
+      }
+      result.memory.size = size;
+    } else {
+      result.memory.size = null;
+      if (memType === 'oracle') result.memory.info = storageConf.memory?.oracle?.connectionString || '';
+      if (memType === 'notion') result.memory.info = storageConf.memory?.notion?.databaseId || '';
+    }
+
+    // 파일 저장소 정보
+    if (fileType === 'local') {
+      const filePath = storageConf.file?.local?.path || '~/.soul/files';
+      result.file.path = filePath;
+      result.file.size = await calcDirSize(filePath);
+    } else {
+      result.file.size = null;
+    }
+
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Storage usage error:', error);
+    res.json({ success: true, memory: { type: 'local', size: null }, file: { type: 'local', size: null } });
+  }
+});
+
+/**
+ * POST /api/storage/notion/test
+ * Notion 연결 테스트
+ */
+router.post('/notion/test', async (req, res) => {
+  try {
+    const { token, databaseId } = req.body;
+    if (!token || !databaseId) {
+      return res.status(400).json({ success: false, error: '토큰과 데이터베이스 ID가 필요합니다.' });
+    }
+
+    const { Client } = require('@notionhq/client');
+    const notion = new Client({ auth: token });
+
+    // 사용자 인증 확인
+    await notion.users.me();
+
+    // 데이터베이스 접근 확인
+    await notion.databases.retrieve({ database_id: databaseId });
+
+    res.json({ success: true, message: 'Notion 연결 성공' });
+  } catch (error) {
+    console.error('Notion test error:', error);
+    const msg = error.code === 'unauthorized' ? '토큰이 유효하지 않습니다.'
+      : error.code === 'object_not_found' ? '데이터베이스를 찾을 수 없습니다. ID를 확인하세요.'
+      : error.message;
+    res.status(500).json({ success: false, error: msg });
   }
 });
 

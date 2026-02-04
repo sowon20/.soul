@@ -168,10 +168,13 @@ class AnthropicService extends AIService {
 
     // Citations: 문서가 있으면 user 메시지에 문서를 포함
     // Claude API는 content를 배열로 받아 document 블록과 text 블록을 함께 전달
-    const apiMessages = messages.map(msg => ({
-      role: msg.role,
-      content: msg.content
-    }));
+    // 빈 content 메시지 필터링 (서비스 전환 시 빈 메시지 방지)
+    const apiMessages = messages
+      .filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()))
+      .map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
 
     // 문서/파일이 있으면 첫 번째 user 메시지에 문서 블록 추가
     // documents 배열 형식:
@@ -1005,7 +1008,7 @@ class OpenAIService extends AIService {
       console.warn(`[OpenAI] Claude-only options ignored: ${usedClaudeOptions.join(', ')}`);
     }
 
-    const apiMessages = [...messages];
+    const apiMessages = messages.filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()));
     if (systemPrompt) {
       apiMessages.unshift({
         role: 'system',
@@ -1183,7 +1186,7 @@ class HuggingFaceService extends AIService {
       toolExecutor = null,
     } = options;
 
-    const apiMessages = [...messages];
+    const apiMessages = messages.filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()));
     if (systemPrompt) {
       apiMessages.unshift({
         role: 'system',
@@ -1615,7 +1618,7 @@ class XAIService extends AIService {
       console.warn(`[xAI] Claude-only options ignored: ${usedClaudeOptions.join(', ')}`);
     }
 
-    const apiMessages = [...messages];
+    const apiMessages = messages.filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()));
     if (systemPrompt) {
       apiMessages.unshift({
         role: 'system',
@@ -1778,7 +1781,7 @@ class OpenRouterService extends AIService {
       console.warn(`[OpenRouter] Claude-only options ignored: ${usedClaudeOptions.join(', ')}`);
     }
 
-    const apiMessages = [...messages];
+    const apiMessages = messages.filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()));
     if (systemPrompt) {
       apiMessages.unshift({
         role: 'system',
@@ -1833,6 +1836,22 @@ class OpenRouterService extends AIService {
       }
 
       const errorText = await response.text();
+
+      // system role 미지원 모델: system → user 변환 후 재시도
+      if (response.status === 400 && errorText.includes('Developer instruction') && !requestBody._systemFallback) {
+        console.warn(`[OpenRouter] Model ${this.modelName} does not support system role, converting to user message...`);
+        const systemMsg = requestBody.messages.find(m => m.role === 'system');
+        if (systemMsg) {
+          requestBody.messages = requestBody.messages.filter(m => m.role !== 'system');
+          requestBody.messages.unshift({
+            role: 'user',
+            content: `[System Instructions]\n${systemMsg.content}`
+          });
+          requestBody._systemFallback = true;
+          continue;
+        }
+      }
+
       console.error('[OpenRouter] Error response:', errorText);
       throw new Error(`OpenRouter API error (${response.status}): ${errorText || 'Unknown error'}`);
     }
@@ -1884,7 +1903,11 @@ class OpenRouterService extends AIService {
       output_tokens: data.usage?.completion_tokens || 0
     };
 
-    return { text: data.choices[0].message.content, usage };
+    const chatResult = { text: data.choices[0].message.content, usage };
+    if (requestBody._systemFallback) {
+      chatResult.systemFallback = true;
+    }
+    return chatResult;
   }
 
   async analyzeConversation(messages) {
@@ -1931,7 +1954,7 @@ class LightningAIService extends AIService {
       toolExecutor = null,
     } = options;
 
-    const apiMessages = [...messages];
+    const apiMessages = messages.filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()));
     if (systemPrompt) {
       apiMessages.unshift({
         role: 'system',
