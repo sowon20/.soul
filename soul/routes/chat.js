@@ -366,9 +366,7 @@ ${rulesText}</self_notes>\n\n`;
       debugLog(`Tool names: ${allTools.map(t => t.name).join(', ')}`);
       console.log('[Chat] Total tools available:', allTools.length);
 
-      // 도구 선택: 알바(로컬 LLM)가 있어야 MCP 도구 사용 가능
-      // 알바 없음 → builtin만 (AI가 컨텍스트에서 판단)
-      // 알바 있음 → builtin + 알바가 고른 MCP 도구
+      // 도구 선택: 알바가 있으면 MCP 도구 필터링, 없으면 전부 제공
       const builtinToolNames = builtinTools.map(t => t.name);
       const builtinOnly = allTools.filter(t => builtinToolNames.includes(t.name));
       const mcpTools = allTools.filter(t => !builtinToolNames.includes(t.name));
@@ -377,22 +375,19 @@ ${rulesText}</self_notes>\n\n`;
         try {
           const alba = await getAlbaWorker();
           if (alba.initialized) {
+            // 알바 있음 → 필요한 MCP 도구만 선별 (토큰 절약)
             const budget = Math.max(12 - builtinOnly.length, 5);
             const selected = await alba.selectTools(message, mcpTools, budget);
             if (selected && selected.length > 0) {
               allTools = [...builtinOnly, ...selected];
               console.log('[Chat] Alba selected tools:', selected.map(t => t.name).join(', '));
-            } else {
-              allTools = builtinOnly;
             }
-          } else {
-            // 알바 없음 → MCP 도구 사용 불가
-            allTools = builtinOnly;
-            console.log('[Chat] No alba worker - builtin tools only');
+            // 알바가 고르지 못하면 전체 유지
           }
+          // 알바 없음 → allTools 그대로 (builtin + MCP 전부)
         } catch (e) {
-          allTools = builtinOnly;
-          console.warn('[Chat] Tool selection failed, builtin only:', e.message);
+          // 알바 오류 → allTools 그대로 (builtin + MCP 전부)
+          console.warn('[Chat] Alba error, using all tools:', e.message);
         }
       }
       console.log('[Chat] Using tools:', allTools.map(t => t.name).join(', '));
@@ -543,11 +538,29 @@ ${rulesText}</self_notes>\n\n`;
 
         // {need} 감지 및 처리
         let responseText = typeof aiResult === 'object' ? aiResult.text : aiResult;
+        console.log(`[Chat] AI response (first call): ${(responseText || '').substring(0, 300)}`);
+
+        // 1) 정규 {need} 패턴
         const needPattern = /\{need\}\s*(.+?)(?:\n|$)/g;
         const needs = [];
         let match;
         while ((match = needPattern.exec(responseText)) !== null) {
           needs.push(match[1].trim());
+        }
+
+        // 2) AI가 {도구이름: 설명} 형태로 직접 쓴 경우도 {need}로 변환
+        //    등록된 모든 도구 이름을 동적으로 매칭 (하드코딩 없음)
+        const toolNames = allTools.map(t => t.name).filter(Boolean);
+        const escaped = toolNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        if (toolNames.length > 0) {
+          const fakeToolPattern = new RegExp(`\\{(${escaped.join('|')})[:\\s]+(.+?)\\}`, 'gi');
+          let fakeMatch;
+          while ((fakeMatch = fakeToolPattern.exec(responseText)) !== null) {
+            const toolName = fakeMatch[1];
+            const desc = fakeMatch[2].trim();
+            needs.push(`${toolName}: ${desc}`);
+            console.log(`[Chat] Fake tool tag → need 변환: {${toolName}: ${desc}}`);
+          }
         }
 
         if (needs.length > 0) {
@@ -694,6 +707,48 @@ ${toolCatalog}`;
             toolExecutor: toolExecutor,
             thinking: routingResult.thinking || false,
           });
+
+          // 2차+ 응답에서도 {need} 감지 → 추가 도구 호출 루프 (최대 3회)
+          const MAX_NEED_LOOPS = 3;
+          for (let loopIdx = 0; loopIdx < MAX_NEED_LOOPS; loopIdx++) {
+            const loopText = typeof aiResult === 'object' ? aiResult.text : aiResult;
+            const loopNeeds = [];
+            const loopNeedPattern = /\{need\}\s*(.+?)(?:\n|$)/g;
+            let loopMatch;
+            while ((loopMatch = loopNeedPattern.exec(loopText)) !== null) {
+              loopNeeds.push(loopMatch[1].trim());
+            }
+            // fake tool 패턴도 감지
+            if (toolNames.length > 0) {
+              const loopFakePattern = new RegExp(`\\{(${escaped.join('|')})[:\\s]+(.+?)\\}`, 'gi');
+              let loopFake;
+              while ((loopFake = loopFakePattern.exec(loopText)) !== null) {
+                loopNeeds.push(`${loopFake[1]}: ${loopFake[2].trim()}`);
+              }
+            }
+
+            if (loopNeeds.length === 0) break; // 더 이상 {need} 없으면 종료
+
+            console.log(`[Chat] ${loopIdx + 3}차 호출: {need} ${loopNeeds.length}개 추가 감지`);
+            toolNeeds.push(...loopNeeds);
+
+            // 이전 응답에서 {need} 제거한 텍스트
+            const loopCleaned = loopText.replace(/\{need\}\s*.+?(?:\n|$)/g, '').trim();
+            const loopMessages = [
+              lastUserMessage,
+              { role: 'assistant', content: loopCleaned || '(추가 확인이 필요합니다)' },
+              { role: 'user', content: '추가 도구를 사용하여 답변해주세요.' }
+            ];
+
+            aiResult = await aiService.chat(loopMessages, {
+              systemPrompt: combinedSystemPrompt,
+              maxTokens: aiSettings.maxTokens,
+              temperature: aiSettings.temperature,
+              tools: selectedTools,
+              toolExecutor: toolExecutor,
+              thinking: routingResult.thinking || false,
+            });
+          }
         }
 
         // 실제 실행된 도구 수 또는 선택된 도구 수 중 큰 값
@@ -743,7 +798,7 @@ ${toolCatalog}`;
       console.log(`[Chat] Final: tools(${actualToolCount})=${toolsTokenEstimate}, total=${totalTokenEstimate}`);
 
       // aiResult는 { text, usage, systemFallback? } 객체 또는 문자열
-      let systemFallback = false;
+      var systemFallback = false;
       if (typeof aiResult === 'object' && aiResult.text !== undefined) {
         aiResponse = aiResult.text;
         actualUsage = aiResult.usage || {};
@@ -891,6 +946,19 @@ ${toolCatalog}`;
       
       // 응답에서 메모 태그 제거 (사용자에게 안 보이게)
       finalResponse = finalResponse.replace(/\[MEMO:\s*[^\]]+\]/gi, '').trim();
+    }
+
+    // 응답에서 내부 태그 제거 ({need}, {도구이름: ...} — 사용자에게 안 보이게)
+    finalResponse = finalResponse
+      .replace(/\{need\}\s*.+?(?:\n|$)/g, '')
+      .replace(/\{(recall_memory|get_profile|update_profile|list_my_rules|add_my_rule|delete_my_rule)[:\s]+.+?\}/gi, '')
+      .trim();
+    // 동적 도구 이름도 제거
+    if (allTools && allTools.length > 0) {
+      const toolNames = allTools.map(t => t.name).filter(Boolean);
+      const escaped = toolNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const fakePattern = new RegExp(`\\{(${escaped.join('|')})[:\\s]+.+?\\}`, 'gi');
+      finalResponse = finalResponse.replace(fakePattern, '').trim();
     }
 
     // 8. 응답 일관성 검증

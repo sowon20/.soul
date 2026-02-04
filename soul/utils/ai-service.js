@@ -1,6 +1,15 @@
 const Anthropic = require('@anthropic-ai/sdk');
 
 /**
+ * 깨진 서로게이트 유니코드 제거 (API JSON 파싱 오류 방지)
+ * 짝 없는 high/low surrogate를 제거
+ */
+function stripBrokenSurrogates(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '');
+}
+
+/**
  * AI 서비스 추상 클래스
  * 각 AI 제공사별 구현체가 이를 상속받음
  */
@@ -169,11 +178,15 @@ class AnthropicService extends AIService {
     // Citations: 문서가 있으면 user 메시지에 문서를 포함
     // Claude API는 content를 배열로 받아 document 블록과 text 블록을 함께 전달
     // 빈 content 메시지 필터링 (서비스 전환 시 빈 메시지 방지)
+    // 깨진 유니코드 정리 + 빈 메시지 필터링
+    const cleanSystemPrompt = stripBrokenSurrogates(systemPrompt);
     const apiMessages = messages
       .filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()))
       .map(msg => ({
         role: msg.role,
-        content: msg.content
+        content: typeof msg.content === 'string'
+          ? stripBrokenSurrogates(msg.content)
+          : msg.content
       }));
 
     // 문서/파일이 있으면 첫 번째 user 메시지에 문서 블록 추가
@@ -342,17 +355,17 @@ class AnthropicService extends AIService {
     }
 
     // 시스템 프롬프트 (캐싱 적용: 90% 비용 절감)
-    if (systemPrompt) {
+    if (cleanSystemPrompt) {
       if (enableCache) {
         // 캐싱을 위해 배열 형태로 전달
         params.system = [{
           type: 'text',
-          text: systemPrompt,
+          text: cleanSystemPrompt,
           cache_control: { type: 'ephemeral' }
         }];
-        console.log(`[Anthropic] System prompt cached (${systemPrompt.length} chars)`);
+        console.log(`[Anthropic] System prompt cached (${cleanSystemPrompt.length} chars)`);
       } else {
-        params.system = systemPrompt;
+        params.system = cleanSystemPrompt;
       }
     }
 
