@@ -2343,10 +2343,6 @@ class SoulApp {
   activateCanvasTab(type) {
     this.activeCanvasTab = type;
 
-    // 캡슐 숨기기 (탭이 열리면)
-    const capsule = document.getElementById('soulCapsule');
-    if (capsule) capsule.style.display = 'none';
-
     // 모든 iframe 숨기고 선택된 것만 표시
     document.querySelectorAll('.canvas-iframe').forEach(iframe => {
       iframe.classList.remove('active');
@@ -2388,8 +2384,6 @@ class SoulApp {
 
     // 탭이 없으면 패널 닫기
     if (this.canvasTabs.length === 0) {
-      const capsule = document.getElementById('soulCapsule');
-      if (capsule) capsule.style.display = '';
       this.restoreCanvasPanelFromMobile();
       document.getElementById('canvasPanel')?.classList.add('hide');
       this.activeCanvasTab = null;
@@ -2472,8 +2466,8 @@ class SoulApp {
             <p>Chrome, Edge, Safari를 사용해주세요.</p>
           </div>
         ` : `
-          <!-- Soul 오브 (Magical Glow) -->
-          <div class="voice-orb-section">
+          <!-- Soul 캡슐 + 오브 -->
+          <div class="soul-capsule" id="soulCapsule">
             <div class="soul-orb" id="voiceRecordBtn">
               <div class="orb-waves">
                 <div class="orb-wave"></div>
@@ -2489,7 +2483,21 @@ class SoulApp {
                 </div>
               </div>
             </div>
-            <p class="voice-record-hint" id="voiceRecordHint"></p>
+            <div class="capsule-soul">
+              <div class="capsule-dust dust-1"></div>
+              <div class="capsule-dust dust-2"></div>
+              <div class="capsule-dust dust-3"></div>
+              <div class="capsule-dust dust-4"></div>
+              <div class="capsule-dust dust-5"></div>
+              <div class="capsule-dust dust-6"></div>
+              <div class="capsule-dust dust-7"></div>
+              <div class="capsule-dust dust-8"></div>
+              <div class="capsule-dust dust-9"></div>
+              <div class="capsule-dust dust-10"></div>
+              <div class="capsule-dust dust-11"></div>
+              <div class="capsule-dust dust-12"></div>
+            </div>
+            <img class="capsule-glass" src="/assets/glasscapsule.png" alt="" />
           </div>
 
           <!-- 실시간 텍스트 -->
