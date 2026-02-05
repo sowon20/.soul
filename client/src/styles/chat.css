@@ -181,3 +181,284 @@
   animation: toolSpin 0.8s linear infinite;
 }
 
+/* 첨부 파일 미리보기 */
+.attachment-preview {
+  display: flex;
+  gap: 8px;
+  background: transparent;
+  margin-bottom: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  max-height: 64px;
+  align-items: center;
+}
+
+.attachment-preview::-webkit-scrollbar {
+  display: none;
+}
+
+.attachment-item {
+  position: relative;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  min-height: 56px;
+  max-width: 56px;
+  max-height: 56px;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.attachment-item:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.attachment-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.attachment-file-icon {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(74, 158, 255, 0.15);
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  gap: 2px;
+}
+
+.attachment-file-icon svg {
+  width: 20px;
+  height: 20px;
+  color: rgba(74, 158, 255, 0.8);
+}
+
+.attachment-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  padding: 2px;
+}
+
+.attachment-remove svg {
+  width: 100%;
+  height: 100%;
+  color: #333;
+}
+
+.attachment-item:hover .attachment-remove {
+  opacity: 1;
+}
+
+.attachment-remove:hover {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+/* 파일 타입 (비이미지) */
+.attachment-item.file {
+  background: rgba(74, 158, 255, 0.1);
+}
+
+.attachment-file-name {
+  font-size: 0.55rem;
+  color: rgba(255, 255, 255, 0.7);
+  max-width: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.attachment-file-size {
+  font-size: 0.5rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* 라이트박스 (큰 이미지 보기) */
+.attachment-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+}
+
+.attachment-lightbox.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.attachment-lightbox-content {
+  position: relative;
+  max-width: 80vw;
+  max-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 60px;
+}
+
+.attachment-lightbox-content img {
+  max-width: 100%;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.attachment-lightbox-close {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  transition: background 0.15s;
+}
+
+.attachment-lightbox-close svg {
+  width: 100%;
+  height: 100%;
+  color: white;
+}
+
+.attachment-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.attachment-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.attachment-lightbox-nav svg {
+  width: 100%;
+  height: 100%;
+  color: white;
+}
+
+.attachment-lightbox-content:hover .attachment-lightbox-nav {
+  opacity: 1;
+}
+
+.attachment-lightbox-nav:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.attachment-lightbox-nav.prev {
+  left: -50px;
+}
+
+.attachment-lightbox-nav.next {
+  right: -50px;
+}
+
+.attachment-lightbox-counter {
+  position: absolute;
+  bottom: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+}
+
+/* 파일 라이트박스 (비이미지) */
+.attachment-lightbox-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+}
+
+.attachment-lightbox-file-icon {
+  font-size: 2rem;
+  font-weight: 600;
+  color: rgba(74, 158, 255, 0.8);
+  padding: 16px 24px;
+  background: rgba(74, 158, 255, 0.1);
+  border-radius: 8px;
+}
+
+.attachment-lightbox-file-name {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1rem;
+  max-width: 300px;
+  word-break: break-all;
+  text-align: center;
+}
+
+.attachment-lightbox-file-size {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+}
+
+/* 드래그 앤 드롭 오버레이 */
+.drag-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(74, 158, 255, 0.15);
+  border: 2px dashed rgba(74, 158, 255, 0.5);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.drag-overlay-text {
+  font-size: 1rem;
+  color: rgba(74, 158, 255, 0.9);
+  font-weight: 500;
+}
+

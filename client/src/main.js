@@ -12,6 +12,7 @@ import { initRoleManager } from './utils/role-manager.js';
 import dashboardManager from './utils/dashboard-manager.js';
 import { SearchManager } from './utils/search-manager.js';
 import { SoulSocketClient } from './utils/socket-client.js';
+import { getVoiceInput } from './utils/voice-input.js';
 
 class SoulApp {
   constructor() {
@@ -110,6 +111,9 @@ class SoulApp {
     // Socket.io 클라이언트 초기화
     this.socketClient = new SoulSocketClient();
     await this.socketClient.init();
+
+    // 입력창 높이에 따른 스크롤 버튼 위치 초기화
+    this.updateInputAreaHeight();
 
     console.log('✅ Soul UI 초기화 완료!');
   }
@@ -362,6 +366,9 @@ class SoulApp {
     } else {
       console.log('❌ 입력창 MCP 버튼을 찾을 수 없음');
     }
+
+    // 첨부 버튼 이벤트
+    this.initAttachmentHandler();
 
     // 프로필 버튼 클릭 - 설정 프레임워크 (center-card 하단)
     const profileBtn = document.getElementById('profileBtn');
@@ -666,6 +673,8 @@ class SoulApp {
         this.elements.canvasPanel.classList.add('hide');
       }
       console.log(`Canvas 패널: ${wasHidden ? '열림' : '닫힘'}`);
+      // 스크롤 버튼 위치 업데이트 (DOM 배치 완료 후)
+      setTimeout(() => this.updateInputAreaHeight(), 100);
     } else {
       console.log('❌ canvasPanel 요소 없음');
     }
@@ -705,6 +714,9 @@ class SoulApp {
 
     // 리사이저 추가
     this.addCanvasResizer(rightCardTop, panel);
+
+    // 스크롤 버튼 위치 업데이트 (레이아웃 완료 후)
+    setTimeout(() => this.updateInputAreaHeight(), 150);
   }
 
   /** 모바일: 캔버스/채팅 경계선 드래그 리사이저 */
@@ -769,6 +781,8 @@ class SoulApp {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onEnd);
       handle.style.background = 'rgba(255,255,255,0.3)';
+      // 스크롤 버튼 위치 업데이트
+      this.updateInputAreaHeight();
     };
 
     resizer.addEventListener('touchstart', onStart, { passive: false });
@@ -1310,7 +1324,9 @@ class SoulApp {
 
   async sendMessage() {
     const text = this.elements.messageInput.value.trim();
-    if (!text) return;
+    const attachments = this.pendingAttachments.slice(); // 복사본
+
+    if (!text && attachments.length === 0) return;
 
     // Prevent duplicate sends
     if (this._isSending) {
@@ -1323,12 +1339,49 @@ class SoulApp {
     this.elements.messageInput.value = '';
     this.autoResizeTextarea();
     this.updateSendButton();
+    this.clearAttachments(); // 첨부 파일 미리보기 제거
 
     try {
-      // Send message through chat manager
-      await this.chatManager.sendMessage(text);
+      let uploadedFiles = [];
+
+      // 첨부 파일이 있으면 먼저 업로드
+      if (attachments.length > 0) {
+        uploadedFiles = await this.uploadAttachments(attachments);
+      }
+
+      // Send message through chat manager (첨부 정보 포함)
+      await this.chatManager.sendMessage(text, { attachments: uploadedFiles });
     } finally {
       this._isSending = false;
+    }
+  }
+
+  /**
+   * 첨부 파일 서버 업로드
+   */
+  async uploadAttachments(files) {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+
+    try {
+      const res = await fetch('/api/files/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || '업로드 실패');
+      }
+
+      console.log('📎 첨부 파일 업로드:', data.files);
+      return data.files;
+    } catch (err) {
+      console.error('❌ 첨부 파일 업로드 실패:', err);
+      alert('파일 업로드에 실패했습니다: ' + err.message);
+      return [];
     }
   }
 
@@ -1630,7 +1683,8 @@ class SoulApp {
           console.log('터미널 열기 (미구현)');
           break;
         case 'mic':
-          console.log('마이크 열기 (미구현)');
+        case 'voice-input':
+          this.openVoiceInputPanel();
           break;
         case 'settings':
           this.openSettingsInCanvas();
@@ -2130,10 +2184,15 @@ class SoulApp {
     document.querySelectorAll('.canvas-iframe').forEach(iframe => {
       iframe.classList.remove('active');
     });
-    // 설정은 별도 ID
-    const activeIframe = type === 'settings' 
-      ? document.getElementById('canvas-settings')
-      : document.getElementById(`canvas-iframe-${type}`);
+    // 특수 타입은 별도 ID
+    let activeIframe;
+    if (type === 'settings') {
+      activeIframe = document.getElementById('canvas-settings');
+    } else if (type === 'voice-input') {
+      activeIframe = document.getElementById('canvas-voice-input');
+    } else {
+      activeIframe = document.getElementById(`canvas-iframe-${type}`);
+    }
     if (activeIframe) activeIframe.classList.add('active');
     
     this.renderCanvasTabs();
@@ -2146,10 +2205,15 @@ class SoulApp {
     const idx = this.canvasTabs.findIndex(t => t.type === type);
     if (idx === -1) return;
 
-    // iframe 제거 (설정은 별도 ID)
-    const iframe = type === 'settings'
-      ? document.getElementById('canvas-settings')
-      : document.getElementById(`canvas-iframe-${type}`);
+    // iframe 제거 (특수 타입은 별도 ID)
+    let iframe;
+    if (type === 'settings') {
+      iframe = document.getElementById('canvas-settings');
+    } else if (type === 'voice-input') {
+      iframe = document.getElementById('canvas-voice-input');
+    } else {
+      iframe = document.getElementById(`canvas-iframe-${type}`);
+    }
     if (iframe) iframe.remove();
 
     // 탭 배열에서 제거
@@ -2183,6 +2247,555 @@ class SoulApp {
         <span class="canvas-tab-close" onclick="event.stopPropagation(); soulApp.closeCanvasTab('${tab.type}')">×</span>
       </div>
     `).join('');
+  }
+
+  // ============================================
+  // Voice Input (음성 입력)
+  // ============================================
+
+  /**
+   * 음성 입력 패널 열기
+   */
+  openVoiceInputPanel() {
+    const panel = document.getElementById('canvasPanel');
+    const content = document.getElementById('canvasContent');
+
+    if (!panel || !content) return;
+
+    // 이미 열려있으면 활성화만
+    if (this.canvasTabs.find(t => t.type === 'voice-input')) {
+      this.activateCanvasTab('voice-input');
+      panel.classList.remove('hide');
+      this.movCanvasPanelForMobile();
+      return;
+    }
+
+    // 음성 입력 컨테이너 생성
+    const voiceContainer = document.createElement('div');
+    voiceContainer.id = 'canvas-voice-input';
+    voiceContainer.className = 'canvas-iframe';
+    voiceContainer.style.cssText = 'position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow-y: auto; padding: 20px; box-sizing: border-box;';
+
+    content.appendChild(voiceContainer);
+
+    // 음성 입력 UI 렌더링
+    this.renderVoiceInputPanel(voiceContainer);
+
+    this.canvasTabs.push({ type: 'voice-input', title: '음성 입력' });
+    this.activateCanvasTab('voice-input');
+    panel.classList.remove('hide');
+    this.movCanvasPanelForMobile();
+  }
+
+  /**
+   * 음성 입력 패널 렌더링
+   */
+  renderVoiceInputPanel(container) {
+    const voiceInput = getVoiceInput();
+    const isSupported = voiceInput.isSupported();
+
+    container.innerHTML = `
+      <div class="voice-input-panel">
+        <h3 class="voice-panel-title">음성 입력</h3>
+
+        ${!isSupported ? `
+          <div class="voice-not-supported">
+            <p>이 브라우저는 음성 인식을 지원하지 않습니다.</p>
+            <p>Chrome, Edge, Safari를 사용해주세요.</p>
+          </div>
+        ` : `
+          <!-- 녹음 버튼 -->
+          <div class="voice-record-section">
+            <button class="voice-record-btn" id="voiceRecordBtn">
+              <div class="voice-record-icon">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="48" height="48">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+              </div>
+              <div class="voice-record-pulse"></div>
+            </button>
+            <p class="voice-record-hint" id="voiceRecordHint">클릭하여 음성 인식 시작</p>
+          </div>
+
+          <!-- 파형 애니메이션 -->
+          <div class="voice-waveform" id="voiceWaveform">
+            <div class="waveform-bar"></div>
+            <div class="waveform-bar"></div>
+            <div class="waveform-bar"></div>
+            <div class="waveform-bar"></div>
+            <div class="waveform-bar"></div>
+          </div>
+
+          <!-- 실시간 텍스트 -->
+          <div class="voice-transcript-section">
+            <label class="voice-label">인식된 텍스트</label>
+            <div class="voice-transcript" id="voiceTranscript">
+              <span class="voice-placeholder">음성을 인식하면 여기에 표시됩니다...</span>
+            </div>
+          </div>
+
+          <!-- 액션 버튼 -->
+          <div class="voice-actions" id="voiceActions" style="display: none;">
+            <button class="voice-action-btn voice-cancel-btn" id="voiceCancelBtn">취소</button>
+            <button class="voice-action-btn voice-send-btn" id="voiceSendBtn">전송</button>
+          </div>
+
+          <!-- 설정 -->
+          <div class="voice-settings">
+            <h4 class="voice-settings-title">설정</h4>
+            <div class="voice-setting-item voice-realtime-toggle">
+              <label>실시간 대화</label>
+              <input type="checkbox" id="voiceRealtimeMode">
+              <span class="voice-realtime-hint">말 끝나면 자동 전송 + TTS 응답</span>
+            </div>
+            <div class="voice-setting-item">
+              <label>언어</label>
+              <select id="voiceLanguage" class="voice-select">
+                <option value="ko-KR" selected>한국어</option>
+                <option value="en-US">English (US)</option>
+                <option value="ja-JP">日本語</option>
+                <option value="zh-CN">中文</option>
+              </select>
+            </div>
+            <div class="voice-setting-item">
+              <label>연속 인식</label>
+              <input type="checkbox" id="voiceContinuous" checked>
+            </div>
+          </div>
+        `}
+      </div>
+    `;
+
+    if (isSupported) {
+      this.initVoiceInputEvents(container);
+    }
+  }
+
+  /**
+   * 음성 입력 이벤트 초기화
+   */
+  initVoiceInputEvents(container) {
+    const voiceInput = getVoiceInput();
+    const recordBtn = container.querySelector('#voiceRecordBtn');
+    const hint = container.querySelector('#voiceRecordHint');
+    const waveform = container.querySelector('#voiceWaveform');
+    const transcript = container.querySelector('#voiceTranscript');
+    const actions = container.querySelector('#voiceActions');
+    const cancelBtn = container.querySelector('#voiceCancelBtn');
+    const sendBtn = container.querySelector('#voiceSendBtn');
+    const languageSelect = container.querySelector('#voiceLanguage');
+    const continuousCheck = container.querySelector('#voiceContinuous');
+    const realtimeCheck = container.querySelector('#voiceRealtimeMode');
+
+    let currentText = '';
+    let realtimeMode = false;
+    let pendingSend = null; // 실시간 모드에서 자동 전송 타이머
+
+    // 상태 변경 콜백
+    voiceInput.setOnStateChange((state, error) => {
+      if (state === 'listening') {
+        recordBtn.classList.add('recording');
+        waveform.classList.add('active');
+        hint.textContent = realtimeMode ? '말하세요... (자동 전송됨)' : '듣고 있어요... 클릭하여 중지';
+      } else {
+        recordBtn.classList.remove('recording');
+        waveform.classList.remove('active');
+        hint.textContent = '클릭하여 음성 인식 시작';
+
+        if (error) {
+          hint.textContent = `오류: ${error}`;
+        }
+      }
+    });
+
+    // 결과 콜백
+    voiceInput.setOnResult((text, isFinal) => {
+      if (isFinal) {
+        currentText += (currentText ? ' ' : '') + text;
+        transcript.innerHTML = `<span class="voice-final">${currentText}</span>`;
+
+        // 실시간 모드: 말 끝나면 잠시 후 자동 전송
+        if (realtimeMode) {
+          if (pendingSend) clearTimeout(pendingSend);
+          pendingSend = setTimeout(() => {
+            this.sendRealtimeVoice(currentText.trim(), transcript);
+            currentText = '';
+          }, 1000); // 1초 후 전송
+        } else {
+          actions.style.display = 'flex';
+        }
+      } else {
+        // 중간 결과 - 자동 전송 타이머 리셋
+        if (pendingSend) {
+          clearTimeout(pendingSend);
+          pendingSend = null;
+        }
+        transcript.innerHTML = `
+          ${currentText ? `<span class="voice-final">${currentText}</span> ` : ''}
+          <span class="voice-interim">${text}</span>
+        `;
+      }
+    });
+
+    // 녹음 버튼 클릭
+    recordBtn.addEventListener('click', () => {
+      voiceInput.toggle();
+    });
+
+    // 취소 버튼
+    cancelBtn.addEventListener('click', () => {
+      voiceInput.stop();
+      if (pendingSend) clearTimeout(pendingSend);
+      currentText = '';
+      transcript.innerHTML = '<span class="voice-placeholder">음성을 인식하면 여기에 표시됩니다...</span>';
+      actions.style.display = 'none';
+    });
+
+    // 전송 버튼
+    sendBtn.addEventListener('click', () => {
+      voiceInput.stop();
+      if (currentText.trim()) {
+        // 채팅 입력창에 텍스트 삽입
+        const messageInput = document.getElementById('messageInput');
+        if (messageInput) {
+          messageInput.value = currentText.trim();
+          messageInput.dispatchEvent(new Event('input'));
+          messageInput.focus();
+        }
+        // 패널 닫기
+        this.closeCanvasTab('voice-input');
+      }
+      currentText = '';
+      transcript.innerHTML = '<span class="voice-placeholder">음성을 인식하면 여기에 표시됩니다...</span>';
+      actions.style.display = 'none';
+    });
+
+    // 언어 변경
+    languageSelect.addEventListener('change', (e) => {
+      voiceInput.recognition.lang = e.target.value;
+    });
+
+    // 연속 인식 토글
+    continuousCheck.addEventListener('change', (e) => {
+      voiceInput.recognition.continuous = e.target.checked;
+    });
+
+    // 실시간 대화 모드 토글
+    realtimeCheck.addEventListener('change', (e) => {
+      realtimeMode = e.target.checked;
+      actions.style.display = 'none'; // 실시간 모드에선 액션 버튼 숨김
+      if (realtimeMode) {
+        hint.textContent = '실시간 모드 활성화 - 마이크를 클릭하세요';
+        continuousCheck.checked = true;
+        voiceInput.recognition.continuous = true;
+      }
+    });
+  }
+
+  /**
+   * 실시간 음성 전송 + TTS 응답
+   */
+  async sendRealtimeVoice(text, transcriptEl) {
+    if (!text) return;
+
+    const voiceInput = getVoiceInput();
+    voiceInput.stop(); // 전송 중엔 잠시 멈춤
+
+    transcriptEl.innerHTML = `<span class="voice-sending">전송 중: ${text}</span>`;
+
+    try {
+      // 채팅 전송 (chatManager 사용)
+      if (this.chatManager) {
+        await this.chatManager.sendMessage(text, { enableTTS: true });
+      }
+
+      transcriptEl.innerHTML = '<span class="voice-placeholder">응답 완료 - 다시 말하세요</span>';
+
+      // TTS 끝나면 다시 STT 시작 (약간의 딜레이)
+      setTimeout(() => {
+        voiceInput.start();
+      }, 500);
+    } catch (err) {
+      console.error('[RealtimeVoice] Error:', err);
+      transcriptEl.innerHTML = '<span class="voice-error">전송 실패 - 다시 시도하세요</span>';
+    }
+  }
+
+  // ============================================
+  // File Attachment (파일 첨부)
+  // ============================================
+
+  pendingAttachments = []; // 첨부 대기 파일들
+
+  /**
+   * 첨부 버튼 이벤트 핸들러 초기화
+   */
+  initAttachmentHandler() {
+    const attachBtn = document.getElementById('attachBtn');
+    const fileInput = document.getElementById('fileInput');
+    const preview = document.getElementById('attachmentPreview');
+
+    if (!attachBtn || !fileInput || !preview) {
+      console.log('❌ 첨부 관련 요소 없음');
+      return;
+    }
+
+    // 첨부 버튼 클릭 → 파일 선택 다이얼로그
+    attachBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      fileInput.click();
+    });
+
+    // 파일 선택 시
+    fileInput.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files);
+      if (files.length > 0) {
+        this.addAttachments(files);
+      }
+      fileInput.value = ''; // 같은 파일 다시 선택 가능하게
+    });
+
+    // 드래그 앤 드롭
+    const chatForm = document.getElementById('chatForm');
+    if (chatForm) {
+      chatForm.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        chatForm.classList.add('drag-over');
+      });
+
+      chatForm.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        chatForm.classList.remove('drag-over');
+      });
+
+      chatForm.addEventListener('drop', (e) => {
+        e.preventDefault();
+        chatForm.classList.remove('drag-over');
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length > 0) {
+          this.addAttachments(files);
+        }
+      });
+    }
+
+    console.log('✅ 첨부 핸들러 초기화 완료');
+  }
+
+  /**
+   * 첨부 파일 추가
+   */
+  addAttachments(files) {
+    const preview = document.getElementById('attachmentPreview');
+    if (!preview) return;
+
+    for (const file of files) {
+      // 크기 제한 (10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`파일이 너무 큽니다: ${file.name} (최대 10MB)`);
+        continue;
+      }
+
+      // 중복 체크
+      if (this.pendingAttachments.find(f => f.name === file.name && f.size === file.size)) {
+        continue;
+      }
+
+      this.pendingAttachments.push(file);
+    }
+
+    this.renderAttachmentPreview();
+  }
+
+  /**
+   * 첨부 파일 미리보기 렌더링
+   */
+  renderAttachmentPreview() {
+    const preview = document.getElementById('attachmentPreview');
+    if (!preview) return;
+
+    if (this.pendingAttachments.length === 0) {
+      preview.style.display = 'none';
+      preview.innerHTML = '';
+      this.updateInputAreaHeight();
+      return;
+    }
+
+    preview.style.display = 'flex';
+    preview.innerHTML = this.pendingAttachments.map((file, idx) => {
+      const isImage = file.type.startsWith('image/');
+      const sizeKB = (file.size / 1024).toFixed(1);
+
+      if (isImage) {
+        const url = URL.createObjectURL(file);
+        return `
+          <div class="attachment-item" data-idx="${idx}" onclick="soulApp.openAttachmentLightbox(${idx})">
+            <img src="${url}" alt="${file.name}" class="attachment-thumb">
+            <button class="attachment-remove" onclick="event.stopPropagation(); soulApp.removeAttachment(${idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+          </div>
+        `;
+      } else {
+        const ext = file.name.split('.').pop().toUpperCase();
+        return `
+          <div class="attachment-item file" data-idx="${idx}" onclick="soulApp.openAttachmentLightbox(${idx})">
+            <div class="attachment-file-icon">
+              <span>${ext}</span>
+              <span class="attachment-file-name">${file.name}</span>
+            </div>
+            <button class="attachment-remove" onclick="event.stopPropagation(); soulApp.removeAttachment(${idx})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+          </div>
+        `;
+      }
+    }).join('');
+
+    // 입력창 높이 변경 후 스크롤 버튼 위치 업데이트
+    requestAnimationFrame(() => this.updateInputAreaHeight());
+  }
+
+  /**
+   * 입력창 높이에 따라 스크롤 버튼 위치 업데이트
+   */
+  updateInputAreaHeight() {
+    const inputArea = document.querySelector('.right-card-bottom');
+    const dock = document.querySelector('.dock-test-area');
+    const canvas = document.querySelector('.canvas-panel');
+    const scrollBtn = document.querySelector('.scroll-to-bottom');
+    if (inputArea && scrollBtn) {
+      let bottomOffset = inputArea.offsetHeight + 24;
+      // dock이 표시 중이면 높이 추가
+      if (dock && dock.style.display !== 'none') {
+        bottomOffset += dock.offsetHeight;
+      }
+      // 모바일에서 캔버스가 아래에 표시될 때 높이 추가
+      if (canvas && !canvas.classList.contains('hide') && window.innerWidth < 900) {
+        bottomOffset += canvas.offsetHeight + 12;
+      }
+      scrollBtn.style.bottom = `${bottomOffset}px`;
+    }
+  }
+
+  /**
+   * 라이트박스 열기
+   */
+  openAttachmentLightbox(idx) {
+    if (this.pendingAttachments.length === 0) return;
+
+    this.lightboxIndex = idx;
+    let lightbox = document.querySelector('.attachment-lightbox');
+
+    if (!lightbox) {
+      lightbox = document.createElement('div');
+      lightbox.className = 'attachment-lightbox';
+      lightbox.innerHTML = `
+        <div class="attachment-lightbox-content">
+          <button class="attachment-lightbox-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+          <button class="attachment-lightbox-nav prev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+          <div class="attachment-lightbox-media"></div>
+          <button class="attachment-lightbox-nav next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+          <div class="attachment-lightbox-counter"></div>
+        </div>
+      `;
+      document.body.appendChild(lightbox);
+
+      // 이벤트 바인딩
+      lightbox.querySelector('.attachment-lightbox-close').onclick = () => this.closeLightbox();
+      lightbox.querySelector('.attachment-lightbox-nav.prev').onclick = () => this.lightboxNav(-1);
+      lightbox.querySelector('.attachment-lightbox-nav.next').onclick = () => this.lightboxNav(1);
+      lightbox.onclick = (e) => { if (e.target === lightbox) this.closeLightbox(); };
+
+      // 키보드 네비게이션
+      this._lightboxKeyHandler = (e) => {
+        if (!lightbox.classList.contains('active')) return;
+        if (e.key === 'Escape') this.closeLightbox();
+        if (e.key === 'ArrowLeft') this.lightboxNav(-1);
+        if (e.key === 'ArrowRight') this.lightboxNav(1);
+      };
+      document.addEventListener('keydown', this._lightboxKeyHandler);
+    }
+
+    this.updateLightboxContent();
+    lightbox.classList.add('active');
+  }
+
+  /**
+   * 라이트박스 콘텐츠 업데이트
+   */
+  updateLightboxContent() {
+    const lightbox = document.querySelector('.attachment-lightbox');
+    if (!lightbox) return;
+
+    const file = this.pendingAttachments[this.lightboxIndex];
+    if (!file) return;
+
+    const mediaContainer = lightbox.querySelector('.attachment-lightbox-media');
+    const counter = lightbox.querySelector('.attachment-lightbox-counter');
+    const isImage = file.type.startsWith('image/');
+    const sizeKB = (file.size / 1024).toFixed(1);
+
+    if (isImage) {
+      const url = URL.createObjectURL(file);
+      mediaContainer.innerHTML = `<img src="${url}" alt="${file.name}">`;
+    } else {
+      const ext = file.name.split('.').pop().toUpperCase();
+      mediaContainer.innerHTML = `
+        <div class="attachment-lightbox-file">
+          <div class="attachment-lightbox-file-icon">${ext}</div>
+          <div class="attachment-lightbox-file-name">${file.name}</div>
+          <div class="attachment-lightbox-file-size">${sizeKB} KB</div>
+        </div>
+      `;
+    }
+
+    // 카운터 및 네비게이션 표시
+    const total = this.pendingAttachments.length;
+    counter.textContent = total > 1 ? `${this.lightboxIndex + 1} / ${total}` : '';
+
+    const prevBtn = lightbox.querySelector('.attachment-lightbox-nav.prev');
+    const nextBtn = lightbox.querySelector('.attachment-lightbox-nav.next');
+    prevBtn.style.display = total > 1 ? '' : 'none';
+    nextBtn.style.display = total > 1 ? '' : 'none';
+  }
+
+  /**
+   * 라이트박스 네비게이션
+   */
+  lightboxNav(dir) {
+    const total = this.pendingAttachments.length;
+    if (total <= 1) return;
+
+    this.lightboxIndex = (this.lightboxIndex + dir + total) % total;
+    this.updateLightboxContent();
+  }
+
+  /**
+   * 라이트박스 닫기
+   */
+  closeLightbox() {
+    const lightbox = document.querySelector('.attachment-lightbox');
+    if (lightbox) lightbox.classList.remove('active');
+  }
+
+  /**
+   * 첨부 파일 제거
+   */
+  removeAttachment(idx) {
+    this.pendingAttachments.splice(idx, 1);
+    this.renderAttachmentPreview();
+  }
+
+  /**
+   * 첨부 파일 모두 제거
+   */
+  clearAttachments() {
+    this.pendingAttachments = [];
+    this.renderAttachmentPreview();
+  }
+
+  /**
+   * 현재 첨부 파일 가져오기
+   */
+  getAttachments() {
+    return this.pendingAttachments;
   }
 
 }

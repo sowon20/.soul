@@ -8,6 +8,7 @@
 @import url('chat.css');
 @import url('app-settings.css');
 @import url('profile-manager.css');
+@import url('voice-input.css');
 
 /* 폰트 */
 @font-face {
@@ -274,15 +275,10 @@ body {
   align-items: center;
   justify-content: center;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  transition: all 0.3s;
+  transition: opacity 0.3s, background 0.2s;
   opacity: 0;
   pointer-events: none;
   z-index: 1;
-}
-
-/* 독이 표시될 때 버튼 위치 조정 */
-.right-container:has(.dock-test-area:not([style*="display: none"])) .scroll-to-bottom {
-  bottom: calc(140px + var(--dock-height));
 }
 
 .scroll-to-bottom.show {

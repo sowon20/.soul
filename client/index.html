@@ -304,14 +304,17 @@
 
         <!-- 채팅 입력창 -->
         <div class="card right-card-bottom">
+          <!-- 숨겨진 파일 입력 -->
+          <input type="file" id="fileInput" multiple accept="image/*,.pdf,.txt,.md,.json,.csv" style="display: none;">
           <form id="chatForm" class="chat-input-wrapper">
+            <!-- 첨부 파일 미리보기 (form 안) -->
+            <div class="attachment-preview" id="attachmentPreview" style="display: none;"></div>
             <textarea id="messageInput" class="chat-input" placeholder="Message .Soul" rows="1"></textarea>
             <div class="chat-actions">
               <div class="chat-actions-left">
-                <button class="attach-btn" title="추가">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                    <line x1="12" y1="4" x2="12" y2="20"/>
-                    <line x1="4" y1="12" x2="20" y2="12"/>
+                <button type="button" class="attach-btn" id="attachBtn" title="파일 첨부">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
                   </svg>
                 </button>
                 <button class="attach-btn" title="MCP">

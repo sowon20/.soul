@@ -532,7 +532,8 @@ router.put('/tool-search', async (req, res) => {
 router.get('/dock', async (req, res) => {
   try {
     const defaultDock = [
-      { id: 'settings', name: '설정', icon: 'setup-icom.webp', url: null, order: 0, fixed: true }
+      { id: 'voice-input', name: '음성 입력', icon: 'mic-icon.webp', url: null, order: 0, fixed: true },
+      { id: 'settings', name: '설정', icon: 'setup-icom.webp', url: null, order: 999, fixed: true }
     ];
     const dockItems = await configManager.getConfigValue('dock_items', defaultDock);
     res.json(dockItems);

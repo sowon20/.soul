@@ -1,0 +1,340 @@
+/**
+ * Voice Input Panel Styles
+ */
+
+.voice-input-panel {
+  color: white;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.voice-panel-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+  text-align: center;
+}
+
+/* 지원 안 됨 메시지 */
+.voice-not-supported {
+  text-align: center;
+  padding: 40px 20px;
+  background: rgba(255, 100, 100, 0.1);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 100, 100, 0.3);
+}
+
+.voice-not-supported p {
+  margin: 8px 0;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* 녹음 버튼 섹션 */
+.voice-record-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.voice-record-btn {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(145deg, #3a3a5a, #2a2a4a);
+  box-shadow:
+    8px 8px 20px rgba(0, 0, 0, 0.4),
+    -4px -4px 12px rgba(100, 100, 150, 0.1);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-record-btn:hover {
+  transform: scale(1.05);
+  box-shadow:
+    10px 10px 25px rgba(0, 0, 0, 0.5),
+    -5px -5px 15px rgba(100, 100, 150, 0.15);
+}
+
+.voice-record-btn:active {
+  transform: scale(0.98);
+}
+
+.voice-record-icon {
+  color: rgba(255, 255, 255, 0.8);
+  z-index: 1;
+  transition: color 0.3s ease;
+}
+
+.voice-record-btn.recording .voice-record-icon {
+  color: #ff4444;
+}
+
+/* 펄스 애니메이션 */
+.voice-record-pulse {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(255, 68, 68, 0.3);
+  opacity: 0;
+  transform: scale(1);
+  pointer-events: none;
+}
+
+.voice-record-btn.recording .voice-record-pulse {
+  animation: voice-pulse 1.5s ease-out infinite;
+}
+
+@keyframes voice-pulse {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+.voice-record-hint {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
+  transition: color 0.3s ease;
+}
+
+/* 파형 애니메이션 */
+.voice-waveform {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  height: 60px;
+  opacity: 0.3;
+  transition: opacity 0.3s ease;
+}
+
+.voice-waveform.active {
+  opacity: 1;
+}
+
+.waveform-bar {
+  width: 6px;
+  height: 20px;
+  background: linear-gradient(to top, #4a9eff, #8b5cf6);
+  border-radius: 3px;
+  transition: height 0.1s ease;
+}
+
+.voice-waveform.active .waveform-bar {
+  animation: waveform-bounce 0.8s ease-in-out infinite;
+}
+
+.voice-waveform.active .waveform-bar:nth-child(1) { animation-delay: 0s; }
+.voice-waveform.active .waveform-bar:nth-child(2) { animation-delay: 0.1s; }
+.voice-waveform.active .waveform-bar:nth-child(3) { animation-delay: 0.2s; }
+.voice-waveform.active .waveform-bar:nth-child(4) { animation-delay: 0.3s; }
+.voice-waveform.active .waveform-bar:nth-child(5) { animation-delay: 0.4s; }
+
+@keyframes waveform-bounce {
+  0%, 100% {
+    height: 20px;
+  }
+  50% {
+    height: 50px;
+  }
+}
+
+/* 텍스트 표시 영역 */
+.voice-transcript-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.voice-label {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+}
+
+.voice-transcript {
+  min-height: 80px;
+  max-height: 150px;
+  overflow-y: auto;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.voice-placeholder {
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+}
+
+.voice-final {
+  color: white;
+}
+
+.voice-interim {
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
+}
+
+/* 액션 버튼 */
+.voice-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.voice-action-btn {
+  padding: 12px 32px;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.voice-cancel-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.voice-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.voice-send-btn {
+  background: linear-gradient(135deg, #4a9eff, #8b5cf6);
+  color: white;
+}
+
+.voice-send-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(74, 158, 255, 0.4);
+}
+
+/* 설정 섹션 */
+.voice-settings {
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+}
+
+.voice-settings-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.voice-setting-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.voice-setting-item label {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.voice-select {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.3);
+  color: white;
+  font-size: 0.85rem;
+}
+
+.voice-setting-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+/* Dock 마이크 버튼 녹음 중 스타일 */
+.dock-item.recording {
+  animation: dock-recording-pulse 1s ease-in-out infinite;
+}
+
+.dock-item.recording::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  background: #ff4444;
+  border-radius: 50%;
+  animation: recording-dot 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes dock-recording-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(255, 68, 68, 0);
+  }
+}
+
+@keyframes recording-dot {
+  0% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+/* 실시간 대화 모드 */
+.voice-realtime-toggle {
+  flex-direction: column;
+  align-items: flex-start !important;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(74, 158, 255, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(74, 158, 255, 0.2);
+}
+
+.voice-realtime-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-realtime-hint {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: 26px;
+}
+
+.voice-sending {
+  color: #4a9eff;
+  font-style: italic;
+}
+
+.voice-error {
+  color: #ff6b6b;
+}
+
+/* 실시간 모드 활성화 시 녹음 버튼 스타일 */
+.voice-record-btn.realtime-active {
+  background: linear-gradient(145deg, #4a3a5a, #3a2a4a);
+  border: 2px solid rgba(74, 158, 255, 0.5);
+}

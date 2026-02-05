@@ -85,17 +85,21 @@ router.post('/', async (req, res) => {
 
   try {
     const { message, sessionId = 'main-conversation', options = {} } = req.body;
+    const { attachments = [] } = options; // 첨부 파일 정보
     debugLog(`=== New request: ${message?.substring(0, 50)}... ===`);
+    if (attachments.length > 0) {
+      debugLog(`Attachments: ${attachments.map(a => a.name).join(', ')}`);
+    }
 
     // 실행된 도구 기록 (응답에 포함)
     const executedTools = [];
     let toolNeeds = []; // {need} 요청 내용
     let toolsSelected = []; // 알바가 선택한 도구 이름
 
-    if (!message) {
+    if (!message && attachments.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Message is required'
+        error: 'Message or attachments required'
       });
     }
 
@@ -293,9 +297,22 @@ ${rulesText}</self_notes>\n\n`;
     const preloadedTools = await getCachedTools();
     const estimatedToolCount = Math.min(preloadedTools.length, 12); // 최대 12개까지 선택됨
 
+    // 3.6 첨부 파일 정보를 메시지에 추가
+    let enhancedMessage = message || '';
+    if (attachments && attachments.length > 0) {
+      const attachmentInfo = attachments.map(a => {
+        const sizeKB = (a.size / 1024).toFixed(1);
+        return `- ${a.name} (${a.type}, ${sizeKB}KB): ${a.url}`;
+      }).join('\n');
+      enhancedMessage = enhancedMessage
+        ? `${enhancedMessage}\n\n[첨부 파일]\n${attachmentInfo}`
+        : `[첨부 파일]\n${attachmentInfo}`;
+      debugLog(`Enhanced message with attachments: ${enhancedMessage}`);
+    }
+
     // 4. 대화 메시지 구성
     const conversationData = await pipeline.buildConversationMessages(
-      message,
+      enhancedMessage,
       sessionId,
       { ...options, toolCount: estimatedToolCount }
     );

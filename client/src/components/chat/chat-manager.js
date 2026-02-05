@@ -4,6 +4,7 @@
  */
 
 import dashboardManager from '../../utils/dashboard-manager.js';
+import { TTSManager } from '../../utils/tts-manager.js';
 
 export class ChatManager {
   constructor(apiClient) {
@@ -18,6 +19,7 @@ export class ChatManager {
     this.hasMoreHistory = true;
     this.oldestMessageId = null;
     this.oldestMessageTimestamp = null;
+    this.tts = new TTSManager();
 
     // Configure marked for markdown rendering (if available)
     if (window.marked) {
@@ -1153,20 +1155,23 @@ export class ChatManager {
    * 메시지 전송
    * @param {string} text - 메시지 내용
    */
-  async sendMessage(text) {
-    // Add user message
+  async sendMessage(text, options = {}) {
+    const { enableTTS = false, attachments = [] } = options;
+
+    // Add user message (첨부 포함)
     this.addMessage({
       role: 'user',
       content: text,
       timestamp: new Date(),
+      attachments: attachments.length > 0 ? attachments : undefined,
     });
 
     // Show typing indicator
     this.showTypingIndicator();
 
     try {
-      // Call API
-      const response = await this.apiClient.sendMessage(text);
+      // Call API (첨부 정보 포함)
+      const response = await this.apiClient.sendMessage(text, { attachments });
       console.log('[Chat] API response:', response);
 
       // Hide typing indicator
@@ -1227,6 +1232,15 @@ export class ChatManager {
 
       // 대시보드 통계 갱신
       dashboardManager.refresh();
+
+      // TTS 활성화 시 응답 읽어주기
+      if (enableTTS && content) {
+        try {
+          await this.tts.speak(content);
+        } catch (ttsErr) {
+          console.warn('[Chat] TTS failed:', ttsErr);
+        }
+      }
     } catch (error) {
       // Hide typing indicator
       this.hideTypingIndicator();
