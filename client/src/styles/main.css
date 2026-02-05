@@ -2595,53 +2595,10 @@ body {
 
 /* ===== Soul 캡슐 ===== */
 .soul-capsule {
-  position: relative;
-  display: inline-block;
-}
-
-.soul-capsule .soul-orb {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 3;
   pointer-events: none;
-  mix-blend-mode: screen;
-}
-
-/* box-shadow glow 숨기고 radial-gradient로 대체 */
-.soul-capsule .soul-orb .glow {
-  display: none;
-}
-
-/* 캡슐 크기 radial-gradient 빛 */
-.soul-capsule .soul-orb::before {
-  content: '';
-  position: absolute;
-  top: 20%;
-  left: 5%;
-  width: 90%;
-  height: 65%;
-  border-radius: 50%;
-  transform: rotate(-30deg);
-  filter: blur(12px);
-  background: radial-gradient(ellipse at 50% 50%, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.2) 30%, transparent 60%);
-}
-
-@keyframes capsule-light {
-  0% {
-    background: radial-gradient(ellipse at 40% 50%, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.2) 40%, transparent 70%);
-  }
-  33% {
-    background: radial-gradient(ellipse at 50% 45%, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.15) 40%, transparent 70%);
-  }
-  66% {
-    background: radial-gradient(ellipse at 55% 50%, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.2) 40%, transparent 70%);
-  }
-  100% {
-    background: radial-gradient(ellipse at 45% 55%, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.18) 40%, transparent 70%);
-  }
+  position: relative;
+  top: 0;
+  display: inline-block;
 }
 
 .capsule-glass {
