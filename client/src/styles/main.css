@@ -3431,9 +3431,9 @@ body {
   content: '';
   position: absolute;
   top: 50%;
-  right: 1px;
-  width: 6px;
-  height: 14px;
+  right: 7%;
+  width: 5px;
+  height: 40%;
   transform: translateY(-50%);
   border-right: 2px solid #4CAF50;
   border-radius: 0 50% 50% 0;
@@ -3446,9 +3446,9 @@ body {
   content: '';
   position: absolute;
   top: 50%;
-  left: 1px;
-  width: 6px;
-  height: 14px;
+  left: 7%;
+  width: 5px;
+  height: 40%;
   transform: translateY(-50%);
   border-left: 2px solid #4a9eff;
   border-radius: 50% 0 0 50%;
@@ -3459,9 +3459,9 @@ body {
   content: '';
   position: absolute;
   top: 50%;
-  right: 1px;
-  width: 6px;
-  height: 14px;
+  right: 7%;
+  width: 5px;
+  height: 40%;
   transform: translateY(-50%);
   border-right: 2px solid #4a9eff;
   border-radius: 0 50% 50% 0;
