@@ -123,18 +123,17 @@ router.post('/', async (req, res) => {
     // 1단계: 컨텍스트/문서 섹션 (상단)
     let contextSection = '';
 
-    // 1-1. 알바(전문가) 팀 정보
+    // 1-1. 알바(전문가) 팀 정보 (내부 워커 제외)
     try {
       const activeRoles = await Role.getActiveRoles();
-      if (activeRoles.length > 0) {
-        contextSection += `<available_experts>
-다음 전문가들에게 작업을 위임할 수 있음:
-`;
-        activeRoles.forEach(role => {
+      const internalWorkers = ['digest-worker', 'embedding-worker', 'tool-worker'];
+      const delegatableRoles = activeRoles.filter(r => !internalWorkers.includes(r.roleId) && r.triggers?.length > 0);
+      if (delegatableRoles.length > 0) {
+        contextSection += `<available_experts>\n다음 전문가들에게 작업을 위임할 수 있음:\n`;
+        delegatableRoles.forEach(role => {
           contextSection += `- @${role.roleId}: ${role.name} - ${role.description} (트리거: ${role.triggers.slice(0, 3).join(', ')})\n`;
         });
-        contextSection += `위임 방법: [DELEGATE:역할ID]
-</available_experts>\n\n`;
+        contextSection += `위임 방법: [DELEGATE:역할ID]\n</available_experts>\n\n`;
       }
     } catch (roleError) {
       console.warn('알바 목록 로드 실패:', roleError.message);
@@ -371,11 +370,7 @@ ${rulesText}</self_notes>\n\n`;
       const chatMessages = conversationData.messages.filter(m => m.role !== 'system' && m.content && (typeof m.content !== 'string' || m.content.trim()));
 
       const combinedSystemPrompt = systemMessages.map(m => m.content).join('\n\n');
-      console.log(`[Chat] System messages count: ${systemMessages.length}`);
-      console.log(`[Chat] System prompt length: ${combinedSystemPrompt.length} chars`);
-      if (combinedSystemPrompt.length > 0) {
-        console.log(`[Chat] System prompt preview: ${combinedSystemPrompt.substring(0, 200)}...`);
-      }
+      console.log(`[Chat] System prompt: ${combinedSystemPrompt.length} chars, Messages: ${chatMessages.length}`);
 
       // MCP 도구 사용 (이미 캐시에서 로드됨)
       let allTools = preloadedTools;

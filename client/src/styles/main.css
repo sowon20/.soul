@@ -3338,6 +3338,8 @@ body {
   transition: all 0.3s ease;
   cursor: pointer;
   flex-shrink: 0;
+  position: relative;
+  overflow: visible;
 }
 
 .icon {
@@ -3347,6 +3349,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  overflow: visible;
 }
 
 .icon:active {
@@ -3420,6 +3424,59 @@ body {
 
 .dock-item-remove:hover {
   background: #ff3333;
+}
+
+/* TTS 활성 - 오른쪽 파동 )) */
+.dock-item.dock-mic-tts .icon::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 1px;
+  width: 6px;
+  height: 14px;
+  transform: translateY(-50%);
+  border-right: 2px solid #4CAF50;
+  border-radius: 0 50% 50% 0;
+  animation: dock-wave-right 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* 실시간 대화 - 양쪽 파동 (( )) */
+.dock-item.dock-mic-realtime .icon::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 1px;
+  width: 6px;
+  height: 14px;
+  transform: translateY(-50%);
+  border-left: 2px solid #4a9eff;
+  border-radius: 50% 0 0 50%;
+  animation: dock-wave-left 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+.dock-item.dock-mic-realtime .icon::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 1px;
+  width: 6px;
+  height: 14px;
+  transform: translateY(-50%);
+  border-right: 2px solid #4a9eff;
+  border-radius: 0 50% 50% 0;
+  animation: dock-wave-right 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes dock-wave-right {
+  0%, 100% { opacity: 0.3; transform: translateY(-50%) scaleY(0.7); }
+  50% { opacity: 1; transform: translateY(-50%) scaleY(1.1); }
+}
+
+@keyframes dock-wave-left {
+  0%, 100% { opacity: 0.3; transform: translateY(-50%) scaleY(0.7); }
+  50% { opacity: 1; transform: translateY(-50%) scaleY(1.1); }
 }
 
 /* Logo Title Styles */

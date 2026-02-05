@@ -1233,10 +1233,13 @@ export class ChatManager {
       // 대시보드 통계 갱신
       dashboardManager.refresh();
 
-      // TTS 활성화 시 응답 읽어주기
-      if (enableTTS && content) {
+      // TTS: 설정에서 켜져있거나 실시간 모드면 응답 읽어주기
+      if ((this.tts.enabled || enableTTS) && content) {
         try {
+          const wasEnabled = this.tts.enabled;
+          this.tts.enabled = true;
           await this.tts.speak(content);
+          this.tts.enabled = wasEnabled;
         } catch (ttsErr) {
           console.warn('[Chat] TTS failed:', ttsErr);
         }

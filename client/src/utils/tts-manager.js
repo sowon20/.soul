@@ -1,12 +1,13 @@
 /**
- * TTS Manager - Fish-Speech 로컬 TTS 연동
- * 텍스트를 문장 단위로 분리 → fish-speech API로 음성 생성 → AudioContext로 순차 재생
+ * TTS Manager - Qwen3-TTS 로컬 TTS 연동
+ * 텍스트를 문장 단위로 분리 → TTS API로 음성 생성 → AudioContext로 순차 재생
+ * 문장 사이 자동 무음 삽입으로 자연스러운 숨쉬기 효과
  */
 export class TTSManager {
   constructor() {
-    this.serverUrl = localStorage.getItem('tts-server-url') || 'http://localhost:8080';
-    this.referenceId = localStorage.getItem('tts-reference-id') || 'haerin';
+    this.serverUrl = localStorage.getItem('tts-server-url') || 'http://localhost:8090';
     this.enabled = localStorage.getItem('tts-enabled') === 'true';
+    this.silenceDuration = 0.35; // 문장 사이 무음 (초)
     this.audioContext = null;
     this.queue = [];       // 재생 대기 큐
     this.playing = false;
@@ -42,11 +43,6 @@ export class TTSManager {
     this._checkServer();
   }
 
-  setReference(id) {
-    this.referenceId = id;
-    localStorage.setItem('tts-reference-id', id);
-  }
-
   // 텍스트 → 문장 분리
   _splitSentences(text) {
     // 마크다운/코드블록/도구 호출 제거
@@ -65,7 +61,7 @@ export class TTSManager {
     const sentences = clean.split(/(?<=[.!?。！？\n])\s*/);
     return sentences
       .map(s => s.trim())
-      .filter(s => s.length > 3); // 너무 짧은 거 제거 (음... 같은 것 방지)
+      .filter(s => s.length > 3); // 너무 짧은 거 제거
   }
 
   // AudioContext 초기화 (사용자 제스처 필요)
@@ -86,13 +82,22 @@ export class TTSManager {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         text: sentence,
-        reference_id: this.referenceId || undefined,
         format: 'wav'
       })
     });
 
     if (!res.ok) throw new Error(`TTS 실패: ${res.status}`);
     return await res.arrayBuffer();
+  }
+
+  // 무음 버퍼 생성 (문장 사이 숨쉬기)
+  _createSilence(duration) {
+    const ctx = this._ensureAudioContext();
+    const sampleRate = ctx.sampleRate;
+    const length = Math.floor(sampleRate * duration);
+    const buffer = ctx.createBuffer(1, length, sampleRate);
+    // 버퍼는 기본 0(무음)으로 초기화됨
+    return buffer;
   }
 
   // 오디오 재생 (Promise 기반)
@@ -111,6 +116,24 @@ export class TTSManager {
         };
         source.start(0);
       }, reject);
+    });
+  }
+
+  // 무음 재생 (AudioBuffer 직접)
+  _playSilence(duration) {
+    return new Promise((resolve) => {
+      if (this.aborted) { resolve(); return; }
+      const ctx = this._ensureAudioContext();
+      const buffer = this._createSilence(duration);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      this.currentSource = source;
+      source.onended = () => {
+        this.currentSource = null;
+        resolve();
+      };
+      source.start(0);
     });
   }
 
@@ -156,6 +179,11 @@ export class TTSManager {
 
         // 현재 문장 재생
         await this._playBuffer(audioData);
+
+        // 문장 사이 무음 (마지막 문장 뒤에는 넣지 않음)
+        if (!this.aborted && i < sentences.length - 1) {
+          await this._playSilence(this.silenceDuration);
+        }
       } catch (err) {
         console.warn('[TTS] 문장 재생 실패:', sentences[i], err);
         nextAudioPromise = null;

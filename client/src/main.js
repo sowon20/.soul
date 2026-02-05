@@ -1567,6 +1567,9 @@ class SoulApp {
     if (this.dockEditMode) {
       this.setupDockDragDrop(dock);
     }
+
+    // 마이크 아이콘 TTS 상태 반영
+    this.updateMicDockStatus();
   }
 
   // 독 편집 모드 상태
@@ -1666,6 +1669,25 @@ class SoulApp {
       });
     } catch (e) {
       console.error('독 순서 저장 실패:', e);
+    }
+  }
+
+  /**
+   * 독 마이크 아이콘에 TTS/실시간 상태 반영
+   */
+  updateMicDockStatus(realtime) {
+    const micItem = document.querySelector('.dock-item[data-id="mic"], .dock-item[data-id="voice-input"]');
+    if (!micItem) return;
+
+    const ttsEnabled = this.chatManager?.tts?.enabled;
+    // realtime 인자가 없으면 기존 클래스 상태 유지
+    const isRealtime = realtime !== undefined ? realtime : micItem.classList.contains('dock-mic-realtime');
+
+    micItem.classList.remove('dock-mic-tts', 'dock-mic-realtime');
+    if (isRealtime) {
+      micItem.classList.add('dock-mic-realtime');
+    } else if (ttsEnabled) {
+      micItem.classList.add('dock-mic-tts');
     }
   }
 
@@ -2362,6 +2384,11 @@ class SoulApp {
               <label>연속 인식</label>
               <input type="checkbox" id="voiceContinuous" checked>
             </div>
+            <div class="voice-setting-item voice-tts-toggle">
+              <label>음성 응답 (TTS)</label>
+              <input type="checkbox" id="voiceTTSEnabled">
+              <span class="voice-tts-status" id="voiceTTSStatus"></span>
+            </div>
           </div>
         `}
       </div>
@@ -2490,7 +2517,38 @@ class SoulApp {
         continuousCheck.checked = true;
         voiceInput.recognition.continuous = true;
       }
+      this.updateMicDockStatus(realtimeMode);
     });
+
+    // TTS 토글
+    const ttsCheck = container.querySelector('#voiceTTSEnabled');
+    const ttsStatus = container.querySelector('#voiceTTSStatus');
+    if (ttsCheck && this.chatManager?.tts) {
+      const tts = this.chatManager.tts;
+      ttsCheck.checked = tts.enabled;
+      // 서버 상태 표시
+      ttsStatus.textContent = tts.available ? '서버 연결됨' : '서버 없음';
+      ttsStatus.style.color = tts.available ? 'var(--accent-color, #4CAF50)' : 'var(--text-secondary, #888)';
+
+      ttsCheck.addEventListener('change', async (e) => {
+        tts.enabled = e.target.checked;
+        localStorage.setItem('tts-enabled', tts.enabled);
+        if (tts.enabled) {
+          const ok = await tts._checkServer();
+          ttsStatus.textContent = ok ? '서버 연결됨' : '서버 연결 실패';
+          ttsStatus.style.color = ok ? 'var(--accent-color, #4CAF50)' : '#e74c3c';
+          if (!ok) {
+            tts.enabled = false;
+            ttsCheck.checked = false;
+            localStorage.setItem('tts-enabled', 'false');
+          }
+        } else {
+          tts.stop();
+          ttsStatus.textContent = '';
+        }
+        this.updateMicDockStatus();
+      });
+    }
   }
 
   /**

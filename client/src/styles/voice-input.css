@@ -333,6 +333,29 @@
   color: #ff6b6b;
 }
 
+/* TTS 토글 */
+.voice-tts-toggle {
+  flex-direction: column;
+  align-items: flex-start !important;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(76, 175, 80, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(76, 175, 80, 0.2);
+}
+
+.voice-tts-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-tts-status {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-left: 26px;
+}
+
 /* 실시간 모드 활성화 시 녹음 버튼 스타일 */
 .voice-record-btn.realtime-active {
   background: linear-gradient(145deg, #4a3a5a, #3a2a4a);
