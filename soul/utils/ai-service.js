@@ -2117,6 +2117,125 @@ class LightningAIService extends AIService {
 }
 
 /**
+ * Fireworks AI 서비스 (OpenAI 호환)
+ */
+class FireworksAIService extends AIService {
+  constructor(apiKey, modelName = 'accounts/fireworks/models/llama-v3p3-70b-instruct') {
+    super(apiKey);
+    this.modelName = modelName;
+    this.baseUrl = 'https://api.fireworks.ai/inference/v1';
+  }
+
+  async chat(messages, options = {}) {
+    const {
+      systemPrompt = null,
+      maxTokens = 4096,
+      temperature = 0.7,
+      tools = null,
+      toolExecutor = null,
+    } = options;
+
+    const apiMessages = messages.filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()));
+    if (systemPrompt) {
+      apiMessages.unshift({
+        role: 'system',
+        content: systemPrompt
+      });
+    }
+
+    const requestBody = {
+      model: this.modelName,
+      messages: apiMessages,
+      max_tokens: maxTokens,
+      temperature: temperature,
+    };
+
+    // OpenAI 호환 도구 전달
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description || '',
+          parameters: t.input_schema || { type: 'object', properties: {} }
+        }
+      }));
+    }
+
+    let response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[FireworksAI] Error response:', errorText);
+      throw new Error(`Fireworks AI API error (${response.status}): ${errorText || 'Unknown error'}`);
+    }
+
+    let data = await response.json();
+
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      console.error('[FireworksAI] Invalid data structure:', data);
+      throw new Error('Invalid response from Fireworks AI API');
+    }
+
+    // 도구 호출 루프
+    while (data.choices[0].finish_reason === 'tool_calls' && toolExecutor) {
+      const toolCalls = data.choices[0].message.tool_calls;
+      if (!toolCalls || toolCalls.length === 0) break;
+
+      apiMessages.push(data.choices[0].message);
+
+      const executedNames = new Set();
+      for (const tc of toolCalls) {
+        if (executedNames.has(tc.function.name)) {
+          console.log(`[FireworksAI Tool] Skipped duplicate: ${tc.function.name}`);
+          apiMessages.push({ role: 'tool', tool_call_id: tc.id, content: '이미 이번 턴에서 실행됨. 결과를 확인 후 필요하면 다음 턴에서 호출하세요.' });
+          continue;
+        }
+        executedNames.add(tc.function.name);
+        const input = JSON.parse(tc.function.arguments || '{}');
+        console.log(`[FireworksAI Tool] Executing: ${tc.function.name}`, input);
+        const result = await toolExecutor(tc.function.name, input);
+        apiMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: typeof result === 'string' ? result : JSON.stringify(result)
+        });
+      }
+
+      requestBody.messages = apiMessages;
+      response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+      data = await response.json();
+
+      if (data.error) {
+        throw new Error(data.error.message || 'Fireworks AI API error');
+      }
+      if (!data.choices || !data.choices[0]) break;
+    }
+
+    const usage = {
+      input_tokens: data.usage?.prompt_tokens || 0,
+      output_tokens: data.usage?.completion_tokens || 0
+    };
+
+    return { text: data.choices[0].message.content, usage };
+  }
+}
+
+/**
  * Ollama 로컬 모델 서비스
  */
 class OllamaService extends AIService {
@@ -2688,6 +2807,15 @@ class AIServiceFactory {
         break;
       }
 
+      case 'fireworks': {
+        const apiKey = await this.getApiKey('fireworks');
+        if (!apiKey) {
+          throw new Error('FIREWORKS_API_KEY not configured. Please save it in Settings.');
+        }
+        serviceInstance = new FireworksAIService(apiKey, model);
+        break;
+      }
+
       case 'openrouter': {
         const apiKey = await this.getApiKey('openrouter');
         if (!apiKey) {
@@ -2810,6 +2938,19 @@ class AIServiceFactory {
           if (!lightningResponse.ok) {
             const errorData = await lightningResponse.json().catch(() => ({}));
             throw new Error(errorData.error?.message || 'Lightning AI API 인증 실패');
+          }
+
+          return { valid: true, message: 'API 키가 유효합니다' };
+
+        case 'fireworks':
+          // Fireworks AI Models API 호출
+          const fireworksResponse = await fetch('https://api.fireworks.ai/inference/v1/models', {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+
+          if (!fireworksResponse.ok) {
+            const errorData = await fireworksResponse.json().catch(() => ({}));
+            throw new Error(errorData.error?.message || 'Fireworks AI API 인증 실패');
           }
 
           return { valid: true, message: 'API 키가 유효합니다' };
@@ -3042,6 +3183,28 @@ class AIServiceFactory {
           }));
           return { success: true, models: lightningModels };
 
+        case 'fireworks':
+          // Fireworks AI 모델 목록
+          const fireworksResponse = await fetch('https://api.fireworks.ai/inference/v1/models', {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+
+          if (!fireworksResponse.ok) {
+            return {
+              success: false,
+              error: 'Fireworks AI API 호출 실패',
+              models: []
+            };
+          }
+
+          const fireworksData = await fireworksResponse.json();
+          const fireworksModels = (fireworksData.data || []).map(m => ({
+            id: m.id,
+            name: m.id,
+            description: m.description || `Context: ${m.context_length || 'N/A'}`
+          }));
+          return { success: true, models: fireworksModels };
+
         case 'ollama':
           const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
           const ollamaResponse = await fetch(`${ollamaBaseUrl}/api/tags`);
@@ -3230,6 +3393,7 @@ module.exports = {
   XAIService,
   OpenRouterService,
   LightningAIService,
+  FireworksAIService,
   OllamaService,
   HuggingFaceService,
   VertexAIService,

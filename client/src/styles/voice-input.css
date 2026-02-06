@@ -9,7 +9,7 @@
   gap: 24px;
   max-width: 400px;
   margin: 0 auto;
-  overflow: hidden;
+  overflow: visible; /* 캡슐 이펙트가 잘리지 않도록 */
 }
 
 .voice-panel-title {

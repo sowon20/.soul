@@ -1681,6 +1681,9 @@ router.get('/service-billing', async (req, res) => {
         }
       }
 
+      // Fireworks: firectl 기반 잔액 조회
+      // Fireworks: 빌링 API 없음 (balance 제거)
+
       result.push(entry);
     }
 

@@ -793,28 +793,26 @@ class DashboardManager {
         ? this.getModelDisplayName(svc.topModel)
         : '-';
 
-      // 잔액 표시 (오픈라우터 등 API 있는 서비스)
+      // 잔액 표시 (오픈라우터, Fireworks 등 API 있는 서비스)
       let balanceHtml = '';
-      if (svc.balance) {
+      if (svc.balance && svc.balance.total_credits != null) {
         const totalCredits = svc.balance.total_credits;
         const totalUsage = svc.balance.total_usage || 0;
-        const remaining = totalCredits != null ? totalCredits - totalUsage : null;
+        const remaining = totalCredits - totalUsage;
 
-        if (remaining != null) {
-          const remainStr = this.formatCost(remaining) || '$0.00';
-          const usagePercent = totalCredits > 0
-            ? Math.min(100, Math.round((totalUsage / totalCredits) * 100))
-            : 0;
-          balanceHtml += `
-            <div class="billing-balance-row">
-              <span class="billing-balance-label">잔액</span>
-              <span class="billing-balance-value">${remainStr}</span>
-            </div>
-            <div class="model-usage-bar">
-              <div class="billing-usage-fill" style="width: ${usagePercent}%"></div>
-            </div>
-          `;
-        }
+        const remainStr = this.formatCost(remaining) || '$0.00';
+        const usagePercent = totalCredits > 0
+          ? Math.min(100, Math.round((totalUsage / totalCredits) * 100))
+          : 0;
+        balanceHtml += `
+          <div class="billing-balance-row">
+            <span class="billing-balance-label">잔액</span>
+            <span class="billing-balance-value">${remainStr}</span>
+          </div>
+          <div class="model-usage-bar">
+            <div class="billing-usage-fill" style="width: ${usagePercent}%"></div>
+          </div>
+        `;
 
         if (svc.balance.is_free_tier) {
           balanceHtml += '<span class="billing-tag billing-free">무료 티어</span>';

@@ -2601,6 +2601,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  overflow: visible; /* 이펙트가 잘리지 않도록 */
 }
 .soul-capsule .soul-orb {
   position: absolute;
@@ -2608,6 +2609,7 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%) rotate(-15deg) scale(1, 0.5);
+  overflow: visible; /* 파티클 효과 잘림 방지 */
 }
 
 /* 캡슐 이미지 */
@@ -2618,6 +2620,57 @@ body {
   height: auto;
   pointer-events: none;
   user-select: none;
+}
+
+/* .soul SVG 로고 (캡슐 내부) */
+.soul-logo-svg {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 60px; /* 크기 줄임 */
+  height: auto;
+  opacity: 0.9;
+  pointer-events: none;
+  filter: drop-shadow(0 0 10px rgba(100, 200, 255, 0.8));
+  overflow: visible;
+}
+
+/* .soul SVG 진동 효과 (대기 중) */
+.soul-logo-svg {
+  animation: soul-vibrate 3s ease-in-out infinite;
+}
+
+@keyframes soul-vibrate {
+  0%, 100% {
+    transform: translate(-50%, -50%) translateY(0) scale(1);
+    opacity: 0.85;
+    filter: drop-shadow(0 0 10px rgba(100, 200, 255, 0.6));
+  }
+  50% {
+    transform: translate(-50%, -50%) translateY(-5px) scale(1.05);
+    opacity: 0.95;
+    filter: drop-shadow(0 0 15px rgba(100, 200, 255, 0.9));
+  }
+}
+
+/* .soul SVG 펄스 효과 (소울이가 말할 때) */
+.soul-capsule.speaking .soul-logo-svg {
+  animation: soul-pulse 0.8s ease-in-out infinite !important;
+}
+
+@keyframes soul-pulse {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.9;
+    filter: drop-shadow(0 0 15px rgba(100, 200, 255, 1)) brightness(1.1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 1;
+    filter: drop-shadow(0 0 25px rgba(150, 220, 255, 1)) brightness(1.4);
+  }
 }
 
 

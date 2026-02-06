@@ -2171,6 +2171,7 @@ export class AISettings {
       'vertex': '☁️',
       'google': '🔵',
       'ollama': '🦙',
+      'fireworks': '🎆',
       'custom': '⚙️'
     };
     return icons[(type || 'custom').toLowerCase()] || '🤖';
@@ -2227,8 +2228,14 @@ export class AISettings {
    */
   renderServiceList() {
     // API 키 필요/불필요 서비스 분리
-    const keyRequired = this.services.filter(s => s.type !== 'vertex' && s.type !== 'ollama');
-    const noKeyRequired = this.services.filter(s => s.type === 'vertex' || s.type === 'ollama');
+    const keyRequired = this.services.filter(s => {
+      const type = s.type || s.serviceId;
+      return type !== 'vertex' && type !== 'ollama';
+    });
+    const noKeyRequired = this.services.filter(s => {
+      const type = s.type || s.serviceId;
+      return type === 'vertex' || type === 'ollama';
+    });
 
     const renderKeyService = (service) => {
       const hasKey = service.hasApiKey;
@@ -2361,6 +2368,10 @@ export class AISettings {
       'openrouter': {
         bg: 'linear-gradient(135deg, #8a6fbf 0%, #a88fd4 100%)',
         displayName: 'OpenRouter'
+      },
+      'fireworks': {
+        bg: 'linear-gradient(135deg, #ff6b35 0%, #f7931e 50%, #ffd700 100%)',
+        displayName: 'Fireworks'
       },
       'custom': {
         bg: 'linear-gradient(135deg, #8a9098 0%, #a0a8b0 100%)',
@@ -5592,6 +5603,7 @@ export class AISettings {
           else if (groupLabel.includes('xai') || groupLabel.includes('grok')) serviceId = 'xai';
           else if (groupLabel.includes('ollama')) serviceId = 'ollama';
           else if (groupLabel.includes('hugging')) serviceId = 'huggingface';
+          else if (groupLabel.includes('fireworks')) serviceId = 'fireworks';
         }
       }
 
@@ -5617,6 +5629,7 @@ export class AISettings {
               else if (gl.includes('xai') || gl.includes('grok')) fbServiceId = 'xai';
               else if (gl.includes('ollama')) fbServiceId = 'ollama';
               else if (gl.includes('hugging')) fbServiceId = 'huggingface';
+              else if (gl.includes('fireworks')) fbServiceId = 'fireworks';
             }
             return { modelId: select.value, serviceId: fbServiceId };
           }).filter(fb => fb.modelId);

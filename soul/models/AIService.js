@@ -92,6 +92,19 @@ async function initializeBuiltinServices() {
       ],
       isActive: 0,
       config: {}
+    },
+    {
+      serviceId: 'fireworks',
+      name: 'Fireworks AI',
+      baseUrl: 'https://api.fireworks.ai/inference/v1',
+      models: [
+        { id: 'accounts/fireworks/models/llama-v3p3-70b-instruct', name: 'Llama 3.3 70B Instruct', contextWindow: 131072 },
+        { id: 'accounts/fireworks/models/llama-v3p1-405b-instruct', name: 'Llama 3.1 405B Instruct', contextWindow: 131072 },
+        { id: 'accounts/fireworks/models/qwen2p5-72b-instruct', name: 'Qwen 2.5 72B Instruct', contextWindow: 131072 },
+        { id: 'accounts/fireworks/models/deepseek-v3', name: 'DeepSeek V3', contextWindow: 65536 }
+      ],
+      isActive: 0,
+      config: {}
     }
   ];
 
