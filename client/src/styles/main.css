@@ -1302,11 +1302,19 @@ body {
   border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
 
+/* 모델별 사용량 섹션 헤더 (새로고침 버튼 포함) */
+.model-usage-section > .model-usage-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
 .model-usage-title {
   font-size: 11px;
   font-weight: 600;
   color: rgba(0, 0, 0, 0.5);
-  margin: 0 0 10px 0;
+  margin: 0;
 }
 
 .model-usage-list {

@@ -673,6 +673,7 @@ class DashboardManager {
    * 서비스 잔액 새로고침 버튼
    */
   setupBillingRefresh() {
+    // 서비스 잔액 새로고침 버튼
     const refreshBtn = document.getElementById('refreshBillingBtn');
     if (refreshBtn) {
       refreshBtn.addEventListener('click', async () => {
@@ -681,6 +682,18 @@ class DashboardManager {
         await this.loadServiceBilling();
         refreshBtn.textContent = '새로고침';
         refreshBtn.disabled = false;
+      });
+    }
+
+    // 모델별 사용량 새로고침 버튼
+    const refreshModelUsageBtn = document.getElementById('refreshModelUsageBtn');
+    if (refreshModelUsageBtn) {
+      refreshModelUsageBtn.addEventListener('click', async () => {
+        refreshModelUsageBtn.disabled = true;
+        refreshModelUsageBtn.textContent = '로딩...';
+        await this.loadRoutingStats();
+        refreshModelUsageBtn.textContent = '새로고침';
+        refreshModelUsageBtn.disabled = false;
       });
     }
   }
