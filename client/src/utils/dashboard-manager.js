@@ -697,13 +697,11 @@ class DashboardManager {
       const name = categoryNames[cat.category] || cat.category;
       const color = categoryColors[cat.category] || '#607D8B';
       const percentage = parseFloat(cat.percentage) || 0;
-      const cost = this.formatCost(cat.totalCost);
 
       return `
         <div class="category-usage-item">
           <div class="category-usage-header">
             <span class="category-name">${name}</span>
-            <span class="category-cost">${cost}</span>
           </div>
           <div class="category-usage-bar">
             <div class="category-usage-fill" style="width: ${percentage}%; background: ${color}"></div>
