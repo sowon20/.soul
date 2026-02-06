@@ -663,47 +663,15 @@ class ConversationPipeline {
       const tz = profile.basicInfo?.timezone?.value;
       if (tz) userTimezone = tz;
 
-      if (profile.permissions.autoIncludeInContext) {
-        const basicInfoRaw = profile.basicInfo || {};
-        const basicInfo = {};
-        for (const [key, val] of Object.entries(basicInfoRaw)) {
-          basicInfo[key] = typeof val === 'object' ? val.value : val;
-        }
-
-        const name = basicInfo.name || '';
-        const nickname = basicInfo.nickname ? ` (${basicInfo.nickname})` : '';
-        const location = basicInfo.location || '';
-
-        // 프로필 정보를 XML로 구조화
-        profileSection = '<user_profile>\n';
-        if (name) profileSection += `이름: ${name}${nickname}\n`;
-        if (location) profileSection += `위치: ${location}\n`;
-
-        // 커스텀 필드
-        const customFields = profile.customFields || [];
-        if (customFields.length > 0) {
-          const fields = customFields.filter(f => f.value);
-          for (const field of fields) {
-            const value = String(field.value).length > 50
-              ? String(field.value).substring(0, 47) + '...'
-              : field.value;
-            profileSection += `${field.label}: ${value}\n`;
-          }
-        }
-        profileSection += '</user_profile>';
-
-        await profile.recordAccess('soul');
-      }
+      // 프로필 섹션 제거: chat.js에서 이미 처리하고 있음 (중복 방지)
+      // timezone만 가져오고 프로필 내용은 chat.js에 맡김
+      await profile.recordAccess('soul');
     } catch (error) {
       console.error('Error loading profile for system prompt:', error);
     }
 
     // === 3. 시간 정보 ===
-    let timeSection = '';
-    if (options.includeTime !== false) {
-      const now = new Date();
-      timeSection = `<current_time>${now.toLocaleString('ko-KR', { timeZone: userTimezone })}</current_time>`;
-    }
+    // (제거: chat.js의 <time_context>에서 더 상세하게 제공)
 
     // === 4. 사용자 커스텀 프롬프트 ===
     let customSection = '';
@@ -718,29 +686,25 @@ class ConversationPipeline {
       console.warn('[Pipeline] Failed to load custom prompt:', error.message);
     }
 
-    // === 5. 핵심 원칙 (지침 섹션) ===
-    const coreInstructions = `<core_principles>
-메모리 활용:
-- 현재 대화 → 바로 참조
-- 과거 대화 → recall_memory(키워드)
-- 프로필 상세 → get_profile()
-
-판단: 모르겠으면 사용자에게 묻기 전에 도구부터 써. recall_memory로 검색하고, list_my_rules로 확인하고, 그래도 없으면 그때 물어봐. "힌트 줘", "알려줘"는 최후의 수단.
-</core_principles>`;
-
     // === 최종 조합: 문서(상단) → 인격 → 지침(하단) ===
     let prompt = '';
 
-    // 문서/정보 섹션 (상단)
-    if (profileSection) prompt += profileSection + '\n\n';
-    if (timeSection) prompt += timeSection + '\n\n';
+    // 문서/정보 섹션 (상단) - 출처 표시
+    if (profileSection) {
+      prompt += `<!-- 출처: 설정 > 프로필 (사용자가 공개 설정한 정보) -->\n`;
+      prompt += profileSection + '\n\n';
+    }
 
-    // 인격/역할 정의
+    // 인격/역할 정의 - 출처 표시
+    prompt += `<!-- 출처: 설정 > AI 설정 > 성격 (프롬프트 + 세밀조절) -->\n`;
     prompt += basePrompt;
 
-    // 지침 섹션 (하단)
-    if (customSection) prompt += '\n\n' + customSection;
-    prompt += '\n\n' + coreInstructions;
+    // 지침 섹션 (하단) - 출처 표시
+    if (customSection) {
+      prompt += `\n\n<!-- 출처: 설정 > AI 설정 > 성격 > 추가 지시사항 -->\n`;
+      prompt += customSection;
+    }
+    // core_principles 제거: chat.js의 <instructions>와 중복/모순되므로 삭제
 
     // 추가 옵션
     if (options.userContext) {

@@ -96,6 +96,11 @@ router.post('/', async (req, res) => {
     let toolNeeds = []; // {need} 요청 내용
     let toolsSelected = []; // 알바가 선택한 도구 이름
 
+    // 디버그용 변수 (상위 스코프에 선언)
+    let combinedSystemPrompt = '';
+    let chatMessages = [];
+    let allTools = [];
+
     if (!message && attachments.length === 0) {
       return res.status(400).json({
         success: false,
@@ -129,6 +134,7 @@ router.post('/', async (req, res) => {
       const internalWorkers = ['digest-worker', 'embedding-worker', 'tool-worker'];
       const delegatableRoles = activeRoles.filter(r => !internalWorkers.includes(r.roleId) && r.triggers?.length > 0);
       if (delegatableRoles.length > 0) {
+        contextSection += `<!-- 출처: 설정 > 알바 (활성화된 역할) -->\n`;
         contextSection += `<available_experts>\n다음 전문가들에게 작업을 위임할 수 있음:\n`;
         delegatableRoles.forEach(role => {
           contextSection += `- @${role.roleId}: ${role.name} - ${role.description} (트리거: ${role.triggers.slice(0, 3).join(', ')})\n`;
@@ -166,6 +172,7 @@ router.post('/', async (req, res) => {
         ).exec().catch(err => console.warn('SelfRule update failed:', err.message));
 
         if (rulesText) {
+          contextSection += `<!-- 출처: AI가 add_my_rule 도구로 자동 저장한 규칙 -->\n`;
           contextSection += `<self_notes>
 이전 대화에서 스스로 깨닫거나 배운 것들:
 ${rulesText}</self_notes>\n\n`;
@@ -334,6 +341,7 @@ ${rulesText}</self_notes>\n\n`;
         if (lower.includes('gpt') && !lower.includes('gpt-oss')) return 'openai';
         if (lower.includes('gemini')) return 'google';
         if (lower.includes('grok')) return 'xai';
+        if (lower.includes('accounts/fireworks') || lower.includes('fireworks')) return 'fireworks';
         if (lower.includes('llama') || lower.includes('meta-llama/')) return 'huggingface';
         if (lower.includes('qwen')) return 'huggingface';
         if (lower.includes('mistral')) return 'huggingface';
@@ -342,7 +350,7 @@ ${rulesText}</self_notes>\n\n`;
       }
 
       // 유효한 서비스명인지 확인
-      const VALID_SERVICES = ['anthropic', 'openai', 'google', 'xai', 'huggingface', 'ollama', 'lightning', 'vertex', 'openrouter'];
+      const VALID_SERVICES = ['anthropic', 'openai', 'google', 'xai', 'huggingface', 'ollama', 'lightning', 'vertex', 'openrouter', 'fireworks'];
 
       // 스마트 라우팅 결과 사용
       if (routingResult && routingResult.modelId) {
@@ -367,13 +375,13 @@ ${rulesText}</self_notes>\n\n`;
 
       // system 메시지 분리
       const systemMessages = conversationData.messages.filter(m => m.role === 'system');
-      const chatMessages = conversationData.messages.filter(m => m.role !== 'system' && m.content && (typeof m.content !== 'string' || m.content.trim()));
+      chatMessages = conversationData.messages.filter(m => m.role !== 'system' && m.content && (typeof m.content !== 'string' || m.content.trim()));
 
-      const combinedSystemPrompt = systemMessages.map(m => m.content).join('\n\n');
+      combinedSystemPrompt = systemMessages.map(m => m.content).join('\n\n');
       console.log(`[Chat] System prompt: ${combinedSystemPrompt.length} chars, Messages: ${chatMessages.length}`);
 
       // MCP 도구 사용 (이미 캐시에서 로드됨)
-      let allTools = preloadedTools;
+      allTools = preloadedTools;
       debugLog(`Total tools available: ${allTools.length}`);
       debugLog(`Tool names: ${allTools.map(t => t.name).join(', ')}`);
       console.log('[Chat] Total tools available:', allTools.length);
@@ -819,6 +827,22 @@ ${toolCatalog}`;
         console.log(`[Chat] Calling with ${allTools.length} tools (${chatMessages.length} messages, ~${totalChars} chars)`);
         actualToolCount = allTools.length;
 
+        // 🔍 DEBUG: AI에게 실제 전송되는 전체 데이터
+        console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('🤖 [AI INPUT] 실제 전송 데이터');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('시스템 프롬프트:');
+        console.log(combinedSystemPrompt);
+        console.log('\n메시지 배열 (' + chatMessages.length + '개):');
+        chatMessages.forEach((msg, i) => {
+          console.log(`  [${i}] ${msg.role}: ${msg.content?.substring(0, 100)}${msg.content?.length > 100 ? '...' : ''}`);
+        });
+        console.log('\n도구 목록 (' + allTools.length + '개):');
+        allTools.forEach(tool => {
+          console.log(`  - ${tool.name}: ${tool.description?.substring(0, 80) || '설명 없음'}`);
+        });
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
         aiResult = await aiService.chat(chatMessages, {
           systemPrompt: combinedSystemPrompt,
           maxTokens: aiSettings.maxTokens,
@@ -1147,6 +1171,17 @@ ${toolCatalog}`;
           roleId: delegatedRole.roleId,
           name: delegatedRole.name
         } : null
+      },
+      // 🔍 DEBUG: AI 입력 데이터 (브라우저 콘솔용)
+      _debug: {
+        systemPrompt: combinedSystemPrompt,
+        messages: chatMessages.map(m => ({
+          role: m.role,
+          content: typeof m.content === 'string' ? m.content.substring(0, 200) + (m.content.length > 200 ? '...' : '') : m.content
+        })),
+        tools: allTools.map(t => ({ name: t.name, description: t.description })),
+        messageCount: chatMessages.length,
+        toolCount: allTools.length
       },
       validation: {
         valid: validation.valid,

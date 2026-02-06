@@ -425,7 +425,7 @@ class SessionDigest {
 
   /**
    * 메모리 필터링 + 저장
-   * 오미 피드백: 더 엄격한 규칙 필터 + confidence
+   * 임베딩 기반 의미적 중복 체크 (90% 이상 유사도면 중복)
    */
   async _filterAndSaveMemories(chunkResults) {
     const allMemories = chunkResults.flatMap(r => r.memories || []);
@@ -447,14 +447,85 @@ class SessionDigest {
 
     try {
       const { SelfRule } = require('../db/models');
+      const vectorStore = require('./vector-store');
 
       for (const memText of toSave) {
-        // 중복 체크
-        const existing = await SelfRule.find({ rule: memText, is_active: 1 });
-        if (existing && existing.length > 0) {
-          console.log(`[SessionDigest] Memory exists, skip: ${memText.substring(0, 40)}...`);
-          continue;
+        // 중복 체크: 임베딩 기반 의미적 유사도
+        const allActive = await SelfRule.find({ is_active: 1 });
+
+        let isDuplicate = false;
+        let bestMatch = null;
+        let bestSimilarity = 0;
+
+        // 1) 임베딩 기반 중복 체크 시도
+        try {
+          const newEmbedding = await vectorStore.embed(memText);
+
+          if (newEmbedding && newEmbedding.length > 0) {
+            // 기존 메모리와 코사인 유사도 비교
+            for (const existing of allActive) {
+              const existingText = existing.rule || '';
+              if (existingText.length < 10) continue;
+
+              const existingEmbedding = await vectorStore.embed(existingText);
+              if (!existingEmbedding || existingEmbedding.length === 0) continue;
+
+              const similarity = this._cosineSimilarity(newEmbedding, existingEmbedding);
+
+              if (similarity > bestSimilarity) {
+                bestSimilarity = similarity;
+                bestMatch = existingText;
+              }
+
+              // 90% 이상 유사하면 중복으로 판단
+              if (similarity >= 0.90) {
+                console.log(`[SessionDigest] Semantic duplicate found (${(similarity*100).toFixed(1)}%):`);
+                console.log(`  새 메모리: ${memText.substring(0, 60)}...`);
+                console.log(`  기존 메모리: ${existingText.substring(0, 60)}...`);
+                isDuplicate = true;
+                break;
+              }
+            }
+
+            // 임베딩 기반 체크 완료
+            if (isDuplicate) continue;
+
+            // 70-90% 유사도: 경고만 출력하고 저장은 진행
+            if (bestSimilarity >= 0.70 && bestSimilarity < 0.90) {
+              console.log(`[SessionDigest] Similar memory (${(bestSimilarity*100).toFixed(1)}%), saving anyway:`);
+              console.log(`  새 메모리: ${memText.substring(0, 60)}...`);
+              console.log(`  유사 메모리: ${bestMatch?.substring(0, 60)}...`);
+            }
+          }
+        } catch (embeddingError) {
+          // 임베딩 실패 시 텍스트 기반 폴백
+          console.warn('[SessionDigest] Embedding check failed, using text similarity:', embeddingError.message);
+
+          const normalized = memText.toLowerCase().replace(/[.,!?]/g, '').trim();
+
+          for (const existing of allActive) {
+            const existingNorm = (existing.rule || '').toLowerCase().replace(/[.,!?]/g, '').trim();
+
+            // 완전 일치
+            if (existingNorm === normalized) {
+              isDuplicate = true;
+              break;
+            }
+
+            // 유사도 체크 (한쪽이 다른 쪽을 70% 이상 포함)
+            const longer = existingNorm.length > normalized.length ? existingNorm : normalized;
+            const shorter = existingNorm.length > normalized.length ? normalized : existingNorm;
+            const similarity = this._calculateSimilarity(shorter, longer);
+
+            if (similarity > 0.7) {
+              console.log(`[SessionDigest] Text-based duplicate (${(similarity*100).toFixed(0)}%), skip: ${memText.substring(0, 40)}...`);
+              isDuplicate = true;
+              break;
+            }
+          }
         }
+
+        if (isDuplicate) continue;
 
         const category = this._inferCategory(memText);
         // confidence: 영구적 표현이 있으면 높게
@@ -476,6 +547,49 @@ class SessionDigest {
     }
 
     return saved;
+  }
+
+  /**
+   * 문자열 유사도 계산 (간단한 포함 기반 - 임베딩 폴백용)
+   */
+  _calculateSimilarity(shorter, longer) {
+    if (!shorter || !longer) return 0;
+
+    // 짧은 문자열이 긴 문자열에 포함되면 유사도 높음
+    if (longer.includes(shorter)) {
+      return shorter.length / longer.length;
+    }
+
+    // 단어 단위로 비교
+    const shorterWords = shorter.split(/\s+/);
+    const longerWords = longer.split(/\s+/);
+    const matchingWords = shorterWords.filter(w => longerWords.includes(w));
+
+    return matchingWords.length / shorterWords.length;
+  }
+
+  /**
+   * 코사인 유사도 계산 (벡터 임베딩용)
+   */
+  _cosineSimilarity(vec1, vec2) {
+    if (!vec1 || !vec2 || vec1.length !== vec2.length) return 0;
+
+    let dotProduct = 0;
+    let mag1 = 0;
+    let mag2 = 0;
+
+    for (let i = 0; i < vec1.length; i++) {
+      dotProduct += vec1[i] * vec2[i];
+      mag1 += vec1[i] * vec1[i];
+      mag2 += vec2[i] * vec2[i];
+    }
+
+    mag1 = Math.sqrt(mag1);
+    mag2 = Math.sqrt(mag2);
+
+    if (mag1 === 0 || mag2 === 0) return 0;
+
+    return dotProduct / (mag1 * mag2);
   }
 
   /**

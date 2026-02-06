@@ -94,7 +94,7 @@ export class APIClient {
    * 메시지 전송
    */
   async sendMessage(message, options = {}) {
-    return this.post('/chat', {
+    const payload = {
       message,
       sessionId: 'main-conversation',
       options: {
@@ -102,7 +102,33 @@ export class APIClient {
         temperature: 1.0,
         ...options,
       },
-    });
+    };
+
+    const response = await this.post('/chat', payload);
+
+    // 🔍 DEBUG: AI 입력/출력 데이터 표시
+    if (response._debug) {
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('🤖 AI에게 실제로 전송된 데이터');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('\n📋 시스템 프롬프트:');
+      console.log(response._debug.systemPrompt);
+      console.log('\n💬 메시지 배열 (' + response._debug.messageCount + '개):');
+      response._debug.messages.forEach((msg, i) => {
+        console.log(`  [${i}] ${msg.role}:`, msg.content);
+      });
+      console.log('\n🔧 도구 목록 (' + response._debug.toolCount + '개):');
+      response._debug.tools.forEach(tool => {
+        console.log(`  - ${tool.name}: ${tool.description || '설명 없음'}`);
+      });
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('📥 AI 응답:', response.reply || response.message);
+      console.log('🎯 사용 모델:', response.routing?.modelId);
+      console.log('💰 토큰:', response.tokenUsage?.actual);
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    }
+
+    return response;
   }
 
   /**

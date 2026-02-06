@@ -950,14 +950,6 @@ export class ChatManager {
       const bookmarkBtn = messageDiv.querySelector('.message-actions .message-action-btn[title="북마크"]');
       const retryBtn = messageDiv.querySelector('.message-actions .message-action-btn[title="재생성"]');
 
-      console.log('🔍 bindExistingMessages - assistant 메시지:', {
-        copyBtn: !!copyBtn,
-        likeBtn: !!likeBtn,
-        dislikeBtn: !!dislikeBtn,
-        bookmarkBtn: !!bookmarkBtn,
-        retryBtn: !!retryBtn
-      });
-
       const textContent = content.textContent;
 
       if (copyBtn && !copyBtn.dataset.bound) {
@@ -1000,13 +992,6 @@ export class ChatManager {
       const editBtn = footer.querySelector('.message-action-btn[title="수정"]');
       const deleteBtn = footer.querySelector('.message-action-btn[title="삭제"]');
       const retryBtn = footer.querySelector('.message-action-btn[title="재시도"]');
-
-      console.log('🔍 bindExistingMessages - user 메시지:', {
-        copyBtn: !!copyBtn,
-        editBtn: !!editBtn,
-        deleteBtn: !!deleteBtn,
-        retryBtn: !!retryBtn
-      });
 
       const textContent = content.textContent;
 
@@ -1172,7 +1157,6 @@ export class ChatManager {
     try {
       // Call API (첨부 정보 포함)
       const response = await this.apiClient.sendMessage(text, { attachments });
-      console.log('[Chat] API response:', response);
 
       // Hide typing indicator
       this.hideTypingIndicator();
