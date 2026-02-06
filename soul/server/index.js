@@ -98,6 +98,7 @@ const filesystemRoutes = require('../routes/filesystem');
 const bootstrapRoutes = require('../routes/bootstrap');
 const filesRoutes = require('../routes/files');
 const ttsRoutes = require('../routes/tts');
+const billingRoutes = require('../routes/billing');
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/ai-models', aiModelsRoutes);
@@ -124,6 +125,7 @@ app.use('/api/filesystem', filesystemRoutes);
 app.use('/api/bootstrap', bootstrapRoutes);
 app.use('/api/files', filesRoutes);
 app.use('/api/tts', ttsRoutes);
+app.use('/api/billing', billingRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

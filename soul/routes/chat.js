@@ -1682,7 +1682,22 @@ router.get('/service-billing', async (req, res) => {
       }
 
       // Fireworks: firectl 기반 잔액 조회
-      // Fireworks: 빌링 API 없음 (balance 제거)
+      // Fireworks: firectl account get으로 잔액 조회
+      if (sid === 'fireworks') {
+        try {
+          const billingResp = await fetch('http://localhost:5041/api/billing/fireworks');
+          if (billingResp.ok) {
+            const billingData = await billingResp.json();
+            entry.balance = {
+              total_credits: billingData.balance,    // 남은 크레딧
+              total_usage: 0,                        // 사용량 (알 수 없음)
+              remaining: billingData.balance         // 잔액
+            };
+          }
+        } catch (e) {
+          console.warn('[Billing] Fireworks balance fetch failed:', e.message);
+        }
+      }
 
       result.push(entry);
     }
