@@ -243,7 +243,60 @@ export class ProfileSettings {
       ]}
     ];
 
-    return fields.map(field => {
+    return fields.map((field, index) => {
+      // 언어 필드는 통화와 한 줄에 렌더링
+      if (field.key === 'language') {
+        const langValue = this.profile.basicInfo.language?.value || '';
+        const langHasValue = langValue.length > 0;
+        const langDisplayLabel = field.options.find(o => o.value === langValue)?.label || langValue || '';
+        const langOptionsHtml = field.options.map(opt =>
+          `<option value="${opt.value}" ${langValue === opt.value ? 'selected' : ''}>${opt.label}</option>`
+        ).join('');
+
+        // 통화 필드 데이터
+        const currencyField = fields.find(f => f.key === 'currency');
+        const currValue = this.profile.basicInfo.currency?.value || '';
+        const currHasValue = currValue.length > 0;
+        const currDisplayLabel = currencyField?.options.find(o => o.value === currValue)?.label || currValue || '';
+        const currOptionsHtml = currencyField?.options.map(opt =>
+          `<option value="${opt.value}" ${currValue === opt.value ? 'selected' : ''}>${opt.label}</option>`
+        ).join('');
+
+        return `
+          <div class="neu-field-row">
+            <div class="neu-field ${langHasValue ? 'has-value' : ''}" style="flex: 1;">
+              <div class="neu-field-display">
+                <span class="neu-field-title">언어 : </span>
+                <span class="neu-field-value">${langDisplayLabel}</span>
+              </div>
+              <select class="neu-field-input"
+                      data-basic-field="language"
+                      data-label="언어">
+                <option value="">선택 안함</option>
+                ${langOptionsHtml}
+              </select>
+            </div>
+            <div class="neu-field ${currHasValue ? 'has-value' : ''}" style="flex: 1; margin-left: 1rem;">
+              <div class="neu-field-display">
+                <span class="neu-field-title">통화 : </span>
+                <span class="neu-field-value">${currDisplayLabel}</span>
+              </div>
+              <select class="neu-field-input"
+                      data-basic-field="currency"
+                      data-label="통화">
+                <option value="">선택 안함</option>
+                ${currOptionsHtml}
+              </select>
+            </div>
+          </div>
+        `;
+      }
+
+      // 통화 필드는 이미 언어와 함께 렌더링됨
+      if (field.key === 'currency') {
+        return '';
+      }
+
       const value = this.profile.basicInfo[field.key]?.value || '';
       const hasValue = value.length > 0;
 
