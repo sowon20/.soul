@@ -665,54 +665,8 @@ class DashboardManager {
   }
 
   renderCategoryUsage(categoryUsage) {
-    const container = document.getElementById('category-usage-list');
-    if (!container) return;
-
-    if (!categoryUsage || categoryUsage.length === 0) {
-      container.innerHTML = '<div class="no-data">카테고리별 기록 없음</div>';
-      return;
-    }
-
-    const categoryNames = {
-      'chat': '💬 대화',
-      'summary': '📝 요약',
-      'compression': '🗜️ 압축',
-      'alba': '⚙️ 백그라운드',
-      'role': '🎭 역할',
-      'embedding': '🔗 임베딩',
-      'other': '📦 기타'
-    };
-
-    const categoryColors = {
-      'chat': '#4CAF50',
-      'summary': '#2196F3',
-      'compression': '#FF9800',
-      'alba': '#9C27B0',
-      'role': '#E91E63',
-      'embedding': '#00BCD4',
-      'other': '#607D8B'
-    };
-
-    container.innerHTML = categoryUsage.map(cat => {
-      const name = categoryNames[cat.category] || cat.category;
-      const color = categoryColors[cat.category] || '#607D8B';
-      const percentage = parseFloat(cat.percentage) || 0;
-
-      return `
-        <div class="category-usage-item">
-          <div class="category-usage-header">
-            <span class="category-name">${name}</span>
-          </div>
-          <div class="category-usage-bar">
-            <div class="category-usage-fill" style="width: ${percentage}%; background: ${color}"></div>
-          </div>
-          <div class="category-usage-details">
-            <span>${cat.count}회 (${cat.percentage})</span>
-            <span>${this.formatNumber(cat.totalTokens || 0)} 토큰</span>
-          </div>
-        </div>
-      `;
-    }).join('');
+    // 용도별 사용량 제거 (사용하지 않음)
+    return;
   }
 
   /**
