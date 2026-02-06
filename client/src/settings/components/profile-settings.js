@@ -21,6 +21,22 @@ export class ProfileSettings {
       const response = await apiClient.get(`/profile/p?userId=${this.userId}`);
       this.profile = response.profile;
 
+      // 통화 설정 로드
+      try {
+        const prefsResponse = await fetch('/api/config/preferences');
+        const prefs = await prefsResponse.json();
+        if (prefs.currency) {
+          // 통화 설정을 basicInfo에 추가
+          if (!this.profile.basicInfo) this.profile.basicInfo = {};
+          this.profile.basicInfo.currency = {
+            value: prefs.currency,
+            visibility: { visibleToSoul: false, autoIncludeInContext: false }
+          };
+        }
+      } catch (error) {
+        console.error('통화 설정 로드 실패:', error);
+      }
+
       // UI 렌더링
       container.innerHTML = `
         <div class="profile-settings-panel">
@@ -220,6 +236,10 @@ export class ProfileSettings {
         { value: 'en', label: 'English' },
         { value: 'ja', label: '日本語' },
         { value: 'zh', label: '中文' }
+      ]},
+      { key: 'currency', label: '통화', type: 'select', options: [
+        { value: 'USD', label: '미국 달러 ($)' },
+        { value: 'KRW', label: '한국 원 (₩)' }
       ]}
     ];
 
@@ -704,6 +724,44 @@ export class ProfileSettings {
   async saveBasicInfoValue(input, apiClient) {
     const fieldKey = input.dataset.basicField;
     let value = input.value;
+
+    // 통화 필드는 preferences API에 저장
+    if (fieldKey === 'currency') {
+      try {
+        this.showSaveStatus('저장 중...', 'info');
+
+        // 로컬 상태 업데이트
+        if (!this.profile.basicInfo[fieldKey]) {
+          this.profile.basicInfo[fieldKey] = {};
+        }
+        this.profile.basicInfo[fieldKey].value = value;
+
+        // preferences API에 저장
+        const response = await fetch('/api/config/preferences', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currency: value })
+        });
+
+        if (!response.ok) throw new Error('저장 실패');
+
+        this.showSaveStatus('✓ 저장됨', 'success');
+        setTimeout(() => this.hideSaveStatus(), 2000);
+
+        // 대시보드가 열려있으면 통화 변경 알림
+        if (window.dashboardManager) {
+          window.dashboardManager.currentCurrency = value;
+          await window.dashboardManager.loadRoutingStats();
+          await window.dashboardManager.loadServiceBilling();
+        }
+
+      } catch (error) {
+        console.error('통화 설정 저장 실패:', error);
+        this.showSaveStatus('❌ 저장 실패', 'error');
+        setTimeout(() => this.hideSaveStatus(), 3000);
+      }
+      return;
+    }
 
     // 날짜 필드인 경우 ISO 형식으로 변환
     if (input.classList.contains('neu-date-input') && value) {
