@@ -232,8 +232,9 @@ export class ChatManager {
             this.messagesArea.appendChild(messageElement);
           });
 
-          // 맨 아래로 스크롤
+          // 맨 아래로 스크롤 (DOM 렌더링 완료 대기)
           this.scrollToBottom(false);
+          setTimeout(() => this.scrollToBottom(false), 200);
 
           // 더 불러올 메시지가 있는지 확인
           this.hasMoreHistory = history.messages.length >= limit;
@@ -342,33 +343,46 @@ export class ChatManager {
       // 메시지 ID 설정 (검색 결과 이동용)
       messageDiv.dataset.messageId = messageId;
 
-      // Set content (줄바꿈 보존)
+      // 첨부 이미지 — 말풍선 바깥에 표시
       const content = messageDiv.querySelector('.message-content');
-      content.innerHTML = this.escapeHtml(message.content);
+      const imageAtts = (message.attachments || []).filter(att => att.type?.startsWith('image/'));
+      const nonImageAtts = (message.attachments || []).filter(att => !att.type?.startsWith('image/'));
 
-      // 첨부 파일 표시
-      if (message.attachments && message.attachments.length > 0) {
-        const attachmentsDiv = document.createElement('div');
-        attachmentsDiv.className = 'message-attachments';
-        message.attachments.forEach(att => {
-          if (att.type?.startsWith('image/')) {
+      if (imageAtts.length > 0) {
+        const imagesDiv = document.createElement('div');
+        imagesDiv.className = 'user-attached-images';
+        imageAtts.forEach(att => {
+          if (att.url) {
             const img = document.createElement('img');
             img.src = att.url;
-            img.alt = att.name;
-            img.className = 'message-attachment-img';
-            img.addEventListener('click', () => {
-              window.open(att.url, '_blank');
-            });
-            attachmentsDiv.appendChild(img);
-          } else {
-            const fileDiv = document.createElement('div');
-            fileDiv.className = 'message-attachment-file';
-            const ext = att.name?.split('.').pop()?.toUpperCase() || 'FILE';
-            fileDiv.innerHTML = `<span class="attachment-ext">${ext}</span><span>${att.name}</span>`;
-            attachmentsDiv.appendChild(fileDiv);
+            img.alt = att.name || '이미지';
+            imagesDiv.appendChild(img);
           }
         });
-        content.prepend(attachmentsDiv);
+        messageDiv.insertBefore(imagesDiv, content);
+      }
+
+      // 텍스트 — 말풍선 안에 표시
+      const textContent = (message.content || '').trim();
+      if (textContent) {
+        content.innerHTML = this.escapeHtml(textContent);
+      } else {
+        // 텍스트 없으면 말풍선 숨김
+        content.style.display = 'none';
+      }
+
+      // 파일 첨부 (이미지 제외)
+      if (nonImageAtts.length > 0) {
+        const attachmentsDiv = document.createElement('div');
+        attachmentsDiv.className = 'message-attachments';
+        nonImageAtts.forEach(att => {
+          const fileDiv = document.createElement('div');
+          fileDiv.className = 'message-attachment-file';
+          const ext = att.name?.split('.').pop()?.toUpperCase() || 'FILE';
+          fileDiv.innerHTML = `<span class="attachment-ext">${ext}</span><span>${att.name}</span>`;
+          attachmentsDiv.appendChild(fileDiv);
+        });
+        content.before(attachmentsDiv);
       }
 
       // Set timestamp
@@ -402,11 +416,9 @@ export class ChatManager {
       // TTS 전용 태그 제거 (화면에서 숨김, TTS는 원본 사용)
       displayContent = displayContent.replace(/\[laughter\]/gi, '').replace(/ {2,}/g, ' ').trim();
       
-      // marked 전처리: 한글 사이의 **bold**를 marked가 인식 못하는 경우 직접 변환
-      if (window.marked) {
-        displayContent = displayContent.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      }
-      const renderedContent = window.marked ? window.marked.parse(displayContent) : this.escapeHtml(displayContent);
+      // 마크다운 전처리
+      displayContent = this._preprocessMarkdown(displayContent);
+      const renderedContent = window.marked ? window.marked.parse(displayContent).trim() : this.escapeHtml(displayContent);
       content.innerHTML = renderedContent;
 
       // thinking 블록은 innerHTML 설정 후에 추가 (이벤트 리스너 유지)
@@ -1183,31 +1195,90 @@ export class ChatManager {
     this.showTypingIndicator();
 
     // 스트리밍 콜백 등록 — 타이핑 인디케이터를 실시간 텍스트로 교체
+    // 2~3초 디스플레이 딜레이: 서버는 즉시 처리하지만 화면에는 늦게 표시
+    // → {need} 태그 등 내부 처리가 사용자 눈에 보이지 않음
     let streamingEl = null;
     let streamingContent = '';
     let streamingThinking = '';
+    let displayReady = false; // 딜레이 후 화면 표시 가능 여부
+    let pendingChunks = []; // 딜레이 중 쌓이는 청크 버퍼
+    let delayTimer = null;
+    const DISPLAY_DELAY_MS = 2500; // 타이핑 인디케이터 표시 시간
+
+    const flushPendingChunks = () => {
+      displayReady = true;
+      this.hideTypingIndicator();
+      if (!streamingEl) {
+        streamingEl = this._createStreamingElement();
+        this.messagesArea.appendChild(streamingEl);
+      }
+      // 버퍼에 쌓인 청크를 한번에 반영
+      for (const chunk of pendingChunks) {
+        if (chunk.type === 'thinking') {
+          streamingThinking += chunk.content;
+        } else if (chunk.type === 'content') {
+          streamingContent += chunk.content;
+        } else if (chunk.type === 'content_reset') {
+          streamingContent = '';
+          const thinkingContainer = streamingEl.querySelector('.ai-thinking-container');
+          if (thinkingContainer) {
+            thinkingContainer.classList.remove('expanded');
+            const toggleBtn = thinkingContainer.querySelector('.ai-thinking-toggle span');
+            if (toggleBtn) toggleBtn.textContent = '생각 완료';
+          }
+        } else if (chunk.type === 'content_replace') {
+          streamingContent = chunk.content;
+        }
+      }
+      pendingChunks = [];
+      this._updateStreamingElement(streamingEl, streamingThinking, streamingContent);
+      this.scrollToBottom();
+    };
+
     const socketClient = window.soulApp?.socketClient;
     if (socketClient) {
       socketClient.setStreamCallback((event, data) => {
         if (event === 'start') {
-          // 타이핑 인디케이터를 스트리밍 메시지로 교체
-          this.hideTypingIndicator();
-          streamingEl = this._createStreamingElement();
-          this.messagesArea.appendChild(streamingEl);
-          this.scrollToBottom();
-        } else if (event === 'chunk' && streamingEl) {
-          if (data.type === 'thinking') {
-            streamingThinking += data.content;
-            this._updateStreamingElement(streamingEl, streamingThinking, streamingContent);
-          } else if (data.type === 'content') {
-            streamingContent += data.content;
-            this._updateStreamingElement(streamingEl, streamingThinking, streamingContent);
+          if (!displayReady && !streamingEl) {
+            // 최초 스트리밍 시작 — 딜레이 타이머 시작 (타이핑 인디케이터 유지)
+            delayTimer = setTimeout(flushPendingChunks, DISPLAY_DELAY_MS);
+          } else if (streamingEl) {
+            // 2차 호출(도구 실행 후): 기존 요소 유지, content만 리셋
+            streamingContent = '';
           }
           this.scrollToBottom();
-        } else if (event === 'end' && streamingEl) {
-          // 스트리밍 완료 — 최종 응답으로 교체할 준비
-          streamingEl.remove();
-          streamingEl = null;
+        } else if (event === 'chunk') {
+          if (!displayReady) {
+            // 딜레이 중 — 버퍼에 쌓기
+            pendingChunks.push(data);
+          } else if (streamingEl) {
+            // 딜레이 끝남 — 실시간 표시
+            if (data.type === 'thinking') {
+              streamingThinking += data.content;
+              this._updateStreamingElement(streamingEl, streamingThinking, streamingContent);
+            } else if (data.type === 'content') {
+              streamingContent += data.content;
+              this._updateStreamingElement(streamingEl, streamingThinking, streamingContent);
+            } else if (data.type === 'content_reset') {
+              streamingContent = '';
+              const thinkingContainer = streamingEl.querySelector('.ai-thinking-container');
+              if (thinkingContainer) {
+                thinkingContainer.classList.remove('expanded');
+                const toggleBtn = thinkingContainer.querySelector('.ai-thinking-toggle span');
+                if (toggleBtn) toggleBtn.textContent = '생각 완료';
+              }
+            } else if (data.type === 'content_replace') {
+              streamingContent = data.content;
+              this._updateStreamingElement(streamingEl, streamingThinking, streamingContent);
+            }
+            this.scrollToBottom();
+          }
+        } else if (event === 'end') {
+          // stream_end — 딜레이 중이면 즉시 flush
+          if (!displayReady && pendingChunks.length > 0) {
+            clearTimeout(delayTimer);
+            flushPendingChunks();
+          }
         }
       });
     }
@@ -1215,6 +1286,12 @@ export class ChatManager {
     try {
       // Call API (첨부 정보 포함)
       const response = await this.apiClient.sendMessage(text, { attachments });
+
+      // 딜레이 타이머 정리
+      if (delayTimer) {
+        clearTimeout(delayTimer);
+        delayTimer = null;
+      }
 
       // 스트리밍 콜백 해제
       if (socketClient) socketClient.setStreamCallback(null);
@@ -1224,6 +1301,9 @@ export class ChatManager {
         streamingEl.remove();
         streamingEl = null;
       }
+      // 실시간 도구 상태 요소도 정리 (addMessage에서 접힌 형태로 다시 표시됨)
+      const toolStatusEl = document.querySelector('.tool-execution-status');
+      if (toolStatusEl) toolStatusEl.remove();
 
       // Hide typing indicator
       this.hideTypingIndicator();
@@ -1292,7 +1372,8 @@ export class ChatManager {
         }
       }
     } catch (error) {
-      // 스트리밍 정리
+      // 딜레이 타이머 & 스트리밍 정리
+      if (delayTimer) { clearTimeout(delayTimer); delayTimer = null; }
       if (socketClient) socketClient.setStreamCallback(null);
       if (streamingEl) { streamingEl.remove(); streamingEl = null; }
 
@@ -1383,6 +1464,43 @@ export class ChatManager {
   }
 
   /**
+   * 마크다운 전처리 — 모델별 줄바꿈 부족 보정
+   */
+  _preprocessMarkdown(text) {
+    if (!text) return text;
+    let result = text;
+
+    // 1) 줄바꿈이 거의 없는 긴 텍스트 보정 (모델 무관)
+    //    200자 이상인데 \n이 거의 없으면 문장 끝(? !) 뒤에 줄바꿈 삽입
+    const ratio = result.length / (result.split('\n').length);
+    if (result.length > 200 && ratio > 150) {
+      // 마크다운 요소(코드블록, 링크 등) 밖에서만 처리
+      // 문장 끝(. ? !) 뒤 공백 + 다음 문장
+      // 마침표: 한글/이모지/닫는괄호 뒤의 . 만 문장 끝으로 판단 (숫자.숫자, URL 제외)
+      result = result.replace(/([가-힣)）\]】])\.\s+(?=[가-힣a-zA-Z*\[("'])/g, '$1.\n\n');
+      result = result.replace(/([?!])\s+(?=[가-힣a-zA-Z\*\[])/g, '$1\n\n');
+      // ㅋㅋ, ㅎㅎ 등 반복 후 공백 + 다음 문장
+      result = result.replace(/(ㅋ{2,}|ㅎ{2,})\s+(?=[가-힣a-zA-Z\*\[])/g, '$1\n\n');
+      // 🌙😊🤔 등 이모지 뒤 공백 + 다음 문장
+      result = result.replace(/([\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}])\s+(?=[가-힣a-zA-Z\*\[])/gu, '$1\n\n');
+    }
+
+    // 2) 한글 bold를 marked가 인식 못하는 경우 직접 변환
+    result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // 3) --- 앞뒤에 빈 줄 확보 (hr 렌더링용)
+    result = result.replace(/([^\n])\n?---/g, '$1\n\n---');
+    result = result.replace(/---\n?([^\n])/g, '---\n\n$1');
+    // 4) 번호 리스트 앞에 빈 줄 확보 (1. 2. 3.)
+    result = result.replace(/([^\n])\n?((\d+)\. )/g, '$1\n\n$2');
+    // 5) → 화살표 앞에 줄바꿈
+    result = result.replace(/([^\n])\n?(→ )/g, '$1\n\n$2');
+    // 6) 이모지로 시작하는 소제목 앞에 줄바꿈 (🎨 디자인 분석: 같은 패턴)
+    //    이모지 + 텍스트 + 콜론(:)이 있는 소제목만 잡음 (문장 중간 이모지는 제외)
+    result = result.replace(/([^\n])\s*([\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*[가-힣a-zA-Z][^:\n]{0,30}:)/gu, '$1\n\n$2');
+    return result;
+  }
+
+  /**
    * 스트리밍 메시지 요소 실시간 업데이트
    */
   _updateStreamingElement(el, thinkingText, contentText) {
@@ -1432,14 +1550,21 @@ export class ChatManager {
         contentArea = document.createElement('div');
         contentArea.className = 'streaming-text-area';
         contentEl.appendChild(contentArea);
+        // 초기 커서 제거 (streaming-text-area 안에 새 커서가 들어가므로)
+        const oldCursor = contentEl.querySelector(':scope > .streaming-cursor');
+        if (oldCursor) oldCursor.remove();
       }
 
       let rendered = '';
+      const cleanedText = contentText
+        .replace(/\[laughter\]/gi, '')
+        .replace(/\{need\}\s*.+?(?:\n|$)/g, '')
+        .replace(/ {2,}/g, ' ');
       if (window.marked) {
-        const processed = contentText.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-        rendered = window.marked.parse(processed);
+        const processed = this._preprocessMarkdown(cleanedText);
+        rendered = window.marked.parse(processed).trim();
       } else {
-        rendered = this.escapeHtml(contentText);
+        rendered = this.escapeHtml(cleanedText);
       }
       contentArea.innerHTML = rendered + '<span class="streaming-cursor"></span>';
     } else {

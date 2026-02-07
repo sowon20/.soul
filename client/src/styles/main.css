@@ -9,6 +9,7 @@
 @import url('app-settings.css');
 @import url('profile-manager.css');
 @import url('voice-input.css');
+@import url('components/canvas.css');
 
 /* 폰트 */
 @font-face {
@@ -2866,6 +2867,22 @@ body {
   font-family: 'Fira Code', 'Monaco', 'Menlo', 'Consolas', monospace !important;
   font-size: 12px !important;
   line-height: 1.5 !important;
+}
+
+/* 스트리밍 중 코드블록 — .code-block 래퍼 없이 <pre>가 나올 때 흰 배경 방지 */
+.streaming-text-area pre,
+.message-content pre {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 12px !important;
+  padding: 16px !important;
+  margin: 16px 0 !important;
+  overflow-x: auto;
+}
+
+.streaming-text-area code,
+.message-content code {
+  background: transparent !important;
+  text-shadow: none !important;
 }
 
 /* Prism 토큰 색상 커스터마이징 (VSCode Dark+ 스타일 - 흰색만 그레이) */

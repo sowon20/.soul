@@ -2245,6 +2245,7 @@ export class AISettings {
       'ollama': '🦙',
       'fireworks': '🎆',
       'deepseek': '🐋',
+      'qwen': '☁️',
       'custom': '⚙️'
     };
     return icons[(type || 'custom').toLowerCase()] || '🤖';
@@ -2449,6 +2450,10 @@ export class AISettings {
       'deepseek': {
         bg: 'linear-gradient(135deg, #4a7ab5 0%, #5a8ac5 100%)',
         displayName: 'DeepSeek'
+      },
+      'qwen': {
+        bg: 'linear-gradient(135deg, #ff6b35 0%, #f7a837 100%)',
+        displayName: 'Qwen'
       },
       'cartesia': {
         bg: 'linear-gradient(135deg, #7a9ab0 0%, #6a9aa8 100%)',
@@ -5680,6 +5685,7 @@ export class AISettings {
           else if (groupLabel.includes('hugging')) serviceId = 'huggingface';
           else if (groupLabel.includes('fireworks')) serviceId = 'fireworks';
           else if (groupLabel.includes('deepseek')) serviceId = 'deepseek';
+          else if (groupLabel.includes('qwen') || groupLabel.includes('alibaba')) serviceId = 'qwen';
         }
       }
 
@@ -5707,6 +5713,7 @@ export class AISettings {
               else if (gl.includes('hugging')) fbServiceId = 'huggingface';
               else if (gl.includes('fireworks')) fbServiceId = 'fireworks';
               else if (gl.includes('deepseek')) fbServiceId = 'deepseek';
+              else if (gl.includes('qwen') || gl.includes('alibaba')) fbServiceId = 'qwen';
             }
             return { modelId: select.value, serviceId: fbServiceId };
           }).filter(fb => fb.modelId);
@@ -6624,6 +6631,7 @@ export class AISettings {
       'lightning': 'Lightning AI',
       'fireworks': 'Fireworks AI',
       'deepseek': 'DeepSeek',
+      'qwen': 'Alibaba Qwen',
       'ollama': 'Ollama',
       'vertex': 'Vertex AI'
     };

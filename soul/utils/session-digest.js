@@ -28,8 +28,6 @@ const TRIGGER_TOKEN_COUNT = 1200;
 const CHUNK_MAX_TURNS = 10;
 const CHUNK_MAX_TOKENS = 500;
 
-const MAX_MEMORIES_PER_DIGEST = 5;
-
 class SessionDigest {
   constructor() {
     this.lastDigestIndex = 0;
@@ -212,14 +210,10 @@ class SessionDigest {
    */
   async _processChunkWithLLM(conversationText, alba) {
     const systemPrompt = `대화 조각을 분석해서 아래 JSON 형식으로만 응답해. 다른 텍스트 없이 JSON만.
-{"summary":"핵심 내용 2-3문장","memories":["유저에 대한 영구적 사실/취향/목표 0~5개"],"keywords":["이 대화의 핵심 검색 키워드 3~10개"],"entities":["고유명사/인물/관계/호칭/장소/서비스명 등"],"actions":["유저가 할 일/결정 0~5개, 동사로 시작"]}
+{"summary":"핵심 내용 2-3문장","keywords":["이 대화의 핵심 검색 키워드 3~10개"],"entities":["고유명사/인물/관계/호칭/장소/서비스명 등"],"actions":["유저가 할 일/결정 0~5개, 동사로 시작"]}
 규칙:
-- memories는 "유저는 ~" 형태의 확정된 사실만. 일시적(오늘 기분, 어제 일) 제외
-- 유저가 부정/정정한 내용은 부정형으로 저장
-- 확인 안 된 추측은 저장 금지
 - keywords: 나중에 이 대화를 찾을 때 쓸 검색어. 동의어/유사어도 포함 (예: 별명→호칭,이름,닉네임)
-- entities: 사람 이름, AI 호칭, 관계("엄마=영희"), 서비스명, 프로젝트명 등 고유명사는 빠짐없이
-- 호칭/별명/관계 정보는 memories와 entities 양쪽에 반드시 기록`;
+- entities: 사람 이름, AI 호칭, 관계("엄마=영희"), 서비스명, 프로젝트명 등 고유명사는 빠짐없이`;
 
     try {
       const result = await alba._callLLM(systemPrompt, conversationText);
@@ -248,14 +242,10 @@ class SessionDigest {
    */
   async _processChunkWithDigestLLM(conversationText) {
     const systemPrompt = `대화 조각을 분석해서 아래 JSON 형식으로만 응답해. 다른 텍스트 없이 JSON만.
-{"summary":"핵심 내용 2-3문장","memories":["유저에 대한 영구적 사실/취향/목표 0~5개"],"keywords":["이 대화의 핵심 검색 키워드 3~10개"],"entities":["고유명사/인물/관계/호칭/장소/서비스명 등"],"actions":["유저가 할 일/결정 0~5개, 동사로 시작"]}
+{"summary":"핵심 내용 2-3문장","keywords":["이 대화의 핵심 검색 키워드 3~10개"],"entities":["고유명사/인물/관계/호칭/장소/서비스명 등"],"actions":["유저가 할 일/결정 0~5개, 동사로 시작"]}
 규칙:
-- memories는 "유저는 ~" 형태의 확정된 사실만. 일시적(오늘 기분, 어제 일) 제외
-- 유저가 부정/정정한 내용은 부정형으로 저장
-- 확인 안 된 추측은 저장 금지
 - keywords: 나중에 이 대화를 찾을 때 쓸 검색어. 동의어/유사어도 포함 (예: 별명→호칭,이름,닉네임)
-- entities: 사람 이름, AI 호칭, 관계("엄마=영희"), 서비스명, 프로젝트명 등 고유명사는 빠짐없이
-- 호칭/별명/관계 정보는 memories와 entities 양쪽에 반드시 기록`;
+- entities: 사람 이름, AI 호칭, 관계("엄마=영희"), 서비스명, 프로젝트명 등 고유명사는 빠짐없이`;
 
     try {
       const result = await this._callDigestLLM(systemPrompt, conversationText);
@@ -350,41 +340,7 @@ class SessionDigest {
       ? `${firstUser}... → ${lastUser}...`
       : firstUser ? `${firstUser}...` : '(내용 없음)';
 
-    // 메모리: 규칙 기반 키워드 매칭
-    const memories = [];
-    const memoryPatterns = [
-      // "나는 ~" "나 ~" 형태의 자기 진술
-      /(?:나는|내가|저는|제가)\s*(.{10,50}?)(?:[.!?]|$)/g,
-      // 좋아하다/싫어하다
-      /(.{5,30}?(?:좋아|싫어|관심|선호|취향|취미)(?:해|해요|한다|합니다|하는|이야)?)/g,
-      // 직업/학교/전공
-      /(?:직업|일|회사|학교|전공|근무|개발|코딩)[^\n.]{5,40}/g,
-      // 목표/계획
-      /(?:목표|계획|하려고|할 예정|되고 싶|만들고 싶|하고 싶)[^\n.]{5,40}/g,
-      // 호칭/별명
-      /(?:부르|불러|호칭|별명|이름은|이름이)[^\n.]{3,40}/g,
-      // 관계 정보
-      /(?:엄마|아빠|형|누나|동생|언니|오빠|남편|아내|친구|동료|여자친구|남자친구|반려)[^\n.]{3,40}/g,
-    ];
-
-    for (const msg of userMsgs) {
-      const text = (msg.content || '').substring(0, 500);
-      for (const pattern of memoryPatterns) {
-        pattern.lastIndex = 0;
-        let match;
-        while ((match = pattern.exec(text)) !== null) {
-          const memText = (match[1] || match[0]).trim();
-          if (memText.length >= 10 && memText.length <= 100 && memories.length < 3) {
-            // 중복 방지
-            if (!memories.some(m => m.includes(memText.substring(0, 15)))) {
-              memories.push(`유저: ${memText}`);
-            }
-          }
-        }
-      }
-    }
-
-    // 규칙 기반 키워드 추출
+    // 키워드 추출
     const keywordSet = new Set();
     for (const msg of [...userMsgs, ...assistantMsgs]) {
       const text = (msg.content || '').substring(0, 300);
@@ -397,7 +353,7 @@ class SessionDigest {
       }
     }
 
-    return { summary, memories, keywords: [...keywordSet].slice(0, 10), entities: [], actions: [] };
+    return { summary, memories: [], keywords: [...keywordSet].slice(0, 10), entities: [], actions: [] };
   }
 
   /**
@@ -470,202 +426,8 @@ class SessionDigest {
     return combined.substring(combined.length - 500);
   }
 
-  /**
-   * 메모리 필터링 + 저장
-   * 임베딩 기반 의미적 중복 체크 (90% 이상 유사도면 중복)
-   */
-  async _filterAndSaveMemories(chunkResults) {
-    const allMemories = chunkResults.flatMap(r => r.memories || []);
-    if (allMemories.length === 0) return [];
-
-    // 1차 필터: 규칙 기반
-    const filtered = allMemories.filter(mem => {
-      if (!mem || typeof mem !== 'string') return false;
-      if (mem.length < 10) return false; // 너무 짧음
-      // 일시적 표현
-      if (/^(오늘|어제|내일|이번 주|지금|방금|이번에|아까)\s/.test(mem)) return false;
-      // 애매한 서술만
-      if (/^(좀|약간|가끔|조금|살짝)\s/.test(mem)) return false;
-      return true;
-    });
-
-    const toSave = filtered.slice(0, MAX_MEMORIES_PER_DIGEST);
-    const saved = [];
-
-    try {
-      const { SelfRule } = require('../db/models');
-      const vectorStore = require('./vector-store');
-
-      for (const memText of toSave) {
-        // 중복 체크: 임베딩 기반 의미적 유사도
-        const allActive = await SelfRule.find({ is_active: 1 });
-
-        let isDuplicate = false;
-        let bestMatch = null;
-        let bestSimilarity = 0;
-        let newEmbedding = null;
-
-        // 1) 임베딩 기반 중복 체크 시도
-        try {
-          newEmbedding = await vectorStore.embed(memText, 'digest-dedup');
-
-          if (newEmbedding && newEmbedding.length > 0) {
-            // 기존 메모리와 코사인 유사도 비교 (저장된 임베딩 재사용)
-            for (const existing of allActive) {
-              const existingText = existing.rule || '';
-              if (existingText.length < 10) continue;
-
-              // 저장된 임베딩 사용 (없으면 스킵)
-              let existingEmbedding = null;
-              if (existing.embedding) {
-                try {
-                  existingEmbedding = JSON.parse(existing.embedding);
-                } catch (e) {
-                  // 파싱 실패 시 스킵
-                  continue;
-                }
-              } else {
-                // 임베딩 없으면 스킵 (새로 생성하지 않음)
-                continue;
-              }
-
-              if (!existingEmbedding || existingEmbedding.length === 0) continue;
-
-              const similarity = this._cosineSimilarity(newEmbedding, existingEmbedding);
-
-              if (similarity > bestSimilarity) {
-                bestSimilarity = similarity;
-                bestMatch = existingText;
-              }
-
-              // 90% 이상 유사하면 중복으로 판단
-              if (similarity >= 0.90) {
-                console.log(`[SessionDigest] Semantic duplicate found (${(similarity*100).toFixed(1)}%):`);
-                console.log(`  새 메모리: ${memText.substring(0, 60)}...`);
-                console.log(`  기존 메모리: ${existingText.substring(0, 60)}...`);
-                isDuplicate = true;
-                break;
-              }
-            }
-
-            // 임베딩 기반 체크 완료
-            if (isDuplicate) continue;
-
-            // 70-90% 유사도: 경고만 출력하고 저장은 진행
-            if (bestSimilarity >= 0.70 && bestSimilarity < 0.90) {
-              console.log(`[SessionDigest] Similar memory (${(bestSimilarity*100).toFixed(1)}%), saving anyway:`);
-              console.log(`  새 메모리: ${memText.substring(0, 60)}...`);
-              console.log(`  유사 메모리: ${bestMatch?.substring(0, 60)}...`);
-            }
-          }
-        } catch (embeddingError) {
-          // 임베딩 실패 시 텍스트 기반 폴백
-          console.warn('[SessionDigest] Embedding check failed, using text similarity:', embeddingError.message);
-
-          const normalized = memText.toLowerCase().replace(/[.,!?]/g, '').trim();
-
-          for (const existing of allActive) {
-            const existingNorm = (existing.rule || '').toLowerCase().replace(/[.,!?]/g, '').trim();
-
-            // 완전 일치
-            if (existingNorm === normalized) {
-              isDuplicate = true;
-              break;
-            }
-
-            // 유사도 체크 (한쪽이 다른 쪽을 70% 이상 포함)
-            const longer = existingNorm.length > normalized.length ? existingNorm : normalized;
-            const shorter = existingNorm.length > normalized.length ? normalized : existingNorm;
-            const similarity = this._calculateSimilarity(shorter, longer);
-
-            if (similarity > 0.7) {
-              console.log(`[SessionDigest] Text-based duplicate (${(similarity*100).toFixed(0)}%), skip: ${memText.substring(0, 40)}...`);
-              isDuplicate = true;
-              break;
-            }
-          }
-        }
-
-        if (isDuplicate) continue;
-
-        const category = this._inferCategory(memText);
-        // confidence: 영구적 표현이 있으면 높게
-        const confidence = /항상|매일|늘|주로|좋아하|싫어하|관심/.test(memText) ? 0.9 : 0.7;
-
-        // 메모리 저장 (임베딩 포함)
-        await SelfRule.create({
-          rule: memText,
-          category,
-          priority: Math.round(confidence * 10),  // 0.9 → 9, 0.7 → 7
-          context: `digest:auto (${new Date().toLocaleDateString('ko-KR')}) conf=${confidence}`,
-          tokenCount: Math.ceil(memText.length / 4),
-          embedding: newEmbedding ? JSON.stringify(newEmbedding) : null
-        });
-
-        saved.push({ text: memText, category, confidence });
-        console.log(`[SessionDigest] Memory saved: [${category}] conf=${confidence} "${memText.substring(0, 50)}..."`);
-      }
-    } catch (e) {
-      console.error('[SessionDigest] Memory save error:', e.message);
-    }
-
-    return saved;
-  }
-
-  /**
-   * 문자열 유사도 계산 (간단한 포함 기반 - 임베딩 폴백용)
-   */
-  _calculateSimilarity(shorter, longer) {
-    if (!shorter || !longer) return 0;
-
-    // 짧은 문자열이 긴 문자열에 포함되면 유사도 높음
-    if (longer.includes(shorter)) {
-      return shorter.length / longer.length;
-    }
-
-    // 단어 단위로 비교
-    const shorterWords = shorter.split(/\s+/);
-    const longerWords = longer.split(/\s+/);
-    const matchingWords = shorterWords.filter(w => longerWords.includes(w));
-
-    return matchingWords.length / shorterWords.length;
-  }
-
-  /**
-   * 코사인 유사도 계산 (벡터 임베딩용)
-   */
-  _cosineSimilarity(vec1, vec2) {
-    if (!vec1 || !vec2 || vec1.length !== vec2.length) return 0;
-
-    let dotProduct = 0;
-    let mag1 = 0;
-    let mag2 = 0;
-
-    for (let i = 0; i < vec1.length; i++) {
-      dotProduct += vec1[i] * vec2[i];
-      mag1 += vec1[i] * vec1[i];
-      mag2 += vec2[i] * vec2[i];
-    }
-
-    mag1 = Math.sqrt(mag1);
-    mag2 = Math.sqrt(mag2);
-
-    if (mag1 === 0 || mag2 === 0) return 0;
-
-    return dotProduct / (mag1 * mag2);
-  }
-
-  /**
-   * 메모리 카테고리 추론
-   */
-  _inferCategory(text) {
-    if (/취향|좋아|싫어|선호|즐겨|관심/.test(text)) return 'preference';
-    if (/목표|계획|하려고|할 예정|다짐|되고 싶/.test(text)) return 'goal';
-    if (/가족|친구|동료|연인|부모|형제|남편|아내|엄마|아빠/.test(text)) return 'relationship';
-    if (/직업|회사|학교|전공|일|근무|직장/.test(text)) return 'fact';
-    if (/습관|매일|항상|자주|늘|루틴/.test(text)) return 'habit';
-    if (/코드|코딩|개발|버그|에러|프로그래밍/.test(text)) return 'coding';
-    return 'general';
+  async _filterAndSaveMemories() {
+    return [];
   }
 
   // === 저장/로드 ===
@@ -855,48 +617,7 @@ class SessionDigest {
   }
 
   /**
-   * 관련 메모리 검색 (컨텍스트 주입용)
-   * SelfRule에서 관련 메모리를 가져와 컨텍스트에 넣을 텍스트 생성
-   * @param {number} maxCount - 최대 개수
-   * @param {number} maxTokens - 토큰 예산
-   */
-  async buildMemoryContext(maxCount = 5, maxTokens = 500) {
-    try {
-      const { SelfRule } = require('../db/models');
-
-      // 활성 메모리 중 우선순위 높은 것부터
-      const memories = await SelfRule.find({ is_active: 1 })
-        .sort({ priority: -1, use_count: -1 })
-        .limit(maxCount * 2); // 필터링 여유분
-
-      if (!memories || memories.length === 0) return '';
-
-      const lines = [];
-      let tokenCount = 0;
-
-      for (const mem of memories) {
-        if (lines.length >= maxCount) break;
-        const tokens = mem.token_count || Math.ceil(mem.rule.length / 4);
-        if (tokenCount + tokens > maxTokens) break;
-
-        lines.push(`- ${mem.rule}`);
-        tokenCount += tokens;
-
-        // 사용 횟수 업데이트 (비동기)
-        SelfRule.updateOne(
-          { id: mem.id },
-          { use_count: (mem.use_count || 0) + 1, last_used: new Date().toISOString() }
-        ).catch(() => {});
-      }
-
-      if (lines.length === 0) return '';
-
-      return `<user_memories>\n이 유저에 대해 알고 있는 정보:\n${lines.join('\n')}\n</user_memories>`;
-    } catch (e) {
-      console.warn('[SessionDigest] buildMemoryContext error:', e.message);
-      return '';
-    }
-  }
+*/
 }
 
 // 싱글톤

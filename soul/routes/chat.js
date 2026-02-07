@@ -73,92 +73,32 @@ function invalidateToolsCache() {
  * 스트리밍 가능한 AI 서비스 호출 래퍼
  * streamChat이 있으면 Socket.io로 실시간 청크 전송, 없으면 기존 chat() 사용
  */
-async function callAIWithStreaming(aiService, chatMessages, chatOptions) {
+async function callAIWithStreaming(aiService, chatMessages, chatOptions, { emitLifecycle = true } = {}) {
   // streamChat 메서드가 없으면 기존 방식
   if (typeof aiService.streamChat !== 'function') {
     return aiService.chat(chatMessages, chatOptions);
   }
 
   console.log('[Chat] Using streaming mode');
-  if (global.io) global.io.emit('stream_start');
-
-  // [MEMO:] 태그 버퍼링 — 스트리밍 중에 사용자에게 노출되지 않도록
-  // 청크 경계를 넘어도 감지할 수 있도록 상태 머신 방식
-  let memoBuf = '';       // 현재 버퍼 ([, [M, [ME, [MEM, [MEMO, [MEMO:, [MEMO:내용...)
-  let memoState = 'none'; // none | maybe | confirmed
-  // maybe: [ 또는 ( 를 만남 → MEMO: 인지 확인 중
-  // confirmed: [MEMO: 확인됨 → 닫는 괄호까지 수집 중
-  const MEMO_PREFIX = 'MEMO:';
+  if (emitLifecycle && global.io) global.io.emit('stream_start');
+  // 2차 호출(emitLifecycle=false)에서도 content 리셋 신호는 보내야 함
+  if (!emitLifecycle && global.io) global.io.emit('stream_chunk', { type: 'content_reset' });
 
   const result = await aiService.streamChat(chatMessages, chatOptions, (type, data) => {
     if (!global.io) return;
     if (type === 'thinking') {
       global.io.emit('stream_chunk', { type: 'thinking', content: data });
     } else if (type === 'content') {
-      let text = data;
-      let output = '';
-
-      for (let i = 0; i < text.length; i++) {
-        const ch = text[i];
-
-        if (memoState === 'confirmed') {
-          // [MEMO: 확인됨 → 닫는 괄호까지 수집
-          memoBuf += ch;
-          const opener = memoBuf[0];
-          const closer = opener === '[' ? ']' : ')';
-          if (ch === closer) {
-            // 메모 완성 → tool_start/tool_end 이벤트로 표시
-            const memoContent = memoBuf.replace(/^[\[(]MEMO:\s*/i, '').replace(/[\])]$/, '').trim();
-            if (memoContent) {
-              global.io.emit('tool_start', { name: 'memo', display: `📝 ${memoContent.slice(0, 60)}${memoContent.length > 60 ? '...' : ''}` });
-              global.io.emit('tool_end', { name: 'memo', success: true, result: '기억 저장' });
-            }
-            memoBuf = '';
-            memoState = 'none';
-          }
-        } else if (memoState === 'maybe') {
-          // [ 또는 ( 만난 후 → MEMO: 패턴 확인 중
-          memoBuf += ch;
-          const checkLen = memoBuf.length - 1; // 첫 괄호 제외한 길이
-          if (checkLen <= MEMO_PREFIX.length) {
-            // 아직 확인 중 — 지금까지 일치하는지 체크
-            const soFar = memoBuf.slice(1).toUpperCase();
-            const expected = MEMO_PREFIX.slice(0, checkLen);
-            if (soFar !== expected) {
-              // 불일치 → 버퍼를 그냥 출력하고 리셋
-              output += memoBuf;
-              memoBuf = '';
-              memoState = 'none';
-            } else if (checkLen === MEMO_PREFIX.length) {
-              // [MEMO: 완성! → confirmed 상태로 전환
-              memoState = 'confirmed';
-            }
-          }
-        } else {
-          // none 상태 — [ 또는 ( 감지
-          if (ch === '[' || ch === '(') {
-            memoState = 'maybe';
-            memoBuf = ch;
-          } else {
-            output += ch;
-          }
-        }
-      }
-
-      if (output) {
-        global.io.emit('stream_chunk', { type: 'content', content: output });
-      }
+      global.io.emit('stream_chunk', { type: 'content', content: data });
+    } else if (type === 'content_replace') {
+      // 도구 실행 후 최종 응답으로 content 교체
+      global.io.emit('stream_chunk', { type: 'content_replace', content: data });
     } else if (type === 'tool_start') {
       global.io.emit('stream_chunk', { type: 'tool', content: '도구 실행 중...' });
     }
   });
 
-  // 버퍼에 남은 미완성 메모가 있으면 그냥 텍스트로 출력
-  if (memoBuf && global.io) {
-    global.io.emit('stream_chunk', { type: 'content', content: memoBuf });
-  }
-
-  if (global.io) global.io.emit('stream_end');
+  if (emitLifecycle && global.io) global.io.emit('stream_end');
   return result;
 }
 
@@ -328,11 +268,11 @@ ${rulesText}</self_notes>\n\n`;
       instructionsSection = `
 <instructions>
 도구 사용:
-- 직접 사용할 수 있는 도구가 없음
-- 무언가 필요하면 {need} 태그 사용
+- 모든 도구는 알바를 통해 얻으면 됨. {need} 태그로 요청하면 알바가 적절한 도구를 준비해줌
 - {need} 뒤에 자연어로 원하는 것을 설명
 - 결과가 돌아오면 그걸 바탕으로 답변
 - {need}는 응답 중 아무 위치에나 사용 가능, 여러 개 가능 (각각 별도 줄)
+- 필요하거나 해야 하는 게 있으면 적극적으로 {need}로 요구할 것. "할 수 없다"고 거부하지 말 것
 
 주의:
 - {need}를 쓸 때 주어를 명확히 구분할 것. 사용자의 "나/내"를 "사용자"로 바꿔서 전달
@@ -340,11 +280,6 @@ ${rulesText}</self_notes>\n\n`;
 - 예: 사용자 "내가 뭘 좋아해?" → {need} 사용자가 좋아하는 것 검색 (X: 내가 좋아하는 것)
 - "나/내"가 사용자를 가리키는지, AI를 가리키는지 항상 확인
 - 확실하지 않은 건 추측하지 말고 사용자에게 물어라
-
-메모 남기기:
-- 기억할 것이 있으면 [MEMO: 내용] 태그 사용
-- 예: [MEMO: 사용자는 새벽에 자주 깨어있음]
-- 메모는 사용자에게 보이지 않음
 
 응답 포맷:
 - 긴 문장은 적절히 줄바꿈하여 가독성 유지
@@ -359,11 +294,6 @@ ${rulesText}</self_notes>\n\n`;
 - tool_use 기능으로만 호출 (텍스트로 태그 작성 금지)
 - 도구 결과 추측/날조 금지
 - <tool_use>, <function_call>, <thinking> 태그 직접 작성 금지
-
-메모 남기기:
-- 기억할 것이 있으면 [MEMO: 내용] 태그 사용
-- 예: [MEMO: 사용자는 새벽에 자주 깨어있음]
-- 메모는 사용자에게 보이지 않음
 
 응답 포맷:
 - 긴 문장은 적절히 줄바꿈하여 가독성 유지
@@ -453,11 +383,25 @@ ${rulesText}</self_notes>\n\n`;
       }
     }
 
+    // 텍스트 없이 파일만 보낸 경우 — 빈 메시지 방지 (유저에게 안 보임)
+    if (!enhancedMessage.trim() && attachmentDocuments.length > 0) {
+      enhancedMessage = ' ';
+    }
+
     // 3.7 비전 미지원 모델 + 이미지 첨부 → vision-worker 자동 호출
-    const NON_VISION_SERVICES = new Set(['deepseek']);
     const hasImages = attachmentDocuments.some(d => d.type === 'image');
-    console.log(`[vision-worker] check: hasImages=${hasImages}, serviceId=${routingResult.serviceId}, match=${NON_VISION_SERVICES.has(routingResult.serviceId)}`);
-    if (hasImages && routingResult.serviceId && NON_VISION_SERVICES.has(routingResult.serviceId)) {
+    const modelSupportsVision = (() => {
+      const model = (routingResult.modelId || '').toLowerCase();
+      const service = (routingResult.serviceId || '').toLowerCase();
+      // 비전 네이티브 서비스 (전 모델 비전 지원)
+      if (['anthropic', 'google', 'openai'].includes(service)) return true;
+      // 비전 전용 모델명 패턴
+      if (/\bvl\b|vision|gpt-4o|gemini/.test(model)) return true;
+      // 나머지는 비전 미지원으로 간주
+      return false;
+    })();
+    console.log(`[vision-worker] check: hasImages=${hasImages}, model=${routingResult.modelId}, vision=${modelSupportsVision}`);
+    if (hasImages && !modelSupportsVision) {
       try {
         const visionRole = await Role.findOne({ roleId: 'vision-worker', isActive: 1 });
         console.log(`[vision-worker] role found: ${!!visionRole}, model: ${visionRole?.preferredModel}`);
@@ -575,14 +519,14 @@ ${rulesText}</self_notes>\n\n`;
         if (lower.includes('accounts/fireworks') || lower.includes('fireworks')) return 'fireworks';
         if (lower.includes('deepseek')) return 'deepseek';
         if (lower.includes('llama') || lower.includes('meta-llama/')) return 'huggingface';
-        if (lower.includes('qwen')) return 'huggingface';
+        if (lower.includes('qwen')) return 'qwen';
         if (lower.includes('mistral')) return 'huggingface';
         if (lower.includes('gpt-oss') || lower.includes('openai/')) return 'huggingface';
         return null;
       }
 
       // 유효한 서비스명인지 확인
-      const VALID_SERVICES = ['anthropic', 'openai', 'google', 'xai', 'huggingface', 'ollama', 'lightning', 'vertex', 'openrouter', 'fireworks', 'deepseek'];
+      const VALID_SERVICES = ['anthropic', 'openai', 'google', 'xai', 'huggingface', 'ollama', 'lightning', 'vertex', 'openrouter', 'fireworks', 'deepseek', 'qwen'];
 
       // 스마트 라우팅 결과 사용
       if (routingResult && routingResult.modelId) {
@@ -610,6 +554,12 @@ ${rulesText}</self_notes>\n\n`;
       chatMessages = conversationData.messages.filter(m => m.role !== 'system' && m.content && (typeof m.content !== 'string' || m.content.trim()));
 
       combinedSystemPrompt = systemMessages.map(m => m.content).join('\n\n');
+
+      // 비전 모델 + 이미지 첨부 시 비전 안내 추가 (hallucination 방지)
+      if (modelSupportsVision && attachmentDocuments.some(d => d.type === 'image')) {
+        combinedSystemPrompt = '[VISION MODE] 이 대화에 이미지가 첨부되어 있다. 너는 비전 모델이며 이미지를 직접 볼 수 있다. 이미지 내용을 분석하여 답변하라. "이미지를 볼 수 없다"고 말하지 마라.\n\n' + combinedSystemPrompt;
+      }
+
       console.log(`[Chat] System prompt: ${combinedSystemPrompt.length} chars, Messages: ${chatMessages.length}`);
 
       // MCP 도구 사용 (이미 캐시에서 로드됨)
@@ -1001,7 +951,14 @@ ${toolCatalog}`;
           }
 
           // 주모델 재호출: 1차 응답 이어서 + 도구만 쥐어줌 (대화 전체 재전송 X)
-          const cleanedResponse = responseText.replace(/\{need\}\s*.+?(?:\n|$)/g, '').trim();
+          // 1차 thinking 보존 (최종 응답에 다시 붙임)
+          const firstThinkingMatch = responseText.match(/<thinking>([\s\S]*?)<\/thinking>/);
+          const firstThinking = firstThinkingMatch ? firstThinkingMatch[0] : '';
+          // {need} 태그와 <thinking> 태그 제거 (2차 호출 context에서)
+          const cleanedResponse = responseText
+            .replace(/<thinking>[\s\S]*?<\/thinking>/g, '')
+            .replace(/\{need\}\s*.+?(?:\n|$)/g, '')
+            .trim();
           const lastUserMessage = chatMessages[chatMessages.length - 1];
           const currentMessages = [
             lastUserMessage,
@@ -1011,7 +968,7 @@ ${toolCatalog}`;
 
           console.log(`[Chat] 2차 호출: 도구 ${selectedTools.length}개 쥐어줌 (메시지 ${currentMessages.length}개, 전체 ${chatMessages.length}개 재전송 안함)`);
 
-          // 2차 호출에서는 thinking 끔 (1차에서 이미 reasoning 완료, DeepSeek reasoning_content 필드 충돌 방지)
+          // 2차 호출에서는 thinking 끔, stream_start/end 안 보냄 (기존 스트리밍 요소에 이어서 표시)
           aiResult = await callAIWithStreaming(aiService, currentMessages, {
             systemPrompt: combinedSystemPrompt,
             maxTokens: aiSettings.maxTokens,
@@ -1019,7 +976,7 @@ ${toolCatalog}`;
             tools: selectedTools,
             toolExecutor: toolExecutor,
             thinking: false,
-          });
+          }, { emitLifecycle: false });
 
           // 2차+ 응답에서도 {need} 감지 → 추가 도구 호출 루프 (최대 3회)
           const MAX_NEED_LOOPS = 3;
@@ -1061,6 +1018,17 @@ ${toolCatalog}`;
               toolExecutor: toolExecutor,
               thinking: false,
             });
+          }
+
+          // 1차 thinking을 최종 응답에 다시 붙이기
+          if (firstThinking && typeof aiResult === 'object' && aiResult.text) {
+            if (!aiResult.text.includes('<thinking>')) {
+              aiResult.text = firstThinking + '\n\n' + aiResult.text;
+            }
+          } else if (firstThinking && typeof aiResult === 'string') {
+            if (!aiResult.includes('<thinking>')) {
+              aiResult = firstThinking + '\n\n' + aiResult;
+            }
           }
         }
 
@@ -1226,44 +1194,6 @@ ${toolCatalog}`;
       }
     }
 
-    // 7. 내면 메모 파싱 및 저장
-    const memoMatchesBracket = finalResponse.match(/\[MEMO:\s*([^\]]+)\]/gi) || [];
-    const memoMatchesParen = finalResponse.match(/\(MEMO:\s*([^)]+)\)/gi) || [];
-    const memoMatches = [...memoMatchesBracket, ...memoMatchesParen];
-    if (memoMatches.length > 0) {
-      const SelfRule = require('../models/SelfRule');
-
-      for (const match of memoMatches) {
-        const memoContent = match.replace(/^[\[(]MEMO:\s*/i, '').replace(/[\])]$/, '').trim();
-        if (memoContent) {
-          try {
-            // 카테고리 자동 추론
-            let category = 'general';
-            if (/코드|코딩|개발|버그|에러/.test(memoContent)) category = 'coding';
-            else if (/시스템|서버|설정|인프라/.test(memoContent)) category = 'system';
-            else if (/사용자|유저|user/.test(memoContent)) category = 'user';
-            else if (/성격|말투|태도/.test(memoContent)) category = 'personality';
-            
-            await SelfRule.create({
-              rule: memoContent,
-              category,
-              priority: 5,
-              context: `대화 중 자동 메모 (${new Date().toLocaleDateString('ko-KR')})`,
-              tokenCount: Math.ceil(memoContent.length / 4)
-            });
-            console.log(`[Chat] 내면 메모 저장: ${memoContent.substring(0, 50)}...`);
-          } catch (memoErr) {
-            console.error('[Chat] 내면 메모 저장 실패:', memoErr.message);
-          }
-        }
-      }
-      
-      // 응답에서 메모 태그 제거 (사용자에게 안 보이게)
-      finalResponse = finalResponse.replace(/\[MEMO:\s*[^\]]+\]/gi, '').trim();
-      // 괄호 형태 (MEMO: ...) 도 제거
-      finalResponse = finalResponse.replace(/\(MEMO:\s*[^)]+\)/gi, '').trim();
-    }
-
     // 응답에서 내부 태그 제거 ({need}, {도구이름: ...} — 사용자에게 안 보이게)
     finalResponse = finalResponse
       .replace(/\{need\}\s*.+?(?:\n|$)/g, '')
@@ -1286,9 +1216,20 @@ ${toolCatalog}`;
     const latency = Date.now() - startTime;
     const tier = determineTier(routingResult.modelId, routingResult.tier);
 
+    // 9.5 도구 실행 기록을 응답에 포함 (다음 턴에서 AI가 도구 사용 사실을 인지하도록)
+    let responseToSave = finalResponse;
+    if (executedTools.length > 0) {
+      const toolSummary = executedTools.map(t => {
+        const status = t.success ? '성공' : `실패: ${t.error || ''}`;
+        const preview = t.resultPreview ? ` → ${t.resultPreview.substring(0, 100)}` : '';
+        return `- ${t.display || t.name} (${status})${t.success ? preview : ''}`;
+      }).join('\n');
+      responseToSave = `<tool_history>\n${toolSummary}\n</tool_history>\n\n${finalResponse}`;
+    }
+
     // 10. 응답 저장 (라우팅 정보 포함)
     try {
-      await pipeline.handleResponse(message, finalResponse, sessionId, {
+      await pipeline.handleResponse(message, responseToSave, sessionId, {
         routing: {
           modelId: routingResult.modelId,
           serviceId: routingResult.serviceId,
@@ -1303,6 +1244,47 @@ ${toolCatalog}`;
     } catch (saveError) {
       console.error('[Chat] ❌ Failed to save response:', saveError.message);
       console.error('[Chat] Stack:', saveError.stack);
+    }
+
+    // 10.5 첨부 파일 → 외부 저장소 백업 (로컬 원본은 유지)
+    // 로컬 삭제는 하지 않음 — 대화 기록에서 /api/files/파일명 URL로 참조하므로
+    // TODO: 추후 파일 저장소 URL 치환 + 로컬 정리 설계 필요
+    if (attachments && attachments.length > 0) {
+      (async () => {
+        try {
+          const localCfg = require('../utils/local-config');
+          const fileType = localCfg.getFileStorageType();
+
+          if (fileType !== 'local') {
+            const { createFileMigrationAdapter } = require('./storage');
+            const fileConfig = localCfg.getFileStorageConfig();
+            const adapter = await createFileMigrationAdapter(fileType, fileConfig);
+
+            const os = require('os');
+            const DATA_DIR = process.env.SOUL_DATA_DIR || path.join(os.homedir(), '.soul');
+            const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+
+            for (const att of attachments) {
+              try {
+                const filename = att.url.split('/').pop();
+                const localPath = path.join(UPLOAD_DIR, filename);
+                if (fs.existsSync(localPath)) {
+                  const buffer = fs.readFileSync(localPath);
+                  const remotePath = `images/${new Date().toISOString().slice(0, 7)}/${filename}`;
+                  await adapter.importAll({ [remotePath]: buffer });
+                  console.log(`[FileStorage] 백업 완료: ${remotePath}`);
+                }
+              } catch (uploadErr) {
+                console.error(`[FileStorage] 백업 실패: ${att.name}`, uploadErr.message);
+              }
+            }
+
+            if (adapter.close) await adapter.close();
+          }
+        } catch (err) {
+          console.error('[FileStorage] 첨부파일 처리 실패:', err.message);
+        }
+      })();
     }
 
     // 11. 사용 통계 저장 (비동기, 응답 지연 없음)
@@ -1326,12 +1308,6 @@ ${toolCatalog}`;
       category: 'chat'
     }).catch(err => console.error('Usage stats save error:', err));
 
-    // 11. 주간 요약 자동 트리거 (비동기, 응답 지연 없음)
-    getMemoryManager().then(async manager => {
-      const recentMessages = manager.shortTerm.getRecent(100);
-      manager.middleTerm.checkAndTriggerWeeklySummary(recentMessages)
-        .catch(err => console.error('Weekly summary trigger error:', err));
-    }).catch(err => console.error('Memory manager error:', err));
 
     // 상세 토큰 사용량 (실시간 대시보드용)
     const detailedTokenUsage = {

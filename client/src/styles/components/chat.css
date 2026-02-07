@@ -61,6 +61,22 @@
   line-height: 1.5;
 }
 
+/* 유저 첨부 이미지 (말풍선 바깥) */
+.user-attached-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+  max-width: 70%;
+}
+
+.user-attached-images img {
+  max-width: 240px;
+  max-height: 180px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
 /* 메시지 시간 */
 .chat-message .message-time {
   font-size: 11px;

@@ -45,7 +45,7 @@ class ConversationPipeline {
    *
    * 레벨:
    * - minimal (3턴): 감탄사, 맞장구, 이모지, 단답
-   * - light (8턴): 짧은 질문, 일상 대화 + 메모리 3~5개
+   * - light (15턴): 짧은 질문, 일상 대화
    * - medium (20턴): 보통 대화 + 요약 400tok + 메모리 600tok
    * - full (60턴 캡): 복잡한 질문 + 요약 800tok + 메모리 800tok
    */
@@ -81,7 +81,7 @@ class ConversationPipeline {
 
     // === light: 짧은 질문/요청 (30자 이하) ===
     if (len <= 30) {
-      return { level: 'light', maxMessages: 8, reason: 'short_query' };
+      return { level: 'light', maxMessages: 15, reason: 'short_query' };
     }
 
     // === medium: 나머지 ===
@@ -178,7 +178,6 @@ class ConversationPipeline {
       //   medium:  요약 400tok, 메모리 600tok
       //   full:    요약 800tok, 메모리 800tok
       let sessionSummarySection = '';
-      let memorySection = '';
       const level = earlyContextNeeds.level;
 
       if (level !== 'minimal') {
@@ -191,16 +190,6 @@ class ConversationPipeline {
             sessionSummarySection = await digest.buildContextSummary(summaryBudget);
           }
 
-          // 메모리 주입 (light/medium/full)
-          const memoryConfig = {
-            light:  { count: 5, tokens: 300 },
-            medium: { count: 8, tokens: 600 },
-            full:   { count: 10, tokens: 800 }
-          };
-          const mc = memoryConfig[level];
-          if (mc) {
-            memorySection = await digest.buildMemoryContext(mc.count, mc.tokens);
-          }
         } catch (e) {
           console.warn('[Pipeline] Context enrichment failed:', e.message);
         }
@@ -214,9 +203,6 @@ class ConversationPipeline {
       }
       if (sessionSummarySection) {
         contextContent += '\n\n' + sessionSummarySection;
-      }
-      if (memorySection) {
-        contextContent += '\n\n' + memorySection;
       }
       contextContent += messageTimeline;
       contextContent += '\n</context>';
@@ -577,7 +563,7 @@ class ConversationPipeline {
 
       // 2. 어시스턴트 응답 저장 (사용자 메시지보다 최소 1ms 뒤)
       // TTS 태그([laughter] 등)는 음성 전용이므로 메모리에서 제거
-      const cleanedResponse = assistantResponse.replace(/\[laughter\]/gi, '').replace(/\s{2,}/g, ' ').trim();
+      const cleanedResponse = assistantResponse.replace(/\[laughter\]/gi, '').replace(/ {2,}/g, ' ').trim();
       const assistantTimestamp = new Date(userTimestamp.getTime() + 1);
       await this.memoryManager.addMessage({
         role: 'assistant',

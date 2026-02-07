@@ -83,9 +83,10 @@ class AIService {
           skippedImages++;
           continue;
         }
+        const dataUrl = `data:${doc.media_type};base64,${doc.data}`;
         contentParts.push({
           type: 'image_url',
-          image_url: { url: `data:${doc.media_type};base64,${doc.data}` }
+          image_url: { url: dataUrl }
         });
       } else if (doc.type === 'text') {
         contentParts.push({ type: 'text', text: `[${doc.title}]\n${doc.content}` });
@@ -109,7 +110,7 @@ class AIService {
       text: typeof originalContent === 'string' ? originalContent : JSON.stringify(originalContent)
     });
     apiMessages[lastUserIdx].content = contentParts;
-    console.log(`[${serviceName}] Documents attached: ${documents.length - skippedImages} items`);
+    console.log(`[${serviceName}] Documents attached: ${contentParts.length - 1} files, vision=${supportsVision}`);
   }
 }
 
@@ -1087,6 +1088,7 @@ class OpenAIService extends AIService {
       }));
     }
 
+    console.log(`[OpenAI] Request: ${this.baseUrl}/chat/completions model=${requestBody.model}`);
     let response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -1100,6 +1102,7 @@ class OpenAIService extends AIService {
 
     // 에러 응답 처리
     if (data.error) {
+      console.error(`[OpenAI] Error response:`, JSON.stringify(data.error));
       throw new Error(data.error.message || 'OpenAI API error');
     }
 
@@ -2571,6 +2574,300 @@ class DeepSeekService extends OpenAIService {
   }
 }
 
+/**
+ * Alibaba Qwen (DashScope OpenAI 호환 API)
+ * 비전 모델 + thinking 모델 지원
+ */
+class QwenService extends OpenAIService {
+  constructor(apiKey, modelName = 'qwen-max') {
+    super(apiKey, modelName);
+    this.baseUrl = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
+  }
+
+  /**
+   * chat() 오버라이드 — thinking 모델 지원
+   * thinking: true 시 enable_thinking 파라미터 추가 + reasoning_content 반환
+   */
+  async chat(messages, options = {}) {
+    const { thinking = false } = options;
+    // thinking 아니면 부모(OpenAIService) 그대로
+    if (!thinking) return super.chat(messages, options);
+
+    const {
+      systemPrompt = null,
+      maxTokens = 4096,
+      temperature = 1.0,
+      tools = null,
+      toolExecutor = null,
+      documents = null,
+    } = options;
+
+    const apiMessages = messages.filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()));
+    if (systemPrompt) {
+      const thinkingDirective = '\n\n[Thinking Process Instruction] You may reason in English internally to maintain your logical depth. However, every single token of your output within the <think> tags must be displayed in KOREAN. Translate your thoughts into Korean in real-time as you generate them. Never output raw English text.';
+      apiMessages.unshift({ role: 'system', content: systemPrompt + thinkingDirective });
+    }
+
+    // 이미지/파일 첨부 (Qwen VL은 content 배열 지원)
+    AIService.attachDocumentsOpenAI(apiMessages, documents, 'Qwen');
+
+    const requestBody = {
+      model: this.modelName,
+      messages: apiMessages,
+      max_tokens: maxTokens,
+      enable_thinking: true,
+      thinking_budget: 30,
+      repetition_penalty: 1.2,
+      presence_penalty: 0.5,
+      frequency_penalty: 0.3,
+    };
+    // thinking 모드에서는 temperature 설정 안 함 (일부 모델 제한)
+
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description || '',
+          parameters: t.input_schema || { type: 'object', properties: {} }
+        }
+      }));
+    }
+
+    console.log(`[Qwen] Request: model=${requestBody.model}, thinking=true`);
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    const data = await response.json();
+    if (data.error) throw new Error(data.error.message || 'Qwen API error');
+    if (!data.choices?.[0]) throw new Error('Invalid response from Qwen API');
+
+    const msg = data.choices[0].message;
+    let text = msg.content || '';
+    if (msg.reasoning_content) {
+      text = `<thinking>${msg.reasoning_content}</thinking>\n\n${text}`;
+    }
+
+    const usage = {
+      input_tokens: data.usage?.prompt_tokens || 0,
+      output_tokens: data.usage?.completion_tokens || 0
+    };
+
+    return { text, usage };
+  }
+
+  /**
+   * streamChat — 스트리밍 + thinking(reasoning_content) 지원
+   */
+  async streamChat(messages, options = {}, onChunk) {
+    const {
+      systemPrompt = null,
+      maxTokens = 4096,
+      temperature = 1.0,
+      tools = null,
+      toolExecutor = null,
+      thinking = false,
+      documents = null,
+    } = options;
+
+    const apiMessages = messages.filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()));
+    if (systemPrompt) {
+      const thinkingDirective = thinking
+        ? '\n\n[Thinking Process Instruction] You may reason in English internally to maintain your logical depth. However, every single token of your output within the <think> tags must be displayed in KOREAN. Translate your thoughts into Korean in real-time as you generate them. Never output raw English text.'
+        : '';
+      apiMessages.unshift({ role: 'system', content: systemPrompt + thinkingDirective });
+    }
+
+    // 이미지/파일 첨부 (Qwen VL은 content 배열 지원)
+    AIService.attachDocumentsOpenAI(apiMessages, documents, 'Qwen');
+
+    const requestBody = {
+      model: this.modelName,
+      messages: apiMessages,
+      max_tokens: maxTokens,
+      stream: true,
+    };
+
+    const isThinkingModel = this.modelName.includes('thinking');
+    requestBody.stream_options = { include_usage: true };
+
+    if (thinking) {
+      requestBody.enable_thinking = true;
+      requestBody.thinking_budget = 30;
+      requestBody.repetition_penalty = 1.2;
+      requestBody.presence_penalty = 0.5;
+      requestBody.frequency_penalty = 0.3;
+    } else {
+      // thinking 모델이라도 명시적으로 끄기 (안 보내면 기본 true일 수 있음)
+      if (isThinkingModel) {
+        requestBody.enable_thinking = false;
+      }
+      requestBody.temperature = temperature;
+    }
+
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description || '',
+          parameters: t.input_schema || { type: 'object', properties: {} }
+        }
+      }));
+    }
+
+    console.log(`[Qwen Stream] Request: model=${requestBody.model}, thinking=${thinking}`);
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Qwen API error (${response.status}): ${errText}`);
+    }
+
+    let fullContent = '';
+    let fullReasoning = '';
+    let usage = { input_tokens: 0, output_tokens: 0 };
+    let toolCallsBuffer = {};
+    let finishReason = null;
+
+    const reader = response.body;
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    for await (const chunk of reader) {
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (data === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta;
+          finishReason = parsed.choices?.[0]?.finish_reason || finishReason;
+
+          if (delta) {
+            if (delta.reasoning_content) {
+              // 모델이 생각하면 설정과 무관하게 보여줌 (어차피 시간 소비됨, 숨기면 낭비)
+              fullReasoning += delta.reasoning_content;
+              if (onChunk) onChunk('thinking', delta.reasoning_content);
+            }
+            if (delta.content) {
+              fullContent += delta.content;
+              if (onChunk) onChunk('content', delta.content);
+            }
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index;
+                if (!toolCallsBuffer[idx]) {
+                  toolCallsBuffer[idx] = { id: tc.id || '', name: tc.function?.name || '', arguments: '' };
+                }
+                if (tc.id) toolCallsBuffer[idx].id = tc.id;
+                if (tc.function?.name) toolCallsBuffer[idx].name = tc.function.name;
+                if (tc.function?.arguments) toolCallsBuffer[idx].arguments += tc.function.arguments;
+              }
+            }
+          }
+
+          if (parsed.usage) {
+            usage = {
+              input_tokens: parsed.usage.prompt_tokens || 0,
+              output_tokens: parsed.usage.completion_tokens || 0
+            };
+          }
+        } catch (e) {
+          // JSON 파싱 실패 — 무시
+        }
+      }
+    }
+
+    // 도구 호출 처리
+    const toolCallsList = Object.values(toolCallsBuffer);
+    if (toolCallsList.length > 0 && toolExecutor) {
+      if (onChunk) onChunk('tool_start', toolCallsList.map(t => t.name));
+
+      apiMessages.push({
+        role: 'assistant',
+        content: fullContent || null,
+        tool_calls: toolCallsList.map(tc => ({
+          id: tc.id,
+          type: 'function',
+          function: { name: tc.name, arguments: tc.arguments }
+        }))
+      });
+
+      for (const tc of toolCallsList) {
+        const input = JSON.parse(tc.arguments || '{}');
+        console.log(`[Qwen Stream Tool] Executing: ${tc.name}`, input);
+        const result = await toolExecutor(tc.name, input);
+        apiMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: typeof result === 'string' ? result : JSON.stringify(result)
+        });
+      }
+
+      if (onChunk) onChunk('tool_end', null);
+
+      // 도구 결과로 최종 응답 (non-streaming, thinking/stream_options 제거)
+      requestBody.messages = apiMessages;
+      requestBody.stream = false;
+      delete requestBody.stream_options;
+      delete requestBody.enable_thinking;
+      delete requestBody.thinking_budget;
+      if (!requestBody.temperature) requestBody.temperature = 0.7;
+      const finalResp = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+      const finalData = await finalResp.json();
+      if (finalData.error) throw new Error(finalData.error.message);
+
+      const finalMsg = finalData.choices?.[0]?.message;
+      fullContent = finalMsg?.content || '';
+      if (finalMsg?.reasoning_content) {
+        fullReasoning += finalMsg.reasoning_content;
+      }
+      usage = {
+        input_tokens: (usage.input_tokens || 0) + (finalData.usage?.prompt_tokens || 0),
+        output_tokens: (usage.output_tokens || 0) + (finalData.usage?.completion_tokens || 0)
+      };
+
+      if (onChunk) onChunk('content_replace', fullContent);
+    }
+
+    // 최종 텍스트 조합
+    let text = fullContent;
+    if (fullReasoning) {
+      console.log(`[Qwen Stream] Reasoning length: ${fullReasoning.length}`);
+      text = `<thinking>${fullReasoning}</thinking>\n\n${text}`;
+    }
+
+    if (onChunk) onChunk('done', { text, usage });
+    return { text, usage };
+  }
+}
+
 class FireworksAIService extends AIService {
   constructor(apiKey, modelName = 'accounts/fireworks/models/llama-v3p3-70b-instruct') {
     super(apiKey);
@@ -3273,6 +3570,15 @@ class AIServiceFactory {
         break;
       }
 
+      case 'qwen': {
+        const apiKey = await this.getApiKey('qwen');
+        if (!apiKey) {
+          throw new Error('QWEN_API_KEY not configured. Please save it in Settings.');
+        }
+        serviceInstance = new QwenService(apiKey, model);
+        break;
+      }
+
       case 'fireworks': {
         const apiKey = await this.getApiKey('fireworks');
         if (!apiKey) {
@@ -3416,6 +3722,18 @@ class AIServiceFactory {
           if (!deepseekResponse.ok) {
             const errorData = await deepseekResponse.json().catch(() => ({}));
             throw new Error(errorData.error?.message || 'DeepSeek API 인증 실패');
+          }
+
+          return { valid: true, message: 'API 키가 유효합니다' };
+
+        case 'qwen':
+          const qwenResponse = await fetch('https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models', {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+
+          if (!qwenResponse.ok) {
+            const errorData = await qwenResponse.json().catch(() => ({}));
+            throw new Error(errorData.error?.message || 'Qwen API 인증 실패');
           }
 
           return { valid: true, message: 'API 키가 유효합니다' };
@@ -3688,6 +4006,33 @@ class AIServiceFactory {
           ];
           return { success: true, models: deepseekModels };
 
+        case 'qwen':
+          // DashScope API에서 모델 목록 조회
+          try {
+            const qwenListRes = await fetch('https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models', {
+              headers: { 'Authorization': `Bearer ${apiKey}` }
+            });
+            if (qwenListRes.ok) {
+              const qwenData = await qwenListRes.json();
+              const qwenModels = (qwenData.data || []).map(m => ({
+                id: m.id,
+                name: m.id,
+                description: m.owned_by || 'Alibaba Qwen'
+              }));
+              if (qwenModels.length > 0) {
+                return { success: true, models: qwenModels };
+              }
+            }
+          } catch (e) { /* fallback to hardcoded */ }
+          // fallback 고정 목록
+          return { success: true, models: [
+            { id: 'qwen-max', name: 'Qwen Max', description: '최고 성능' },
+            { id: 'qwen-plus', name: 'Qwen Plus', description: '균형' },
+            { id: 'qwen-turbo', name: 'Qwen Turbo', description: '빠름' },
+            { id: 'qwen-vl-max', name: 'Qwen VL Max', description: '비전 (최고 성능)' },
+            { id: 'qwen-vl-plus', name: 'Qwen VL Plus', description: '비전 (균형)' },
+          ]};
+
         case 'fireworks':
           // Fireworks AI 모델 목록
           const fireworksResponse = await fetch('https://api.fireworks.ai/inference/v1/models', {
@@ -3833,6 +4178,15 @@ class AIServiceFactory {
           cost = (inputTokens * 0.00125 + outputTokens * 0.005) / 1000;
         } else {
           cost = (inputTokens * 0.000075 + outputTokens * 0.0003) / 1000;
+        }
+      } else if (lowerServiceId === 'qwen') {
+        // Qwen 가격 (DashScope per 1K tokens)
+        if (lowerModelId.includes('max') || lowerModelId.includes('vl-max')) {
+          cost = (inputTokens * 0.008 + outputTokens * 0.02) / 1000;
+        } else if (lowerModelId.includes('plus') || lowerModelId.includes('vl-plus')) {
+          cost = (inputTokens * 0.004 + outputTokens * 0.008) / 1000;
+        } else {
+          cost = (inputTokens * 0.001 + outputTokens * 0.002) / 1000;
         }
       }
       // ollama는 무료

@@ -84,6 +84,18 @@ const builtinTools = [
       },
       required: ['ruleId']
     }
+  },
+  {
+    name: 'execute_command',
+    description: '서버에서 쉘 명령어 실행. 결과는 터미널에 실시간 표시됨. 위험한 명령(rm -rf /, shutdown 등)은 거부할 것.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: '실행할 쉘 명령어' },
+        timeout: { type: 'number', description: '타임아웃(초)', default: 30 }
+      },
+      required: ['command']
+    }
   }
 ];
 
@@ -104,6 +116,8 @@ async function executeBuiltinTool(toolName, input) {
       return await addMyRule(input);
     case 'delete_my_rule':
       return await deleteMyRule(input);
+    case 'execute_command':
+      return await executeCommandTool(input);
     default:
       return { error: `Unknown builtin tool: ${toolName}` };
   }
@@ -622,6 +636,42 @@ async function deleteMyRule({ ruleId }) {
   } catch (error) {
     console.error('[delete_my_rule] Error:', error);
     return { error: error.message };
+  }
+}
+
+/**
+ * execute_command 구현
+ * 터미널 서비스의 PTY에서 명령어 실행, 결과 반환
+ * 캔버스 터미널에도 실시간으로 표시됨
+ */
+async function executeCommandTool({ command, timeout = 30 }) {
+  try {
+    const terminalService = require('./terminal-service');
+
+    if (!terminalService.isAvailable()) {
+      return { error: 'node-pty를 사용할 수 없습니다' };
+    }
+
+    // 기본 세션 사용 (없으면 생성)
+    const session = terminalService.getOrCreateSession({ sessionId: 'default' });
+
+    // 명령어 실행 + 결과 대기
+    const output = await terminalService.executeCommand(session.id, command, timeout * 1000);
+
+    // 결과가 너무 길면 잘라서 반환 (AI 컨텍스트 절약)
+    const maxLen = 3000;
+    const truncated = output.length > maxLen
+      ? output.slice(0, maxLen) + `\n...(${output.length - maxLen}자 생략)`
+      : output;
+
+    return {
+      success: true,
+      command,
+      output: truncated
+    };
+  } catch (error) {
+    console.error('[execute_command] Error:', error);
+    return { error: error.message, command };
   }
 }
 

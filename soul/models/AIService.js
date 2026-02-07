@@ -116,6 +116,20 @@ async function initializeBuiltinServices() {
       ],
       isActive: 0,
       config: {}
+    },
+    {
+      serviceId: 'qwen',
+      name: 'Alibaba Qwen',
+      baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      models: [
+        { id: 'qwen-max', name: 'Qwen Max', contextWindow: 32768 },
+        { id: 'qwen-plus', name: 'Qwen Plus', contextWindow: 131072 },
+        { id: 'qwen-turbo', name: 'Qwen Turbo', contextWindow: 1000000 },
+        { id: 'qwen-vl-max', name: 'Qwen VL Max', contextWindow: 32768 },
+        { id: 'qwen-vl-plus', name: 'Qwen VL Plus', contextWindow: 131072 }
+      ],
+      isActive: 0,
+      config: {}
     }
   ];
 

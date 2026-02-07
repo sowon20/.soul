@@ -963,3 +963,4 @@ router.post('/notion/test', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.createFileMigrationAdapter = createFileMigrationAdapter;

@@ -18,31 +18,11 @@ const ProfileModel = require('../models/Profile');
 class TimeAwarePromptBuilder {
   constructor() {
     this.toneGuides = {
-      새벽: {
-        tone: '조용하고 부드러운',
-        tips: ['이 시간에 깨어있는 이유 궁금해할 수 있음', '잠 못 자는 건지 체크', '목소리 톤 낮추듯이'],
-        greeting: null  // 새벽엔 특별 인사 없음
-      },
-      아침: {
-        tone: '상쾌하고 활기찬',
-        tips: ['하루 시작 응원', '오늘 계획 물어볼 수 있음'],
-        greeting: '좋은 아침!'
-      },
-      오후: {
-        tone: '편안하고 집중된',
-        tips: ['점심 먹었는지', '오후 슬럼프 공감'],
-        greeting: null
-      },
-      저녁: {
-        tone: '따뜻하고 여유로운',
-        tips: ['하루 어땠는지', '저녁 뭐 먹었는지', '퇴근했는지'],
-        greeting: '수고했어~'
-      },
-      밤: {
-        tone: '차분하고 포근한',
-        tips: ['늦게까지 뭐하는지', '잘 준비하라고', '내일 일정 체크'],
-        greeting: null
-      }
+      새벽: { tone: '새벽', greeting: null },
+      아침: { tone: '아침', greeting: null },
+      오후: { tone: '오후', greeting: null },
+      저녁: { tone: '저녁', greeting: null },
+      밤: { tone: '밤', greeting: null }
     };
 
     this.silenceMessages = {
@@ -96,13 +76,7 @@ class TimeAwarePromptBuilder {
     parts.push(`## 시간 정보
 현재: ${dateStr} ${localTime.formatted} (${timeOfDay}, ${localTime.dayOfWeek})`);
 
-    // 2. 톤 가이드
-    parts.push(`## 대화 톤 가이드
-- 현재 시간대: ${timeOfDay}
-- 권장 톤: ${toneGuide.tone}
-- 참고: ${toneGuide.tips.join(', ')}`);
-
-    // 3. 대화 맥락
+    // 2. 대화 맥락
     if (silenceInfo || sessionDuration > 0) {
       let contextParts = ['## 대화 맥락'];
       

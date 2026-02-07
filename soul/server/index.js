@@ -1,4 +1,13 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
+
+// 프로세스 크래시 방지 — 에러 로그만 남기고 서버 유지
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught Exception:', err.message);
+  console.error(err.stack);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled Rejection:', reason);
+});
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -171,9 +180,54 @@ io.on('connection', (socket) => {
   console.log(`🔌 Client connected: ${socket.id}`);
   connectedClients.set(socket.id, { connectedAt: new Date() });
 
+  // ── 터미널 이벤트 ──
+  const terminalService = require('../utils/terminal-service');
+
+  // 터미널 세션 시작 (캔버스 열 때)
+  socket.on('terminal:start', ({ sessionId, cols, rows } = {}) => {
+    try {
+      const session = terminalService.getOrCreateSession({
+        sessionId: sessionId || 'default',
+        cols: cols || 80,
+        rows: rows || 24
+      });
+      terminalService.attachSocket(session.id, socket.id);
+
+      // 기존 버퍼 전송 (재연결 시 복원)
+      const buffer = terminalService.getBuffer(session.id);
+      socket.emit('terminal:started', {
+        sessionId: session.id,
+        buffer,
+        alive: session.alive
+      });
+    } catch (e) {
+      socket.emit('terminal:error', { message: e.message });
+    }
+  });
+
+  // 사용자 직접 입력 (키보드 → PTY)
+  socket.on('terminal:input', ({ sessionId, data }) => {
+    try {
+      terminalService.writeToSession(sessionId || 'default', data);
+    } catch (e) {
+      // 세션 없으면 무시
+    }
+  });
+
+  // 터미널 크기 변경
+  socket.on('terminal:resize', ({ sessionId, cols, rows }) => {
+    terminalService.resizeSession(sessionId || 'default', cols, rows);
+  });
+
+  // 터미널 세션 분리 (캔버스 닫을 때 — PTY는 유지)
+  socket.on('terminal:detach', ({ sessionId }) => {
+    terminalService.detachSocket(sessionId || 'default', socket.id);
+  });
+
   socket.on('disconnect', () => {
     console.log(`🔌 Client disconnected: ${socket.id}`);
     connectedClients.delete(socket.id);
+    terminalService.detachSocketFromAll(socket.id);
   });
 });
 

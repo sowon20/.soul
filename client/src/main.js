@@ -1712,15 +1712,18 @@ class SoulApp {
    * 독 아이템 클릭 핸들러
    */
   handleDockClick(item) {
+    // 터미널은 항상 내장 터미널로 열기 (MCP URL 무시)
+    if (item.icon === 'terminal-icon.webp' || item.id === 'terminal' || item.name === 'Terminal') {
+      this.openTerminalPanel();
+      return;
+    }
+
     if (item.url) {
       // MCP UI가 있으면 캔버스에 열기
       this.openCanvasPanel(item.id, item.url, item.name);
     } else {
       // 특수 기능
       switch (item.id) {
-        case 'terminal':
-          console.log('터미널 열기 (미구현)');
-          break;
         case 'mic':
         case 'voice-input':
           this.openVoiceInputPanel();
@@ -2231,6 +2234,11 @@ class SoulApp {
       activeIframe = document.getElementById('canvas-settings');
     } else if (type === 'voice-input') {
       activeIframe = document.getElementById('canvas-voice-input');
+    } else if (type === 'terminal') {
+      activeIframe = document.getElementById('canvas-terminal');
+      // 터미널 활성화 시 입력창 포커스
+      const termInput = activeIframe?.querySelector('#termInput');
+      if (termInput) termInput.focus();
     } else {
       activeIframe = document.getElementById(`canvas-iframe-${type}`);
     }
@@ -2256,6 +2264,15 @@ class SoulApp {
       iframe = document.getElementById('canvas-settings');
     } else if (type === 'voice-input') {
       iframe = document.getElementById('canvas-voice-input');
+    } else if (type === 'terminal') {
+      iframe = document.getElementById('canvas-terminal');
+      // 소켓 핸들러 정리 (PTY는 백그라운드 유지)
+      this._cleanupTerminalSocket();
+      this.socketClient?.socket?.emit('terminal:detach', { sessionId: 'default' });
+      if (this._termSocketCheck) { clearInterval(this._termSocketCheck); this._termSocketCheck = null; }
+      this._terminalOutput = null;
+      this._terminalAddLine = null;
+      this._terminalAddCommand = null;
     } else {
       iframe = document.getElementById(`canvas-iframe-${type}`);
     }
@@ -2299,8 +2316,7 @@ class SoulApp {
         if (textEl) textEl.textContent = data.status === 'unreachable' ? '서버에 연결할 수 없습니다' : '서버 응답 오류';
       }
     } catch {
-      const overlay = document.getElementById(`mcp-overlay-${type}`);
-      if (overlay) overlay.style.display = 'flex';
+      // Soul 서버 자체가 죽은 경우 — MCP 오버레이 안 띄움 (서버 복구 시 자동 재체크)
     }
   }
 
@@ -2333,6 +2349,227 @@ class SoulApp {
         <span class="canvas-tab-close" onclick="event.stopPropagation(); soulApp.closeCanvasTab('${tab.type}')">×</span>
       </div>
     `).join('');
+  }
+
+  // ============================================
+  // Terminal (내장 터미널)
+  // ============================================
+
+  /**
+   * 터미널 패널 열기
+   * - xterm.js로 캔버스에 터미널 화면 표시
+   * - Socket.io로 서버 PTY와 실시간 연결
+   * - 닫아도 PTY 백그라운드 유지, 다시 열면 버퍼 복원
+   */
+  openTerminalPanel() {
+    const panel = document.getElementById('canvasPanel');
+    const content = document.getElementById('canvasContent');
+    if (!panel || !content) return;
+
+    // 이미 열려있으면 활성화만
+    if (this.canvasTabs.find(t => t.type === 'terminal')) {
+      this.activateCanvasTab('terminal');
+      panel.classList.remove('hide');
+      this.movCanvasPanelForMobile();
+      return;
+    }
+
+    // Fira Code 폰트 로드
+    if (!document.getElementById('firacode-font')) {
+      const link = document.createElement('link');
+      link.id = 'firacode-font';
+      link.rel = 'stylesheet';
+      link.href = 'https://cdn.jsdelivr.net/npm/firacode@6.2.0/distr/fira_code.css';
+      document.head.appendChild(link);
+    }
+
+    // HTML 기반 터미널 UI (SSH Commander 스타일)
+    const termContainer = document.createElement('div');
+    termContainer.id = 'canvas-terminal';
+    termContainer.className = 'canvas-iframe';
+    termContainer.style.cssText = 'position: absolute; top: 48px; left: 0; right: 0; bottom: 0; height: auto; overflow: hidden; display: flex; flex-direction: column; padding: 8px;';
+    termContainer.innerHTML = `
+      <div class="term-status">
+        <span><span class="term-status-dot" id="termStatusDot"></span><span id="termStatusText">연결 중...</span></span>
+        <span id="termHostInfo"></span>
+      </div>
+      <div class="term-output" id="termOutput">
+        <div class="term-output-line welcome">Hello!</div>
+<div class="term-cursor-line" id="termCursorLine"><span class="term-prompt">$</span> <span class="term-cursor"></span></div>
+      </div>
+    `;
+    content.appendChild(termContainer);
+
+    const outputEl = termContainer.querySelector('#termOutput');
+    const cursorLine = termContainer.querySelector('#termCursorLine');
+    const statusDot = termContainer.querySelector('#termStatusDot');
+    const statusText = termContainer.querySelector('#termStatusText');
+    const hostInfo = termContainer.querySelector('#termHostInfo');
+
+    // 컨테이너에서 직접 키보드 입력 받기
+    termContainer.setAttribute('tabindex', '0');
+    termContainer.style.outline = 'none';
+    let currentInput = '';
+
+    const stripAnsi = (str) => str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
+
+    const addLine = (text, type = 'success') => {
+      const clean = stripAnsi(text);
+      if (!clean.trim()) return;
+      const div = document.createElement('div');
+      div.className = `term-output-line ${type}`;
+      div.textContent = clean;
+      outputEl.insertBefore(div, cursorLine);
+      outputEl.scrollTop = outputEl.scrollHeight;
+    };
+
+    const addCommand = (cmd, fromAI = false) => {
+      const div = document.createElement('div');
+      div.className = 'term-output-line command';
+      div.innerHTML = `<span class="term-prompt">${this._escapeHtml(currentPrompt)}</span> ${this._escapeHtml(cmd)}${fromAI ? '<span class="term-ai-badge">AI</span>' : ''}`;
+      outputEl.insertBefore(div, cursorLine);
+      outputEl.scrollTop = outputEl.scrollHeight;
+    };
+
+    let currentPrompt = '$';
+    const updateCursorLine = () => {
+      cursorLine.innerHTML = `<span class="term-prompt">${this._escapeHtml(currentPrompt)}</span> ${this._escapeHtml(currentInput)}<span class="term-cursor"></span>`;
+    };
+
+    this._terminalOutput = outputEl;
+    this._terminalAddLine = addLine;
+    this._terminalAddCommand = addCommand;
+
+    // 탭 등록 + 활성화
+    this.canvasTabs.push({ type: 'terminal', title: '터미널' });
+    this.activateCanvasTab('terminal');
+    panel.classList.remove('hide');
+    this.movCanvasPanelForMobile();
+
+    // 소켓 연결 (없으면 대기)
+    const connectTerminal = (socket) => {
+      console.log('🖥️ Terminal: emitting terminal:start');
+      socket.emit('terminal:start', { sessionId: 'default', cols: 80, rows: 24 });
+
+      const parsePrompt = (text) => {
+        const clean = stripAnsi(text).replace(/\r/g, '').trim();
+        const m = clean.match(/(\w+@\w+)\s+(.*?)\s*[%$#>]\s*$/);
+        if (m) {
+          hostInfo.textContent = m[1];
+          currentPrompt = `${m[1]} ${m[2] || '~'} $`;
+          updateCursorLine();
+          return true;
+        }
+        return false;
+      };
+
+      const startHandler = ({ sessionId, buffer, alive }) => {
+        statusDot.classList.add('online');
+        statusText.textContent = '연결됨';
+        hostInfo.textContent = 'local shell';
+        console.log('🖥️ Terminal buffer:', JSON.stringify(buffer));
+        if (buffer) parsePrompt(buffer);
+        // buffer가 비어있으면 쉘 프롬프트가 아직 안 나온 것 — output 이벤트에서 잡힘
+      };
+      socket.on('terminal:started', startHandler);
+
+      let outputBuffer = '';
+      const outputHandler = ({ data }) => {
+        outputBuffer += data;
+        clearTimeout(this._termOutputTimer);
+        this._termOutputTimer = setTimeout(() => {
+          const lines = stripAnsi(outputBuffer).split('\n');
+          for (const line of lines) {
+            const trimmed = line.replace(/\r/g, '').trim();
+            if (!trimmed) continue;
+            // 프롬프트 패턴 감지 → 현재 위치 업데이트
+            if (/^(%\s+)?\w+@\w+.*[%$#>]\s*$/.test(trimmed)) {
+              parsePrompt(trimmed);
+              continue;
+            }
+            addLine(trimmed);
+          }
+          outputBuffer = '';
+        }, 50);
+      };
+      socket.on('terminal:output', outputHandler);
+
+      const exitHandler = ({ exitCode }) => {
+        addLine(`[프로세스 종료: ${exitCode}]`, 'info');
+        statusDot.classList.remove('online');
+        statusText.textContent = '종료됨';
+      };
+      socket.on('terminal:exit', exitHandler);
+
+      this._terminalSocketHandlers = { started: startHandler, output: outputHandler, exit: exitHandler };
+
+      // 키보드 입력 (컨테이너에서 직접)
+      termContainer.addEventListener('click', () => termContainer.focus());
+      termContainer.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const cmd = currentInput;
+          currentInput = '';
+          updateCursorLine();
+          if (cmd.trim()) {
+            addCommand(cmd);
+            socket.emit('terminal:input', { sessionId: 'default', data: cmd + '\n' });
+          }
+        } else if (e.key === 'Backspace') {
+          e.preventDefault();
+          currentInput = currentInput.slice(0, -1);
+          updateCursorLine();
+        } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
+          currentInput += e.key;
+          updateCursorLine();
+        }
+      });
+
+      termContainer.focus();
+    };
+
+    const socket = this.socketClient?.socket;
+    console.log('🖥️ Terminal: socket check', { exists: !!socket, connected: socket?.connected, id: socket?.id });
+    if (socket?.connected) {
+      connectTerminal(socket);
+    } else {
+      statusText.textContent = '소켓 대기 중...';
+      const checkSocket = setInterval(() => {
+        const s = this.socketClient?.socket;
+        if (s?.connected) {
+          clearInterval(checkSocket);
+          console.log('🖥️ Terminal: socket ready', s.id);
+          connectTerminal(s);
+        }
+      }, 500);
+      this._termSocketCheck = checkSocket;
+    }
+  }
+
+  _escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  /**
+   * 터미널 소켓 핸들러 정리
+   */
+  _cleanupTerminalSocket() {
+    const socket = this.socketClient?.socket;
+    if (socket && this._terminalSocketHandlers) {
+      if (this._terminalSocketHandlers.started) {
+        socket.off('terminal:started', this._terminalSocketHandlers.started);
+      }
+      if (this._terminalSocketHandlers.output) {
+        socket.off('terminal:output', this._terminalSocketHandlers.output);
+      }
+      if (this._terminalSocketHandlers.exit) {
+        socket.off('terminal:exit', this._terminalSocketHandlers.exit);
+      }
+      this._terminalSocketHandlers = null;
+    }
   }
 
   // ============================================
@@ -2684,30 +2921,65 @@ class SoulApp {
       fileInput.value = ''; // 같은 파일 다시 선택 가능하게
     });
 
-    // 드래그 앤 드롭
+    // 드래그 앤 드롭 — 대화 영역 + 입력창 전체
+    const chatContainer = document.getElementById('chatContainer');
     const chatForm = document.getElementById('chatForm');
-    if (chatForm) {
-      chatForm.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        chatForm.classList.add('drag-over');
-      });
+    const dropTargets = [chatContainer, chatForm].filter(Boolean);
 
-      chatForm.addEventListener('dragleave', (e) => {
+    for (const target of dropTargets) {
+      target.addEventListener('dragover', (e) => {
         e.preventDefault();
-        chatForm.classList.remove('drag-over');
+        e.dataTransfer.dropEffect = 'copy';
+        this._showDropOverlay();
       });
-
-      chatForm.addEventListener('drop', (e) => {
+      target.addEventListener('dragleave', (e) => {
+        if (!e.relatedTarget || !target.contains(e.relatedTarget)) {
+          this._hideDropOverlay();
+        }
+      });
+      target.addEventListener('drop', (e) => {
         e.preventDefault();
-        chatForm.classList.remove('drag-over');
+        this._hideDropOverlay();
         const files = Array.from(e.dataTransfer.files);
+        if (files.length > 0) this.addAttachments(files);
+      });
+    }
+
+    // 클립보드 붙여넣기 (Cmd+V로 이미지 첨부)
+    const messageInput = document.getElementById('messageInput');
+    if (messageInput) {
+      messageInput.addEventListener('paste', (e) => {
+        const items = Array.from(e.clipboardData?.items || []);
+        const files = items
+          .filter(item => item.kind === 'file')
+          .map(item => item.getAsFile())
+          .filter(Boolean);
         if (files.length > 0) {
+          e.preventDefault();
           this.addAttachments(files);
         }
       });
     }
 
     console.log('✅ 첨부 핸들러 초기화 완료');
+  }
+
+  _showDropOverlay() {
+    let overlay = document.getElementById('dropOverlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'dropOverlay';
+      overlay.className = 'drag-overlay';
+      overlay.innerHTML = '<span class="drag-overlay-text">파일을 놓으세요</span>';
+      const container = document.getElementById('chatContainer');
+      if (container) container.appendChild(overlay);
+    }
+    overlay.style.display = 'flex';
+  }
+
+  _hideDropOverlay() {
+    const overlay = document.getElementById('dropOverlay');
+    if (overlay) overlay.style.display = 'none';
   }
 
   /**

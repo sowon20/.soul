@@ -299,6 +299,23 @@ class SoulSocketClient {
       toolStatus = document.createElement('div');
       toolStatus.className = 'tool-execution-status';
 
+      // 스트리밍 요소 안에 넣기 (thinking 아래, content 위에 고정)
+      const streamingEl = document.querySelector('.chat-message.assistant.streaming');
+      if (streamingEl) {
+        const messageContent = streamingEl.querySelector('.message-content');
+        if (messageContent) {
+          const thinkingContainer = messageContent.querySelector('.ai-thinking-container');
+          if (thinkingContainer && thinkingContainer.nextSibling) {
+            messageContent.insertBefore(toolStatus, thinkingContainer.nextSibling);
+          } else if (thinkingContainer) {
+            messageContent.appendChild(toolStatus);
+          } else {
+            messageContent.insertBefore(toolStatus, messageContent.firstChild);
+          }
+          return toolStatus;
+        }
+      }
+
       const typingIndicator = document.querySelector('.typing-indicator');
       if (typingIndicator) {
         typingIndicator.parentNode.insertBefore(toolStatus, typingIndicator);
@@ -443,7 +460,8 @@ class SoulSocketClient {
       'send_message': '메시지 전송',
       'schedule_message': '메시지 예약',
       'cancel_scheduled_message': '예약 취소',
-      'list_scheduled_messages': '예약 목록'
+      'list_scheduled_messages': '예약 목록',
+      'execute_command': '명령 실행'
     };
     return map[toolName] || toolName;
   }
