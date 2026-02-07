@@ -12,6 +12,7 @@ class SoulSocketClient {
     this._toolExecutions = []; // 도구 실행 데이터 메모리 저장소
     this._toolNeeds = []; // {need} 요청 내용
     this._toolsSelected = []; // 알바가 선택한 도구 이름
+    this._streamCallback = null; // 스트리밍 콜백
   }
 
   /**
@@ -103,6 +104,28 @@ class SoulSocketClient {
       console.log('🔧 Tool end:', data);
       this._handleToolEnd(data);
     });
+
+    // 스트리밍 이벤트
+    this.socket.on('stream_start', () => {
+      this._streaming = true;
+      if (this._streamCallback) this._streamCallback('start', null);
+    });
+
+    this.socket.on('stream_chunk', (data) => {
+      if (this._streamCallback) this._streamCallback('chunk', data);
+    });
+
+    this.socket.on('stream_end', () => {
+      this._streaming = false;
+      if (this._streamCallback) this._streamCallback('end', null);
+    });
+  }
+
+  /**
+   * 스트리밍 콜백 등록/해제
+   */
+  setStreamCallback(cb) {
+    this._streamCallback = cb;
   }
 
   /**

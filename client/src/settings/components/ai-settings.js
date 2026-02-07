@@ -334,13 +334,11 @@ export class AISettings {
 
                       <!-- Step 2a: 단일 모델 선택 -->
                       <div class="brain-wizard-panel brain-wizard-panel--single" data-panel="2a">
-                        <div class="brain-wizard-form">
-                          <div class="brain-single-model-row">
-                            <select class="brain-routing-select" id="routingSingleModel">
-                              ${this.renderModelOptions(this.routingConfig.singleModel || this.routingConfig.medium)}
-                            </select>
-                            ${this.renderThinkingToggle('Single', this.routingConfig.singleThinking)}
-                          </div>
+                        <div class="brain-single-model-row">
+                          <select class="brain-routing-select" id="routingSingleModel">
+                            ${this.renderModelOptions(this.routingConfig.singleModel || this.routingConfig.medium)}
+                          </select>
+                          ${this.renderThinkingToggle('Single', this.routingConfig.singleThinking)}
                         </div>
                         <button type="button" class="brain-wizard-confirm" data-confirm="single">확인</button>
                       </div>

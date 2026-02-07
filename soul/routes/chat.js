@@ -67,6 +67,34 @@ function invalidateToolsCache() {
 
 
 /**
+ * 스트리밍 가능한 AI 서비스 호출 래퍼
+ * streamChat이 있으면 Socket.io로 실시간 청크 전송, 없으면 기존 chat() 사용
+ */
+async function callAIWithStreaming(aiService, chatMessages, chatOptions) {
+  // streamChat 메서드가 없으면 기존 방식
+  if (typeof aiService.streamChat !== 'function') {
+    return aiService.chat(chatMessages, chatOptions);
+  }
+
+  console.log('[Chat] Using streaming mode');
+  if (global.io) global.io.emit('stream_start');
+
+  const result = await aiService.streamChat(chatMessages, chatOptions, (type, data) => {
+    if (!global.io) return;
+    if (type === 'thinking') {
+      global.io.emit('stream_chunk', { type: 'thinking', content: data });
+    } else if (type === 'content') {
+      global.io.emit('stream_chunk', { type: 'content', content: data });
+    } else if (type === 'tool_start') {
+      global.io.emit('stream_chunk', { type: 'tool', content: '도구 실행 중...' });
+    }
+  });
+
+  if (global.io) global.io.emit('stream_end');
+  return result;
+}
+
+/**
  * POST /api/chat
  * 메시지 전송 및 응답 (핵심 엔드포인트)
  * + Phase 8: 스마트 라우팅 및 단일 인격
@@ -594,7 +622,9 @@ ${rulesText}</self_notes>\n\n`;
       if (isToolRoutingEnabled) {
         // === {need} 모드: 전체 대화로 호출, {need} 감지 시 도구만 쥐어줌 ===
         console.log(`[Chat] Tool Routing ON — first call without tools (${chatMessages.length} messages)`);
-        aiResult = await aiService.chat(chatMessages, {
+        // 1차 호출도 스트리밍 (도구 불필요 시 이게 최종 응답이므로)
+        // {need} 감지되면 클라이언트에서 stream_end로 정리 후 2차 호출 진행
+        aiResult = await callAIWithStreaming(aiService, chatMessages, {
           systemPrompt: combinedSystemPrompt,
           maxTokens: aiSettings.maxTokens,
           temperature: aiSettings.temperature,
@@ -765,13 +795,14 @@ ${toolCatalog}`;
 
           console.log(`[Chat] 2차 호출: 도구 ${selectedTools.length}개 쥐어줌 (메시지 ${currentMessages.length}개, 전체 ${chatMessages.length}개 재전송 안함)`);
 
-          aiResult = await aiService.chat(currentMessages, {
+          // 2차 호출에서는 thinking 끔 (1차에서 이미 reasoning 완료, DeepSeek reasoning_content 필드 충돌 방지)
+          aiResult = await callAIWithStreaming(aiService, currentMessages, {
             systemPrompt: combinedSystemPrompt,
             maxTokens: aiSettings.maxTokens,
             temperature: aiSettings.temperature,
             tools: selectedTools,
             toolExecutor: toolExecutor,
-            thinking: routingResult.thinking || false,
+            thinking: false,
           });
 
           // 2차+ 응답에서도 {need} 감지 → 추가 도구 호출 루프 (최대 3회)
@@ -812,7 +843,7 @@ ${toolCatalog}`;
               temperature: aiSettings.temperature,
               tools: selectedTools,
               toolExecutor: toolExecutor,
-              thinking: routingResult.thinking || false,
+              thinking: false,
             });
           }
         }
@@ -843,7 +874,7 @@ ${toolCatalog}`;
         });
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-        aiResult = await aiService.chat(chatMessages, {
+        aiResult = await callAIWithStreaming(aiService, chatMessages, {
           systemPrompt: combinedSystemPrompt,
           maxTokens: aiSettings.maxTokens,
           temperature: aiSettings.temperature,
@@ -857,7 +888,7 @@ ${toolCatalog}`;
       } else {
         // minimal 또는 도구 없음: 도구 없이 응답
         console.log(`[Chat] Direct call (${contextLevel === 'minimal' ? 'minimal context' : 'no tools'})`);
-        aiResult = await aiService.chat(chatMessages, {
+        aiResult = await callAIWithStreaming(aiService, chatMessages, {
           systemPrompt: combinedSystemPrompt,
           maxTokens: aiSettings.maxTokens,
           temperature: aiSettings.temperature,
@@ -997,12 +1028,14 @@ ${toolCatalog}`;
     }
 
     // 7. 내면 메모 파싱 및 저장
-    const memoMatches = finalResponse.match(/\[MEMO:\s*([^\]]+)\]/gi);
-    if (memoMatches && memoMatches.length > 0) {
+    const memoMatchesBracket = finalResponse.match(/\[MEMO:\s*([^\]]+)\]/gi) || [];
+    const memoMatchesParen = finalResponse.match(/\(MEMO:\s*([^)]+)\)/gi) || [];
+    const memoMatches = [...memoMatchesBracket, ...memoMatchesParen];
+    if (memoMatches.length > 0) {
       const SelfRule = require('../models/SelfRule');
-      
+
       for (const match of memoMatches) {
-        const memoContent = match.replace(/\[MEMO:\s*/i, '').replace(/\]$/, '').trim();
+        const memoContent = match.replace(/^[\[(]MEMO:\s*/i, '').replace(/[\])]$/, '').trim();
         if (memoContent) {
           try {
             // 카테고리 자동 추론
@@ -1028,6 +1061,8 @@ ${toolCatalog}`;
       
       // 응답에서 메모 태그 제거 (사용자에게 안 보이게)
       finalResponse = finalResponse.replace(/\[MEMO:\s*[^\]]+\]/gi, '').trim();
+      // 괄호 형태 (MEMO: ...) 도 제거
+      finalResponse = finalResponse.replace(/\(MEMO:\s*[^)]+\)/gi, '').trim();
     }
 
     // 응답에서 내부 태그 제거 ({need}, {도구이름: ...} — 사용자에게 안 보이게)

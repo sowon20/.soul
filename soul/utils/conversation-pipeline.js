@@ -336,10 +336,12 @@ class ConversationPipeline {
       const rawResult = this.memoryManager.shortTerm.getWithinTokenLimit(rawTokenBudget, maxMessages);
       console.log(`[Pipeline] Context: ${rawResult.messages.length}/${maxMessages} raw messages, ${rawResult.totalTokens} tokens (budget: ${rawTokenBudget})`);
 
-      // 메시지 (content 변경 없이)
+      // 메시지 (assistant의 <thinking> 태그는 제거 — DeepSeek 등에서 reasoning_content를 다음 턴에 포함하면 안 됨)
       const rawMessages = rawResult.messages.map(m => ({
         role: m.role,
-        content: m.content
+        content: m.role === 'assistant' && m.content
+          ? m.content.replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, '').trim()
+          : m.content
       }));
 
       // 2. 주간 요약 - 자동 로드 제거

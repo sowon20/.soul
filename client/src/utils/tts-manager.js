@@ -24,6 +24,8 @@ export class TTSManager {
 
   _cleanText(text) {
     return text
+      .replace(/<thinking>[\s\S]*?<\/thinking>/g, '')   // 생각(reasoning) 제거
+      .replace(/<tool_use>[\s\S]*?<\/tool_use>/g, '')   // 도구 호출 제거
       .replace(/```[\s\S]*?```/g, '')
       .replace(/`[^`]+`/g, '')
       .replace(/\{[a-z_]+:.*?\}/gi, '')
@@ -66,7 +68,7 @@ export class TTSManager {
   }
 
   async speak(text, options = {}) {
-    if (!this.enabled || !text) return;
+    if ((!this.enabled && !options.force) || !text) return;
 
     this.stop();
     this.aborted = false;

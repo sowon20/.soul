@@ -158,20 +158,20 @@
           <!-- 모델별 사용량 -->
           <div class="model-usage-section">
             <div class="model-usage-header">
-              <h4 class="model-usage-title">모델별 사용량</h4>
+              <h4 class="model-usage-title model-usage-toggle" id="modelUsageToggle">▶ 모델별 사용량</h4>
               <button class="stats-text-btn" id="refreshModelUsageBtn">새로고침</button>
             </div>
-            <div id="model-usage-list" class="model-usage-list">
+            <div id="model-usage-list" class="model-usage-list" style="display:none">
               <div class="no-data">아직 사용 기록이 없습니다</div>
             </div>
           </div>
           <!-- 서비스별 잔액/사용량 -->
           <div class="service-billing-section">
             <div class="service-billing-header">
-              <h4 class="service-billing-title">서비스 잔액</h4>
+              <h4 class="service-billing-title service-billing-toggle" id="billingToggle">▶ 서비스 잔액</h4>
               <button class="stats-text-btn" id="refreshBillingBtn">새로고침</button>
             </div>
-            <div id="service-billing-list" class="service-billing-list">
+            <div id="service-billing-list" class="service-billing-list" style="display:none">
               <div class="no-data">잔액 정보 로딩중...</div>
             </div>
           </div>

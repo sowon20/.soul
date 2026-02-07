@@ -375,11 +375,11 @@ export class ChatManager {
       displayContent = displayContent.replace(/<tool_use>[\s\S]*?<\/tool_use>/g, '').trim();
 
       // TTS 전용 태그 제거 (화면에서 숨김, TTS는 원본 사용)
-      displayContent = displayContent.replace(/\[laughter\]/gi, '').replace(/\s{2,}/g, ' ').trim();
+      displayContent = displayContent.replace(/\[laughter\]/gi, '').replace(/ {2,}/g, ' ').trim();
       
-      // marked 전처리: **...** 닫힘 직후 한글이 오면 marked가 bold 인식 못함 → 직접 변환
+      // marked 전처리: 한글 사이의 **bold**를 marked가 인식 못하는 경우 직접 변환
       if (window.marked) {
-        displayContent = displayContent.replace(/\*\*(.+?)\*\*(?=[가-힣])/g, '<strong>$1</strong>');
+        displayContent = displayContent.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
       }
       const renderedContent = window.marked ? window.marked.parse(displayContent) : this.escapeHtml(displayContent);
       content.innerHTML = renderedContent;
@@ -1157,9 +1157,48 @@ export class ChatManager {
     // Show typing indicator
     this.showTypingIndicator();
 
+    // 스트리밍 콜백 등록 — 타이핑 인디케이터를 실시간 텍스트로 교체
+    let streamingEl = null;
+    let streamingContent = '';
+    let streamingThinking = '';
+    const socketClient = window.soulApp?.socketClient;
+    if (socketClient) {
+      socketClient.setStreamCallback((event, data) => {
+        if (event === 'start') {
+          // 타이핑 인디케이터를 스트리밍 메시지로 교체
+          this.hideTypingIndicator();
+          streamingEl = this._createStreamingElement();
+          this.messagesArea.appendChild(streamingEl);
+          this.scrollToBottom();
+        } else if (event === 'chunk' && streamingEl) {
+          if (data.type === 'thinking') {
+            streamingThinking += data.content;
+            this._updateStreamingElement(streamingEl, streamingThinking, streamingContent);
+          } else if (data.type === 'content') {
+            streamingContent += data.content;
+            this._updateStreamingElement(streamingEl, streamingThinking, streamingContent);
+          }
+          this.scrollToBottom();
+        } else if (event === 'end' && streamingEl) {
+          // 스트리밍 완료 — 최종 응답으로 교체할 준비
+          streamingEl.remove();
+          streamingEl = null;
+        }
+      });
+    }
+
     try {
       // Call API (첨부 정보 포함)
       const response = await this.apiClient.sendMessage(text, { attachments });
+
+      // 스트리밍 콜백 해제
+      if (socketClient) socketClient.setStreamCallback(null);
+
+      // 스트리밍 엘리먼트 정리
+      if (streamingEl) {
+        streamingEl.remove();
+        streamingEl = null;
+      }
 
       // Hide typing indicator
       this.hideTypingIndicator();
@@ -1222,15 +1261,16 @@ export class ChatManager {
       // TTS: 설정에서 켜져있거나 실시간 모드면 응답 읽어주기
       if ((this.tts.enabled || enableTTS) && content) {
         try {
-          const wasEnabled = this.tts.enabled;
-          this.tts.enabled = true;
-          await this.tts.speak(content);
-          this.tts.enabled = wasEnabled;
+          await this.tts.speak(content, { force: enableTTS });
         } catch (ttsErr) {
           console.warn('[Chat] TTS failed:', ttsErr);
         }
       }
     } catch (error) {
+      // 스트리밍 정리
+      if (socketClient) socketClient.setStreamCallback(null);
+      if (streamingEl) { streamingEl.remove(); streamingEl = null; }
+
       // Hide typing indicator
       this.hideTypingIndicator();
 
@@ -1296,6 +1336,97 @@ export class ChatManager {
         behavior: smooth ? 'smooth' : 'auto',
       });
     });
+  }
+
+  /**
+   * 스트리밍용 임시 메시지 요소 생성 (assistantMessageTemplate 클론)
+   */
+  _createStreamingElement() {
+    const template = this.assistantMessageTemplate.content.cloneNode(true);
+    const el = template.querySelector('.chat-message.assistant');
+    el.classList.add('streaming');
+
+    // message-content에 커서만 추가
+    const content = el.querySelector('.message-content');
+    content.innerHTML = '<span class="streaming-cursor"></span>';
+
+    // 스트리밍 중에는 액션 버튼 숨김
+    const actions = el.querySelector('.message-actions');
+    if (actions) actions.style.display = 'none';
+
+    return el;
+  }
+
+  /**
+   * 스트리밍 메시지 요소 실시간 업데이트
+   */
+  _updateStreamingElement(el, thinkingText, contentText) {
+    const contentEl = el.querySelector('.message-content');
+    if (!contentEl) return;
+
+    // thinking 컨테이너 (기존 ai-thinking-container 스타일 재사용)
+    let thinkingContainer = contentEl.querySelector('.ai-thinking-container');
+    if (thinkingText) {
+      if (!thinkingContainer) {
+        thinkingContainer = document.createElement('div');
+        thinkingContainer.className = 'ai-thinking-container streaming-thinking-live';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'ai-thinking-toggle';
+        toggleBtn.innerHTML = '💭 <span>생각 중...</span>';
+        toggleBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.parentElement.classList.toggle('expanded');
+        });
+
+        const thinkingContent = document.createElement('div');
+        thinkingContent.className = 'ai-thinking-content';
+
+        thinkingContainer.appendChild(toggleBtn);
+        thinkingContainer.appendChild(thinkingContent);
+        contentEl.insertBefore(thinkingContainer, contentEl.firstChild);
+
+        // 스트리밍 중에는 자동 펼침
+        thinkingContainer.classList.add('expanded');
+      }
+      // 실시간 업데이트
+      const thinkingContent = thinkingContainer.querySelector('.ai-thinking-content');
+      if (thinkingContent) {
+        thinkingContent.textContent = thinkingText;
+        // 스크롤 아래로
+        thinkingContent.scrollTop = thinkingContent.scrollHeight;
+      }
+    }
+
+    // content 영역 업데이트 (thinking 컨테이너 뒤에)
+    let contentArea = contentEl.querySelector('.streaming-text-area');
+    if (contentText) {
+      if (!contentArea) {
+        contentArea = document.createElement('div');
+        contentArea.className = 'streaming-text-area';
+        contentEl.appendChild(contentArea);
+      }
+
+      let rendered = '';
+      if (window.marked) {
+        const processed = contentText.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        rendered = window.marked.parse(processed);
+      } else {
+        rendered = this.escapeHtml(contentText);
+      }
+      contentArea.innerHTML = rendered + '<span class="streaming-cursor"></span>';
+    } else {
+      // content가 아직 없으면 커서만 유지
+      if (!contentArea) {
+        // thinking 뒤에 커서
+        const existingCursor = contentEl.querySelector('.streaming-cursor');
+        if (!existingCursor) {
+          contentEl.insertAdjacentHTML('beforeend', '<span class="streaming-cursor"></span>');
+        }
+      }
+    }
   }
 
   /**

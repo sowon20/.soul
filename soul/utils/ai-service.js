@@ -2120,12 +2120,349 @@ class LightningAIService extends AIService {
  * Fireworks AI 서비스 (OpenAI 호환)
  */
 /**
- * DeepSeek 서비스 (OpenAI 호환 API)
+ * DeepSeek 서비스 (OpenAI 호환 API + Thinking 지원)
  */
 class DeepSeekService extends OpenAIService {
   constructor(apiKey, modelName = 'deepseek-chat') {
     super(apiKey, modelName);
     this.baseUrl = 'https://api.deepseek.com';
+  }
+
+  async chat(messages, options = {}) {
+    const {
+      systemPrompt = null,
+      maxTokens = 4096,
+      temperature = 1.0,
+      tools = null,
+      toolExecutor = null,
+      thinking = false,
+    } = options;
+
+    const apiMessages = messages.filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()));
+    if (systemPrompt) {
+      apiMessages.unshift({ role: 'system', content: systemPrompt });
+    }
+
+    const requestBody = {
+      model: this.modelName,
+      messages: apiMessages,
+      max_tokens: maxTokens,
+    };
+
+    // Thinking 모드: temperature 고정, 별도 파라미터 불가
+    if (thinking) {
+      // DeepSeek reasoner 모델 자동 전환 (deepseek-chat → deepseek-reasoner)
+      if (!this.modelName.includes('reasoner')) {
+        requestBody.model = 'deepseek-reasoner';
+        console.log(`[DeepSeek] Thinking enabled: model switched to deepseek-reasoner`);
+      }
+      // thinking 모드에서는 temperature/top_p 지원 안 됨
+    } else {
+      requestBody.temperature = temperature;
+    }
+
+    // 도구 전달
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description || '',
+          parameters: t.input_schema || { type: 'object', properties: {} }
+        }
+      }));
+    }
+
+    let response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    let data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error.message || 'DeepSeek API error');
+    }
+    if (!data.choices || !data.choices[0]) {
+      throw new Error('Invalid response from DeepSeek API');
+    }
+
+    // 도구 호출 루프 (OpenAI 호환)
+    while (data.choices[0].finish_reason === 'tool_calls' && toolExecutor) {
+      const toolCalls = data.choices[0].message.tool_calls;
+      if (!toolCalls || toolCalls.length === 0) break;
+
+      apiMessages.push(data.choices[0].message);
+
+      const executedNames = new Set();
+      for (const tc of toolCalls) {
+        if (executedNames.has(tc.function.name)) {
+          apiMessages.push({ role: 'tool', tool_call_id: tc.id, content: '이미 이번 턴에서 실행됨.' });
+          continue;
+        }
+        executedNames.add(tc.function.name);
+        const input = JSON.parse(tc.function.arguments || '{}');
+        console.log(`[DeepSeek Tool] Executing: ${tc.function.name}`, input);
+        const result = await toolExecutor(tc.function.name, input);
+        apiMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: typeof result === 'string' ? result : JSON.stringify(result)
+        });
+      }
+
+      requestBody.messages = apiMessages;
+      response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+      data = await response.json();
+      if (data.error) throw new Error(data.error.message || 'DeepSeek API error');
+      if (!data.choices || !data.choices[0]) break;
+    }
+
+    // 사용량 (DeepSeek: prompt_cache_hit_tokens/miss_tokens, reasoning_tokens 제공)
+    const usage = {
+      input_tokens: data.usage?.prompt_tokens || 0,
+      output_tokens: data.usage?.completion_tokens || 0
+    };
+
+    // 캐시 히트/추론 토큰 로그
+    if (data.usage?.prompt_cache_hit_tokens > 0) {
+      console.log(`[DeepSeek] Cache hit: ${data.usage.prompt_cache_hit_tokens}/${data.usage.prompt_tokens} tokens`);
+    }
+    if (data.usage?.completion_tokens_details?.reasoning_tokens > 0) {
+      console.log(`[DeepSeek] Reasoning tokens: ${data.usage.completion_tokens_details.reasoning_tokens}`);
+    }
+
+    // reasoning_content 처리 (thinking 모드)
+    const msg = data.choices[0].message;
+    let text = msg.content || '';
+
+    if (msg.reasoning_content) {
+      console.log(`[DeepSeek] Reasoning content length: ${msg.reasoning_content.length}`);
+      text = `<thinking>${msg.reasoning_content}</thinking>\n\n${text}`;
+    }
+
+    // finish_reason: insufficient_system_resource 처리
+    if (data.choices[0].finish_reason === 'insufficient_system_resource') {
+      console.warn('[DeepSeek] Response truncated due to insufficient system resources');
+      text += '\n\n(⚠️ 서버 자원 부족으로 응답이 중단되었습니다)';
+    }
+
+    return { text, usage };
+  }
+
+  /**
+   * 스트리밍 채팅 - SSE로 토큰 단위 전송
+   * @param {Array} messages - 대화 메시지
+   * @param {Object} options - chat()과 동일
+   * @param {Function} onChunk - (type, data) 콜백. type: 'thinking'|'content'|'usage'|'done'|'error'
+   * @returns {Promise<{text, usage}>} 전체 응답 (스트리밍 완료 후)
+   */
+  async streamChat(messages, options = {}, onChunk) {
+    const {
+      systemPrompt = null,
+      maxTokens = 4096,
+      temperature = 1.0,
+      tools = null,
+      toolExecutor = null,
+      thinking = false,
+    } = options;
+
+    const apiMessages = messages.filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()));
+    if (systemPrompt) {
+      apiMessages.unshift({ role: 'system', content: systemPrompt });
+    }
+
+    const requestBody = {
+      model: this.modelName,
+      messages: apiMessages,
+      max_tokens: maxTokens,
+      stream: true,
+    };
+
+    if (thinking) {
+      if (!this.modelName.includes('reasoner')) {
+        requestBody.model = 'deepseek-reasoner';
+        console.log(`[DeepSeek Stream] Thinking enabled: model switched to deepseek-reasoner`);
+      }
+    } else {
+      requestBody.temperature = temperature;
+    }
+
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description || '',
+          parameters: t.input_schema || { type: 'object', properties: {} }
+        }
+      }));
+    }
+
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`DeepSeek API error (${response.status}): ${errText}`);
+    }
+
+    let fullContent = '';
+    let fullReasoning = '';
+    let usage = { input_tokens: 0, output_tokens: 0 };
+    let toolCallsBuffer = {};  // id → { name, arguments }
+    let finishReason = null;
+
+    // SSE 파싱
+    const reader = response.body;
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    for await (const chunk of reader) {
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // 마지막 불완전한 줄은 보관
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (data === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta;
+          finishReason = parsed.choices?.[0]?.finish_reason || finishReason;
+
+          if (delta) {
+            // reasoning_content (thinking 모드)
+            if (delta.reasoning_content) {
+              fullReasoning += delta.reasoning_content;
+              if (onChunk) onChunk('thinking', delta.reasoning_content);
+            }
+
+            // content (최종 답변)
+            if (delta.content) {
+              fullContent += delta.content;
+              if (onChunk) onChunk('content', delta.content);
+            }
+
+            // tool_calls (도구 호출 — 스트리밍에서는 청크로 옴)
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index;
+                if (!toolCallsBuffer[idx]) {
+                  toolCallsBuffer[idx] = { id: tc.id || '', name: tc.function?.name || '', arguments: '' };
+                }
+                if (tc.id) toolCallsBuffer[idx].id = tc.id;
+                if (tc.function?.name) toolCallsBuffer[idx].name = tc.function.name;
+                if (tc.function?.arguments) toolCallsBuffer[idx].arguments += tc.function.arguments;
+              }
+            }
+          }
+
+          // usage (마지막 청크에 포함)
+          if (parsed.usage) {
+            usage = {
+              input_tokens: parsed.usage.prompt_tokens || 0,
+              output_tokens: parsed.usage.completion_tokens || 0
+            };
+            if (parsed.usage.prompt_cache_hit_tokens > 0) {
+              console.log(`[DeepSeek Stream] Cache hit: ${parsed.usage.prompt_cache_hit_tokens}/${parsed.usage.prompt_tokens} tokens`);
+            }
+          }
+        } catch (e) {
+          // JSON 파싱 실패 — 무시
+        }
+      }
+    }
+
+    // 도구 호출이 있으면 실행 후 non-streaming으로 재호출
+    const toolCallsList = Object.values(toolCallsBuffer);
+    if (toolCallsList.length > 0 && toolExecutor) {
+      if (onChunk) onChunk('tool_start', toolCallsList.map(t => t.name));
+
+      apiMessages.push({
+        role: 'assistant',
+        content: fullContent || null,
+        tool_calls: toolCallsList.map(tc => ({
+          id: tc.id,
+          type: 'function',
+          function: { name: tc.name, arguments: tc.arguments }
+        }))
+      });
+
+      for (const tc of toolCallsList) {
+        const input = JSON.parse(tc.arguments || '{}');
+        console.log(`[DeepSeek Stream Tool] Executing: ${tc.name}`, input);
+        const result = await toolExecutor(tc.name, input);
+        apiMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: typeof result === 'string' ? result : JSON.stringify(result)
+        });
+      }
+
+      if (onChunk) onChunk('tool_end', null);
+
+      // 도구 결과 포함해서 non-streaming으로 최종 응답
+      requestBody.messages = apiMessages;
+      requestBody.stream = false;
+      const finalResp = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+      const finalData = await finalResp.json();
+      if (finalData.error) throw new Error(finalData.error.message);
+
+      const finalMsg = finalData.choices?.[0]?.message;
+      fullContent = finalMsg?.content || '';
+      if (finalMsg?.reasoning_content) {
+        fullReasoning += finalMsg.reasoning_content;
+      }
+      usage = {
+        input_tokens: (usage.input_tokens || 0) + (finalData.usage?.prompt_tokens || 0),
+        output_tokens: (usage.output_tokens || 0) + (finalData.usage?.completion_tokens || 0)
+      };
+
+      // 최종 응답을 한번에 전송
+      if (onChunk) onChunk('content_replace', fullContent);
+    }
+
+    // 최종 텍스트 조합
+    let text = fullContent;
+    if (fullReasoning) {
+      console.log(`[DeepSeek Stream] Reasoning content length: ${fullReasoning.length}`);
+      text = `<thinking>${fullReasoning}</thinking>\n\n${text}`;
+    }
+
+    if (finishReason === 'insufficient_system_resource') {
+      text += '\n\n(⚠️ 서버 자원 부족으로 응답이 중단되었습니다)';
+    }
+
+    if (onChunk) onChunk('done', { text, usage });
+
+    return { text, usage };
   }
 }
 

@@ -666,6 +666,30 @@ class DashboardManager {
         refreshModelUsageBtn.disabled = false;
       });
     }
+
+    // 모델별 사용량 접기/펴기 토글
+    const modelUsageToggle = document.getElementById('modelUsageToggle');
+    if (modelUsageToggle) {
+      modelUsageToggle.addEventListener('click', () => {
+        const list = document.getElementById('model-usage-list');
+        if (!list) return;
+        const isHidden = list.style.display === 'none';
+        list.style.display = isHidden ? 'flex' : 'none';
+        modelUsageToggle.textContent = (isHidden ? '▼' : '▶') + ' 모델별 사용량';
+      });
+    }
+
+    // 서비스 잔액 접기/펴기 토글
+    const billingToggle = document.getElementById('billingToggle');
+    if (billingToggle) {
+      billingToggle.addEventListener('click', () => {
+        const list = document.getElementById('service-billing-list');
+        if (!list) return;
+        const isHidden = list.style.display === 'none';
+        list.style.display = isHidden ? 'grid' : 'none';
+        billingToggle.textContent = (isHidden ? '▼' : '▶') + ' 서비스 잔액';
+      });
+    }
   }
 
   /**

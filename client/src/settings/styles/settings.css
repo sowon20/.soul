@@ -5265,11 +5265,11 @@ textarea.settings-field-input {
 .brain-single-model-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .brain-single-model-row .brain-routing-select {
-  flex: 1;
+  flex: 0 1 70%;
 }
 
 .brain-tier-row {

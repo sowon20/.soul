@@ -1309,6 +1309,15 @@ body {
   margin: 0;
 }
 
+.model-usage-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.model-usage-toggle:hover {
+  color: rgba(0, 0, 0, 0.7);
+}
+
 .model-usage-list {
   display: flex;
   flex-direction: column;
@@ -1628,6 +1637,15 @@ body {
   font-weight: 600;
   color: rgba(0, 0, 0, 0.5);
   margin: 0;
+}
+
+.service-billing-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.service-billing-toggle:hover {
+  color: rgba(0, 0, 0, 0.7);
 }
 
 .service-billing-list {
@@ -2149,6 +2167,39 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* 스트리밍 메시지 */
+.streaming-thinking-live .ai-thinking-content {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+.streaming-thinking-live .ai-thinking-content::-webkit-scrollbar {
+  width: 3px;
+}
+.streaming-thinking-live .ai-thinking-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.streaming-thinking-live .ai-thinking-content::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 3px;
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.6);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 0.8s infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
 }
 
 /* 메시지 컨텐츠만 선택 가능 */
@@ -2701,7 +2752,7 @@ body {
 
 /* 마크다운 코드 블록 */
 .message-content p {
-  margin: 12px 0;
+  margin: 6px 0;
   line-height: 1.6;
 }
 
