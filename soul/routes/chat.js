@@ -26,6 +26,7 @@ const { builtinTools, executeBuiltinTool, isBuiltinTool } = require('../utils/bu
 const { isProactiveActive } = require('../utils/proactive-messenger');
 const configManager = require('../utils/config');
 const { trackCall: trackAlba } = require('../utils/alba-stats');
+const { ToolIntentDetector } = require('../utils/tool-intent-detector');
 // alba-worker는 더 이상 사용하지 않음 (도구 선택은 tool-worker 알바가 {need} 단계에서 처리)
 
 // JSONL 대화 저장소 (lazy init)
@@ -267,21 +268,38 @@ ${rulesText}</self_notes>\n\n`;
       // {need} 모드: 도구 정의 없이, 자연어로 요청
       instructionsSection = `
 <instructions>
-도구 사용:
-- 모든 도구는 알바를 통해 얻으면 됨. {need} 태그로 요청하면 알바가 적절한 도구를 준비해줌
-- {need} 뒤에 자연어로 원하는 것을 설명
-- 결과가 돌아오면 그걸 바탕으로 답변
-- {need}는 응답 중 아무 위치에나 사용 가능, 여러 개 가능 (각각 별도 줄)
-- 필요하거나 해야 하는 게 있으면 적극적으로 {need}로 요구할 것. "할 수 없다"고 거부하지 말 것
+## 도구 사용 (필수)
+너는 직접 도구를 호출할 수 없다. 대신 {need} 태그를 써서 필요한 것을 요청하면, 시스템이 적절한 도구를 골라서 너에게 제공한다. 그러면 너는 그 도구를 사용해서 작업을 수행한다.
 
-주의:
-- {need}를 쓸 때 주어를 명확히 구분할 것. 사용자의 "나/내"를 "사용자"로 바꿔서 전달
-- 예: 사용자 "내 이름 뭐야?" → {need} 사용자의 이름 찾아줘 (X: 내 이름 찾아줘)
-- 예: 사용자 "내가 뭘 좋아해?" → {need} 사용자가 좋아하는 것 검색 (X: 내가 좋아하는 것)
-- "나/내"가 사용자를 가리키는지, AI를 가리키는지 항상 확인
-- 확실하지 않은 건 추측하지 말고 사용자에게 물어라
+**반드시 {need}를 써야 하는 경우:**
+- 사용자가 정보를 조회/검색하라고 할 때 (프로필, 기억, 규칙 등)
+- 사용자가 무언가를 저장/수정/삭제하라고 할 때
+- 사용자가 명령 실행, 웹 검색, 파일 읽기/쓰기를 요청할 때
+- 사용자 질문에 대한 정확한 답을 모를 때 (추측 금지, 검색 필수)
+- 이전 <tool_history>에 이미 있는 결과를 재사용하지 말고, 새 요청이면 새로 {need} 호출
 
-응답 포맷:
+**{need} 문법:**
+{need} 자연어로 원하는 것을 설명
+- 한 줄에 하나씩, 여러 개 가능
+- 응답 중 아무 위치에나 사용 가능
+
+**예시:**
+사용자: "내 이름 뭐야?" → {need} 사용자의 프로필에서 이름 조회
+사용자: "투두 체크해줘" → {need} 투두 목록 읽기
+사용자: "어제 뭐 했지?" → {need} 어제 대화 기억 검색
+사용자: "이거 기억해둬" → {need} 규칙에 저장: (내용)
+
+**절대 금지:**
+- <tool_history> 태그를 응답에 직접 작성하지 마라. 이건 시스템이 자동 삽입하는 것이다
+- 도구 결과를 날조/추측하지 마라. {need}로 요청해서 실제 결과를 받아야 한다
+- 이전 <tool_history>의 결과를 복사해서 새 응답에 붙이지 마라
+
+**주의:**
+- {need}를 쓸 때 "나/내"를 "사용자"로 바꿔서 전달
+- "할 수 없다"고 거부하지 말고, {need}로 적극 요청할 것
+- 확실하지 않은 건 추측하지 말고 검색하거나 사용자에게 물어라
+
+## 응답 포맷
 - 긴 문장은 적절히 줄바꿈하여 가독성 유지
 - 한 문단이 3~4문장을 넘기면 줄바꿈으로 나누기
 - 목록이나 단계가 있으면 번호/글머리 기호 활용
@@ -726,6 +744,32 @@ ${rulesText}</self_notes>\n\n`;
               success: true,
               result: typeof result === 'string' ? result.substring(0, 200) : JSON.stringify(result).substring(0, 200)
             });
+
+            // 캔버스 패널 실시간 업데이트 이벤트
+            const canvasToolMap = {
+              'recall_memory': 'memory',
+              'get_profile': 'profile',
+              'update_profile': 'profile',
+              'list_my_rules': 'todo',
+              'add_my_rule': 'todo',
+              'update_my_rule': 'todo',
+              'toggle_my_rule': 'todo',
+              'delete_my_rule': 'todo'
+            };
+            // MCP 도구도 매핑: 도구 이름에 todo/memo 관련 키워드 포함 시 todo 패널 업데이트
+            let targetPanel = canvasToolMap[toolName];
+            if (!targetPanel && /todo|task|memo/i.test(toolName)) {
+              targetPanel = 'todo';
+            }
+            if (targetPanel) {
+              global.io.emit('canvas_update', {
+                panel: targetPanel,
+                tool: toolName,
+                input: input,
+                result: typeof result === 'string' ? result.substring(0, 500) : JSON.stringify(result).substring(0, 500),
+                timestamp: new Date().toISOString()
+              });
+            }
           }
         } catch (toolError) {
           // 실행된 도구 기록 (실패)
@@ -767,12 +811,32 @@ ${rulesText}</self_notes>\n\n`;
       let aiResult;
       let actualToolCount = 0;
 
+      // 서버측 인텐트 감지 (폴백용)
+      let serverIntent = { detected: false, suggestedNeeds: [], matches: [] };
+
       if (isToolRoutingEnabled) {
         // === {need} 모드: 전체 대화로 호출, {need} 감지 시 도구만 쥐어줌 ===
-        console.log(`[Chat] Tool Routing ON — first call without tools (${chatMessages.length} messages)`);
+
+        // 서버측 인텐트 미리 감지 (AI가 {need}를 안 쓸 때 폴백)
+        const intentDetector = new ToolIntentDetector(allTools);
+        serverIntent = intentDetector.detect(message);
+        if (serverIntent.detected) {
+          console.log(`[Chat] Server intent detected: ${serverIntent.matches.map(m => `${m.toolName}(${m.score})`).join(', ')}`);
+        }
+
+        // Few-shot 예시 주입: AI에게 {need} 사용법을 보여주는 가짜 대화
+        const fewShotExamples = [
+          { role: 'user', content: '내 프로필 보여줘' },
+          { role: 'assistant', content: '네, 프로필을 확인해볼게요!\n{need} 사용자의 프로필 정보 조회' },
+          { role: 'user', content: '이거 기억해둬: 매주 월요일 회의' },
+          { role: 'assistant', content: '알겠어요, 기억해둘게요!\n{need} 규칙에 저장: 매주 월요일 회의' },
+        ];
+        const chatMessagesWithFewShot = [...fewShotExamples, ...chatMessages];
+
+        console.log(`[Chat] Tool Routing ON — first call without tools (${chatMessages.length}+${fewShotExamples.length} messages)`);
         // 1차 호출도 스트리밍 (도구 불필요 시 이게 최종 응답이므로)
         // {need} 감지되면 클라이언트에서 stream_end로 정리 후 2차 호출 진행
-        aiResult = await callAIWithStreaming(aiService, chatMessages, {
+        aiResult = await callAIWithStreaming(aiService, chatMessagesWithFewShot, {
           systemPrompt: combinedSystemPrompt,
           maxTokens: aiSettings.maxTokens,
           temperature: aiSettings.temperature,
@@ -786,12 +850,28 @@ ${rulesText}</self_notes>\n\n`;
         let responseText = typeof aiResult === 'object' ? aiResult.text : aiResult;
         console.log(`[Chat] AI response (first call): ${(responseText || '').substring(0, 300)}`);
 
-        // 1) 정규 {need} 패턴
-        const needPattern = /\{need\}\s*(.+?)(?:\n|$)/g;
+        // 날조 감지: AI가 <tool_history>를 직접 작성한 경우 제거
+        if (responseText && responseText.includes('<tool_history>')) {
+          console.warn('[Chat] ⚠️ AI가 <tool_history>를 날조함 — 제거 후 텍스트만 사용');
+          responseText = responseText.replace(/<tool_history>[\s\S]*?<\/tool_history>/g, '').trim();
+          if (typeof aiResult === 'object') aiResult.text = responseText;
+          else aiResult = responseText;
+        }
+
+        // 1) {need} 패턴 — 다양한 변형 인식
+        //    {need} 설명, {Need} 설명, {NEED} 설명, {need:} 설명, {need}: 설명
+        const needPattern = /\{[Nn][Ee]{2}[Dd]\}[:\s]*\s*(.+?)(?:\n|$)/g;
         const needs = [];
         let match;
         while ((match = needPattern.exec(responseText)) !== null) {
           needs.push(match[1].trim());
+        }
+
+        // 1-b) [need] 설명, **{need}** 설명 등 마크다운으로 감싼 변형
+        const needAltPattern = /(?:\*{0,2})\[?{[Nn]eed}\]?(?:\*{0,2})[:\s]*\s*(.+?)(?:\n|$)/g;
+        while ((match = needAltPattern.exec(responseText)) !== null) {
+          const desc = match[1].trim();
+          if (!needs.includes(desc)) needs.push(desc);
         }
 
         // 2) AI가 {도구이름: 설명} 형태로 직접 쓴 경우도 {need}로 변환
@@ -807,6 +887,12 @@ ${rulesText}</self_notes>\n\n`;
             needs.push(`${toolName}: ${desc}`);
             console.log(`[Chat] Fake tool tag → need 변환: {${toolName}: ${desc}}`);
           }
+        }
+
+        // 3) 폴백: AI가 {need}를 안 썼지만 서버가 인텐트를 감지한 경우
+        if (needs.length === 0 && serverIntent.detected) {
+          console.log(`[Chat] ⚡ AI가 {need} 미사용 → 서버 인텐트 폴백 적용 (${serverIntent.suggestedNeeds.length}개)`);
+          needs.push(...serverIntent.suggestedNeeds);
         }
 
         if (needs.length > 0) {
@@ -826,11 +912,26 @@ ${rulesText}</self_notes>\n\n`;
           const toolWorkerRole = await Role.findOne({ roleId: 'tool-worker', isActive: true });
           const routingMode = toolRoutingConfig?.mode || 'single';
 
-          // 도구 카탈로그 (이름 + 설명만, 가벼움)
-          const toolCatalog = allTools.map(t => `- ${t.name}: ${t.description}`).join('\n');
-          const toolSelectionPrompt = `요청을 분석하여 필요한 도구 이름을 JSON 배열로만 반환하세요.
-응답 형식: ["도구이름1", "도구이름2"]
-도구를 실행하지 마세요. 이름만 선택하세요. 최대 5개.
+          // 도구 카탈로그: MCP 접두사 제거하여 깔끔하게 (tool-worker가 이해하기 쉽게)
+          const toolCatalog = allTools.map(t => {
+            const shortName = t.name.includes('__') ? t.name.split('__').pop() : t.name;
+            return `- ${t.name} (${shortName}): ${t.description}`;
+          }).join('\n');
+
+          const toolSelectionPrompt = `사용자 요청에 **꼭 필요한 도구만** 최소한으로 골라라.
+응답 형식: ["도구이름1"]  (전체 이름 사용, mcp_ 접두사 포함)
+도구를 실행하지 마세요. 이름만 선택하세요.
+
+핵심 규칙 (반드시 따를 것):
+- "체크해줘/완료해줘/토글" → toggle_task 하나만 (read 불필요, 모델이 알아서 읽음)
+- "추가해줘" → add_task 하나만
+- "삭제해줘/지워줘" → delete_task 하나만
+- "보여줘/읽어줘" → read_todo 하나만
+- "섹션 추가" → add_section 하나만
+- "섹션 삭제" → delete_section 하나만
+- 메모 관련 → read_memo / write_memo / add_memo_item / delete_memo_item 중 하나만
+- 기억/검색 → recall_memory 하나만
+- 여러 작업을 동시에 요청한 경우에만 여러 도구 선택 (최대 5개)
 
 사용 가능한 도구:
 ${toolCatalog}`;
@@ -849,8 +950,8 @@ ${toolCatalog}`;
 
             console.log(`[Chat] tool-worker ${routingMode} mode (${modelChain.length} models) — tool selection only`);
 
-            // 모든 {need}를 합쳐서 한 번에 도구 선택 요청
-            const combinedNeeds = needs.join('\n');
+            // 사용자 원본 메시지 + AI의 {need} 요청을 함께 전달
+            const combinedNeeds = `사용자: ${message}\nAI 요청: ${needs.join(', ')}`;
             let selectionSuccess = false;
 
             for (const modelInfo of modelChain) {
@@ -936,6 +1037,22 @@ ${toolCatalog}`;
             builtinTools.forEach(t => selectedToolNames.add(t.name));
           }
 
+          // 도구 보강: 수정 도구가 선택되면 대응하는 읽기 도구를 자동 추가
+          // (toggle_task가 있으면 read_todo도 넣어야 AI가 현재 상태 조회 가능)
+          const writeTools = [...selectedToolNames].filter(n => /toggle|write|update|add|delete|remove/i.test(n));
+          for (const writeTool of writeTools) {
+            const prefix = writeTool.includes('__') ? writeTool.split('__').slice(0, -1).join('__') : '';
+            // 같은 MCP 서버의 read 계열 도구 찾아서 추가
+            const siblingReads = allTools.filter(t => {
+              const sameServer = prefix ? t.name.startsWith(prefix + '__') : !t.name.includes('__');
+              return sameServer && /read|list|get/i.test(t.name) && !selectedToolNames.has(t.name);
+            });
+            for (const readTool of siblingReads) {
+              selectedToolNames.add(readTool.name);
+              console.log(`[Chat] 🔧 읽기 도구 자동 보강: ${readTool.name} (← ${writeTool})`);
+            }
+          }
+
           // 선택된 도구의 전체 스키마 추출
           const selectedTools = allTools.filter(t => selectedToolNames.has(t.name));
           console.log(`[Chat] 선택된 도구 (${selectedTools.length}개): ${selectedTools.map(t => t.name).join(', ')}`);
@@ -951,6 +1068,8 @@ ${toolCatalog}`;
           }
 
           // 주모델 재호출: 1차 응답 이어서 + 도구만 쥐어줌 (대화 전체 재전송 X)
+          // 2차 호출 시스템 프롬프트 축약 (도구 실행에 불필요한 성격/포맷 지침 제거 → 토큰 절약)
+          const toolSystemPrompt = `당신은 사용자의 AI 어시스턴트입니다. 도구를 사용하여 사용자 요청을 처리하세요. 도구 결과를 자연스럽게 전달하세요. 한국어로 답변하세요.`;
           // 1차 thinking 보존 (최종 응답에 다시 붙임)
           const firstThinkingMatch = responseText.match(/<thinking>([\s\S]*?)<\/thinking>/);
           const firstThinking = firstThinkingMatch ? firstThinkingMatch[0] : '';
@@ -960,17 +1079,20 @@ ${toolCatalog}`;
             .replace(/\{need\}\s*.+?(?:\n|$)/g, '')
             .trim();
           const lastUserMessage = chatMessages[chatMessages.length - 1];
+          // 2차 호출 안내 메시지: 선택된 도구명과 용도를 구체적으로 안내
+          const toolNameList = selectedTools.map(t => t.name).join(', ');
+          const toolGuide = `도구가 준비되었습니다: ${toolNameList}\n즉시 도구를 호출하세요. 설명하지 말고 바로 실행하세요.`;
           const currentMessages = [
             lastUserMessage,
             { role: 'assistant', content: cleanedResponse || '(도구를 사용하여 확인하겠습니다)' },
-            { role: 'user', content: '도구가 준비되었습니다. 사용하여 답변해주세요.' }
+            { role: 'user', content: toolGuide }
           ];
 
           console.log(`[Chat] 2차 호출: 도구 ${selectedTools.length}개 쥐어줌 (메시지 ${currentMessages.length}개, 전체 ${chatMessages.length}개 재전송 안함)`);
 
           // 2차 호출에서는 thinking 끔, stream_start/end 안 보냄 (기존 스트리밍 요소에 이어서 표시)
           aiResult = await callAIWithStreaming(aiService, currentMessages, {
-            systemPrompt: combinedSystemPrompt,
+            systemPrompt: toolSystemPrompt,
             maxTokens: aiSettings.maxTokens,
             temperature: aiSettings.temperature,
             tools: selectedTools,
@@ -978,40 +1100,54 @@ ${toolCatalog}`;
             thinking: false,
           }, { emitLifecycle: false });
 
-          // 2차+ 응답에서도 {need} 감지 → 추가 도구 호출 루프 (최대 3회)
-          const MAX_NEED_LOOPS = 3;
+          // 2차+ 응답에서도 {need} 감지 → 추가 도구 호출 루프 (최대 2회)
+          // 이미 처리된 {need}는 중복 방지
+          const processedNeeds = new Set(needs.map(n => n.toLowerCase()));
+          const MAX_NEED_LOOPS = 2;
           for (let loopIdx = 0; loopIdx < MAX_NEED_LOOPS; loopIdx++) {
             const loopText = typeof aiResult === 'object' ? aiResult.text : aiResult;
+            if (!loopText) break;
+
             const loopNeeds = [];
-            const loopNeedPattern = /\{need\}\s*(.+?)(?:\n|$)/g;
+            const loopNeedPattern = /\{[Nn][Ee]{2}[Dd]\}[:\s]*\s*(.+?)(?:\n|$)/g;
             let loopMatch;
             while ((loopMatch = loopNeedPattern.exec(loopText)) !== null) {
-              loopNeeds.push(loopMatch[1].trim());
+              const desc = loopMatch[1].trim();
+              if (!processedNeeds.has(desc.toLowerCase())) {
+                loopNeeds.push(desc);
+                processedNeeds.add(desc.toLowerCase());
+              }
             }
             // fake tool 패턴도 감지
             if (toolNames.length > 0) {
               const loopFakePattern = new RegExp(`\\{(${escaped.join('|')})[:\\s]+(.+?)\\}`, 'gi');
               let loopFake;
               while ((loopFake = loopFakePattern.exec(loopText)) !== null) {
-                loopNeeds.push(`${loopFake[1]}: ${loopFake[2].trim()}`);
+                const desc = `${loopFake[1]}: ${loopFake[2].trim()}`;
+                if (!processedNeeds.has(desc.toLowerCase())) {
+                  loopNeeds.push(desc);
+                  processedNeeds.add(desc.toLowerCase());
+                }
               }
             }
 
-            if (loopNeeds.length === 0) break; // 더 이상 {need} 없으면 종료
+            if (loopNeeds.length === 0) break; // 새로운 {need} 없으면 종료
 
             console.log(`[Chat] ${loopIdx + 3}차 호출: {need} ${loopNeeds.length}개 추가 감지`);
             toolNeeds.push(...loopNeeds);
 
             // 이전 응답에서 {need} 제거한 텍스트
-            const loopCleaned = loopText.replace(/\{need\}\s*.+?(?:\n|$)/g, '').trim();
+            const loopCleaned = loopText
+              .replace(/\{[Nn][Ee]{2}[Dd]\}[:\s]*\s*.+?(?:\n|$)/g, '')
+              .trim();
             const loopMessages = [
               lastUserMessage,
               { role: 'assistant', content: loopCleaned || '(추가 확인이 필요합니다)' },
-              { role: 'user', content: '추가 도구를 사용하여 답변해주세요.' }
+              { role: 'user', content: '도구 결과를 바탕으로 사용자에게 답변해주세요. {need}를 다시 쓰지 마세요.' }
             ];
 
             aiResult = await aiService.chat(loopMessages, {
-              systemPrompt: combinedSystemPrompt,
+              systemPrompt: toolSystemPrompt,
               maxTokens: aiSettings.maxTokens,
               temperature: aiSettings.temperature,
               tools: selectedTools,
@@ -1112,9 +1248,43 @@ ${toolCatalog}`;
       }
     }
 
-    // 빈 응답 안전장치
-    if (!aiResponse || (typeof aiResponse === 'string' && aiResponse.trim() === '')) {
-      console.warn('[Chat] AI returned empty response');
+    // 빈 응답 안전장치: 자동 재호출 (최대 2회)
+    // thinking 태그만 있고 실제 내용이 없는 것도 빈 응답으로 처리
+    const getVisibleContent = (resp) => {
+      if (!resp) return '';
+      const text = typeof resp === 'string' ? resp : (resp.text || '');
+      return text.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').replace(/\{need\}[\s\S]*?(?:\n|$)/g, '').trim();
+    };
+    const MAX_EMPTY_RETRIES = 2;
+    for (let emptyRetry = 0; emptyRetry < MAX_EMPTY_RETRIES; emptyRetry++) {
+      if (getVisibleContent(aiResponse) !== '') break;
+
+      console.warn(`[Chat] 빈 응답 감지 — 자동 재호출 (${emptyRetry + 1}/${MAX_EMPTY_RETRIES})`);
+      try {
+        const retryMessages = [
+          ...chatMessages,
+          { role: 'user', content: '[system] 비정상적으로 응답이 끝났습니다. 자동 연결되었으니 멈춘 곳에서 다시 시작하세요. 도구 실행 결과가 있으면 그 결과를 바탕으로 사용자에게 답변하세요.' }
+        ];
+        const retryResult = await callAIWithStreaming(aiService, retryMessages, {
+          systemPrompt: combinedSystemPrompt,
+          maxTokens: aiSettings.maxTokens,
+          temperature: aiSettings.temperature,
+          tools: toolsSelected.length > 0 ? allTools.filter(t => toolsSelected.includes(t.name)) : null,
+          toolExecutor: toolExecutor,
+          thinking: false,
+        }, { emitLifecycle: false });
+        aiResponse = typeof retryResult === 'object' ? retryResult.text : retryResult;
+        if (retryResult && typeof retryResult === 'object') {
+          actualUsage = retryResult.usage || actualUsage;
+        }
+      } catch (retryErr) {
+        console.error(`[Chat] 빈 응답 재호출 실패:`, retryErr.message);
+        break;
+      }
+    }
+    // 재호출 후에도 빈 응답이면 최종 안전장치
+    if (!aiResponse || (typeof aiResponse === 'string' && aiResponse.trim() === '') || (typeof aiResponse === 'object' && (!aiResponse.text || aiResponse.text.trim() === ''))) {
+      console.warn('[Chat] 재호출 후에도 빈 응답');
       aiResponse = '🤔 응답을 생성하지 못했어요. 다시 시도해주세요.';
     }
 
@@ -1197,7 +1367,7 @@ ${toolCatalog}`;
     // 응답에서 내부 태그 제거 ({need}, {도구이름: ...} — 사용자에게 안 보이게)
     finalResponse = finalResponse
       .replace(/\{need\}\s*.+?(?:\n|$)/g, '')
-      .replace(/\{(recall_memory|get_profile|update_profile|list_my_rules|add_my_rule|delete_my_rule)[:\s]+.+?\}/gi, '')
+      .replace(/\{(recall_memory|get_profile|update_profile|list_my_rules|add_my_rule|update_my_rule|toggle_my_rule|delete_my_rule)[:\s]+.+?\}/gi, '')
       .trim();
     // 동적 도구 이름도 제거
     if (preloadedTools && preloadedTools.length > 0) {

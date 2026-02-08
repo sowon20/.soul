@@ -105,6 +105,12 @@ class SoulSocketClient {
       this._handleToolEnd(data);
     });
 
+    // 캔버스 패널 실시간 업데이트
+    this.socket.on('canvas_update', (data) => {
+      console.log('🎨 Canvas update:', data);
+      this._handleCanvasUpdate(data);
+    });
+
     // 스트리밍 이벤트
     this.socket.on('stream_start', () => {
       this._streaming = true;
@@ -583,6 +589,92 @@ class SoulSocketClient {
     if (dashboardWsItem) {
       dashboardWsItem.className = `server-indicator ${connected ? 'online' : 'offline'}`;
     }
+  }
+
+  /**
+   * 캔버스 패널 실시간 업데이트 처리
+   * 도구 실행 결과가 열려있는 패널에 즉시 반영 + 변경 부분 하이라이트
+   */
+  _handleCanvasUpdate(data) {
+    // 캔버스 iframe에 변경 알림 (MCP 도구 실행 후 실시간 반영 + 이펙트)
+    // data.panel은 'todo' 같은 단축명이지만, iframe ID는 'canvas-iframe-mcp_xxx' 형태
+    // → 모든 MCP iframe을 순회하며 매칭
+    let canvasIframe = document.querySelector(`#canvas-iframe-${data.panel} iframe`);
+    if (!canvasIframe) {
+      // 단축명으로 못 찾으면, canvasTabs에서 이름 매칭으로 찾기
+      const tabs = window.soulApp?.canvasTabs || [];
+      const matchTab = tabs.find(t =>
+        t.title?.toLowerCase().includes(data.panel) ||
+        t.type?.toLowerCase().includes(data.panel)
+      );
+      if (matchTab) {
+        canvasIframe = document.querySelector(`#canvas-iframe-${matchTab.type} iframe`);
+      }
+    }
+    if (canvasIframe) {
+      try {
+        canvasIframe.contentWindow.postMessage({
+          type: 'soul_canvas_update',
+          tool: data.tool,
+          input: data.input,
+          result: data.result
+        }, '*');
+      } catch (e) {
+        canvasIframe.contentWindow?.location.reload();
+      }
+      return;
+    }
+
+    // iframe이 없으면 기존 패널 매니저 방식
+    const panelManager = window.soulApp?.panelManager;
+    if (!panelManager) return;
+
+    if (panelManager.currentPanel === data.panel) {
+      const beforeItems = panelManager.panelContent?.querySelectorAll('[data-item-id]') || [];
+      const beforeIds = new Set([...beforeItems].map(el => el.dataset.itemId));
+
+      panelManager.openPanel(data.panel).then(() => {
+        requestAnimationFrame(() => {
+          const afterItems = panelManager.panelContent?.querySelectorAll('[data-item-id]') || [];
+          afterItems.forEach(el => {
+            if (!beforeIds.has(el.dataset.itemId)) {
+              el.classList.add('canvas-item-highlight');
+              setTimeout(() => el.classList.remove('canvas-item-highlight'), 2000);
+            }
+          });
+
+          if (afterItems.length === 0 && panelManager.panelContent) {
+            const content = panelManager.panelContent.querySelector('.todo-panel, .memory-panel, .profile-panel');
+            if (content) {
+              content.classList.add('canvas-content-flash');
+              setTimeout(() => content.classList.remove('canvas-content-flash'), 1500);
+            }
+          }
+        });
+      });
+    }
+
+    if (panelManager.currentPanel !== data.panel) {
+      this._showCanvasUpdateBadge(data);
+    }
+  }
+
+  /**
+   * 캔버스 업데이트 알림 배지 (패널이 닫혀있을 때)
+   */
+  _showCanvasUpdateBadge(data) {
+    const panelToggle = document.querySelector('.canvas-toggle-btn, [data-panel-toggle]');
+    if (!panelToggle) return;
+
+    let badge = panelToggle.querySelector('.canvas-update-badge');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'canvas-update-badge';
+      panelToggle.style.position = 'relative';
+      panelToggle.appendChild(badge);
+    }
+    badge.classList.add('pulse');
+    setTimeout(() => badge.classList.remove('pulse'), 3000);
   }
 
   /**

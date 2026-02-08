@@ -2488,32 +2488,57 @@ class DeepSeekService extends OpenAIService {
 
       if (onChunk) onChunk('tool_end', null);
 
-      // 도구 결과 포함해서 non-streaming으로 최종 응답
-      requestBody.messages = apiMessages;
-      requestBody.stream = false;
-      const finalResp = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify(requestBody)
-      });
-      const finalData = await finalResp.json();
-      if (finalData.error) throw new Error(finalData.error.message);
+      // 도구 결과로 최종 응답 — 모델이 또 도구를 부르면 반복 (충분히)
+      const MAX_TOOL_LOOPS = 20;
+      for (let toolLoop = 0; toolLoop < MAX_TOOL_LOOPS; toolLoop++) {
+        requestBody.messages = apiMessages;
+        requestBody.stream = false;
+        const finalResp = await fetch(`${this.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`
+          },
+          body: JSON.stringify(requestBody)
+        });
+        const finalData = await finalResp.json();
+        if (finalData.error) throw new Error(finalData.error.message);
 
-      const finalMsg = finalData.choices?.[0]?.message;
-      fullContent = finalMsg?.content || '';
-      if (finalMsg?.reasoning_content) {
-        fullReasoning += finalMsg.reasoning_content;
+        const finalMsg = finalData.choices?.[0]?.message;
+        usage = {
+          input_tokens: (usage.input_tokens || 0) + (finalData.usage?.prompt_tokens || 0),
+          output_tokens: (usage.output_tokens || 0) + (finalData.usage?.completion_tokens || 0)
+        };
+
+        // 모델이 또 도구를 호출하는 경우 → 실행하고 다시 루프
+        if (finalMsg?.tool_calls && finalMsg.tool_calls.length > 0 && toolExecutor) {
+          console.log(`[DeepSeek Stream] 추가 도구 호출 (loop ${toolLoop + 1}): ${finalMsg.tool_calls.map(tc => tc.function.name).join(', ')}`);
+          apiMessages.push({
+            role: 'assistant',
+            content: finalMsg.content || null,
+            tool_calls: finalMsg.tool_calls
+          });
+          for (const tc of finalMsg.tool_calls) {
+            const input = JSON.parse(tc.function.arguments || '{}');
+            console.log(`[DeepSeek Stream Tool] Executing: ${tc.function.name}`, input);
+            const result = await toolExecutor(tc.function.name, input);
+            apiMessages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: typeof result === 'string' ? result : JSON.stringify(result)
+            });
+          }
+          continue;
+        }
+
+        // 도구 호출 없으면 최종 응답
+        fullContent = finalMsg?.content || '';
+        if (finalMsg?.reasoning_content) {
+          fullReasoning += finalMsg.reasoning_content;
+        }
+        if (onChunk) onChunk('content_replace', fullContent);
+        break;
       }
-      usage = {
-        input_tokens: (usage.input_tokens || 0) + (finalData.usage?.prompt_tokens || 0),
-        output_tokens: (usage.output_tokens || 0) + (finalData.usage?.completion_tokens || 0)
-      };
-
-      // 최종 응답을 한번에 전송
-      if (onChunk) onChunk('content_replace', fullContent);
     }
 
     // 최종 텍스트 조합
@@ -2825,35 +2850,61 @@ class QwenService extends OpenAIService {
 
       if (onChunk) onChunk('tool_end', null);
 
-      // 도구 결과로 최종 응답 (non-streaming, thinking/stream_options 제거)
-      requestBody.messages = apiMessages;
-      requestBody.stream = false;
-      delete requestBody.stream_options;
-      delete requestBody.enable_thinking;
-      delete requestBody.thinking_budget;
-      if (!requestBody.temperature) requestBody.temperature = 0.7;
-      const finalResp = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify(requestBody)
-      });
-      const finalData = await finalResp.json();
-      if (finalData.error) throw new Error(finalData.error.message);
+      // 도구 결과로 최종 응답 — 모델이 또 도구를 부르면 반복 (충분히)
+      const MAX_TOOL_LOOPS = 20;
+      for (let toolLoop = 0; toolLoop < MAX_TOOL_LOOPS; toolLoop++) {
+        requestBody.messages = apiMessages;
+        requestBody.stream = false;
+        delete requestBody.stream_options;
+        delete requestBody.enable_thinking;
+        delete requestBody.thinking_budget;
+        if (!requestBody.temperature) requestBody.temperature = 0.7;
+        const finalResp = await fetch(`${this.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`
+          },
+          body: JSON.stringify(requestBody)
+        });
+        const finalData = await finalResp.json();
+        if (finalData.error) throw new Error(finalData.error.message);
 
-      const finalMsg = finalData.choices?.[0]?.message;
-      fullContent = finalMsg?.content || '';
-      if (finalMsg?.reasoning_content) {
-        fullReasoning += finalMsg.reasoning_content;
+        const finalMsg = finalData.choices?.[0]?.message;
+        usage = {
+          input_tokens: (usage.input_tokens || 0) + (finalData.usage?.prompt_tokens || 0),
+          output_tokens: (usage.output_tokens || 0) + (finalData.usage?.completion_tokens || 0)
+        };
+
+        // 모델이 또 도구를 호출하는 경우 → 실행하고 다시 루프
+        if (finalMsg?.tool_calls && finalMsg.tool_calls.length > 0 && toolExecutor) {
+          console.log(`[Qwen Stream] 추가 도구 호출 (loop ${toolLoop + 1}): ${finalMsg.tool_calls.map(tc => tc.function.name).join(', ')}`);
+          apiMessages.push({
+            role: 'assistant',
+            content: finalMsg.content || null,
+            tool_calls: finalMsg.tool_calls
+          });
+          for (const tc of finalMsg.tool_calls) {
+            const input = JSON.parse(tc.function.arguments || '{}');
+            console.log(`[Qwen Stream Tool] Executing: ${tc.function.name}`, input);
+            const result = await toolExecutor(tc.function.name, input);
+            apiMessages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              content: typeof result === 'string' ? result : JSON.stringify(result)
+            });
+          }
+          continue; // 다시 API 호출
+        }
+
+        // 도구 호출 없으면 최종 응답
+        fullContent = finalMsg?.content || '';
+        if (finalMsg?.reasoning_content) {
+          fullReasoning += finalMsg.reasoning_content;
+        }
+        if (onChunk) onChunk('content_replace', fullContent);
+        break;
       }
-      usage = {
-        input_tokens: (usage.input_tokens || 0) + (finalData.usage?.prompt_tokens || 0),
-        output_tokens: (usage.output_tokens || 0) + (finalData.usage?.completion_tokens || 0)
-      };
-
-      if (onChunk) onChunk('content_replace', fullContent);
     }
 
     // 최종 텍스트 조합

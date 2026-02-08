@@ -314,8 +314,6 @@ export class ChatManager {
    * @param {Object} message - { role, content, timestamp }
    */
   addMessage(message) {
-    console.log('[Chat] addMessage called:', message.role, message.content?.substring(0, 50));
-    console.trace('[Chat] addMessage stack trace');
     this.messages.push(message);
 
     const messageElement = this.createMessageElement(message);
@@ -413,6 +411,9 @@ export class ChatManager {
       // tool_use 태그 분리
       displayContent = displayContent.replace(/<tool_use>[\s\S]*?<\/tool_use>/g, '').trim();
 
+      // tool_history 태그 제거 (도구 실행 결과는 접힘 UI로 표시)
+      displayContent = displayContent.replace(/<tool_history>[\s\S]*?<\/tool_history>/g, '').trim();
+
       // TTS 전용 태그 제거 (화면에서 숨김, TTS는 원본 사용)
       displayContent = displayContent.replace(/\[laughter\]/gi, '').replace(/ {2,}/g, ' ').trim();
       
@@ -502,7 +503,11 @@ export class ChatManager {
       }
 
       // 도구 사용 과정 표시 (온보딩 스텝 스타일)
-      if (message.toolsUsed && message.toolsUsed.length > 0) {
+      const hasToolsUsed = message.toolsUsed && message.toolsUsed.length > 0;
+      const hasToolNeeds = message.toolNeeds && message.toolNeeds.length > 0;
+      const hasToolsSelected = message.toolsSelected && message.toolsSelected.length > 0;
+      if (hasToolsUsed || hasToolNeeds || hasToolsSelected) {
+        const toolsUsedArr = message.toolsUsed || [];
         const toolsContainer = document.createElement('div');
         toolsContainer.className = 'ai-tool-thinking-container';
 
@@ -510,10 +515,10 @@ export class ChatManager {
         const toolsToggle = document.createElement('button');
         toolsToggle.type = 'button';
         toolsToggle.className = 'ai-tool-thinking-toggle';
-        const allSuccess = message.toolsUsed.every(t => t.success);
+        const allSuccess = toolsUsedArr.length > 0 ? toolsUsedArr.every(t => t.success) : true;
         const statusClass = allSuccess ? 'success' : 'warning';
         const icon = allSuccess ? '✓' : '⚠';
-        const totalSteps = (message.toolNeeds?.length ? 1 : 0) + (message.toolsSelected?.length ? 1 : 0) + message.toolsUsed.length;
+        const totalSteps = (hasToolNeeds ? 1 : 0) + (hasToolsSelected ? 1 : 0) + toolsUsedArr.length;
         toolsToggle.innerHTML = `<span class="tool-thinking-icon ${statusClass}">${icon}</span> <span>도구 사용 ${totalSteps}단계</span><span class="tool-thinking-chevron">›</span>`;
         toolsToggle.addEventListener('click', function(e) {
           e.preventDefault();
@@ -584,7 +589,7 @@ export class ChatManager {
         }
 
         // 3. 도구 실행 단계
-        for (const tool of message.toolsUsed) {
+        for (const tool of toolsUsedArr) {
           const step = document.createElement('div');
           step.className = `tool-thinking-step ${tool.success ? 'success' : 'error'}`;
 
@@ -1274,10 +1279,15 @@ export class ChatManager {
             this.scrollToBottom();
           }
         } else if (event === 'end') {
-          // stream_end — 딜레이 중이면 즉시 flush
-          if (!displayReady && pendingChunks.length > 0) {
+          // stream_end — 딜레이 중이면 즉시 flush (버퍼가 비어있어도)
+          if (!displayReady) {
             clearTimeout(delayTimer);
-            flushPendingChunks();
+            if (pendingChunks.length > 0) {
+              flushPendingChunks();
+            } else {
+              displayReady = true;
+              this.hideTypingIndicator();
+            }
           }
         }
       });

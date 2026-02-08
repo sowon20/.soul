@@ -75,6 +75,33 @@ const builtinTools = [
     }
   },
   {
+    name: 'update_my_rule',
+    description: '기존 메모/규칙의 내용이나 속성을 수정 (AI 내부 메모)',
+    input_schema: {
+      type: 'object',
+      properties: {
+        ruleId: { type: 'string', description: '규칙 ID' },
+        rule: { type: 'string', description: '수정할 내용 (생략시 기존 유지)' },
+        category: { type: 'string', enum: ['system', 'coding', 'daily', 'personality', 'user', 'general'], description: '카테고리' },
+        priority: { type: 'number', description: '중요도 1-10' },
+        context: { type: 'string', description: '배경' }
+      },
+      required: ['ruleId']
+    }
+  },
+  {
+    name: 'toggle_my_rule',
+    description: '메모/규칙의 활성 상태를 토글 (체크/언체크). 할 일 완료 처리에 사용.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        ruleId: { type: 'string', description: '규칙 ID' },
+        isActive: { type: 'boolean', description: '활성 상태 (생략시 현재 상태 반전)' }
+      },
+      required: ['ruleId']
+    }
+  },
+  {
     name: 'delete_my_rule',
     description: '내 메모/규칙 삭제 (AI 내부 메모)',
     input_schema: {
@@ -114,6 +141,10 @@ async function executeBuiltinTool(toolName, input) {
       return await listMyRules(input);
     case 'add_my_rule':
       return await addMyRule(input);
+    case 'update_my_rule':
+      return await updateMyRule(input);
+    case 'toggle_my_rule':
+      return await toggleMyRule(input);
     case 'delete_my_rule':
       return await deleteMyRule(input);
     case 'execute_command':
@@ -624,11 +655,69 @@ async function addMyRule({ rule, category = 'general', priority = 5, context = n
 }
 
 /**
+ * update_my_rule 구현 - 기존 규칙 수정
+ */
+async function updateMyRule({ ruleId, rule, category, priority, context }) {
+  try {
+    const existing = await SelfRule.findOne({ id: ruleId });
+    if (!existing) {
+      return { success: false, message: '해당 규칙을 찾지 못했어.' };
+    }
+
+    const updates = {};
+    if (rule !== undefined) updates.rule = rule;
+    if (category !== undefined) updates.category = category;
+    if (priority !== undefined) updates.priority = priority;
+    if (context !== undefined) updates.context = context;
+    updates.updatedAt = new Date().toISOString();
+
+    await SelfRule.updateOne({ id: ruleId }, updates);
+
+    console.log(`[update_my_rule] Updated id=${ruleId}: ${JSON.stringify(updates).substring(0, 100)}`);
+    return {
+      success: true,
+      message: `규칙 수정했어.`,
+      updated: updates
+    };
+  } catch (error) {
+    console.error('[update_my_rule] Error:', error);
+    return { error: error.message };
+  }
+}
+
+/**
+ * toggle_my_rule 구현 - 활성 상태 토글 (체크/언체크)
+ */
+async function toggleMyRule({ ruleId, isActive }) {
+  try {
+    const existing = await SelfRule.findOne({ id: ruleId });
+    if (!existing) {
+      return { success: false, message: '해당 규칙을 찾지 못했어.' };
+    }
+
+    // isActive가 지정되면 그 값, 아니면 현재 반전
+    const newState = isActive !== undefined ? (isActive ? 1 : 0) : (existing.isActive ? 0 : 1);
+    await SelfRule.updateOne({ id: ruleId }, { isActive: newState, updatedAt: new Date().toISOString() });
+
+    const stateText = newState ? '활성화' : '완료 처리';
+    console.log(`[toggle_my_rule] id=${ruleId} → ${stateText}`);
+    return {
+      success: true,
+      message: `규칙을 ${stateText}했어.`,
+      isActive: !!newState
+    };
+  } catch (error) {
+    console.error('[toggle_my_rule] Error:', error);
+    return { error: error.message };
+  }
+}
+
+/**
  * delete_my_rule 구현
  */
 async function deleteMyRule({ ruleId }) {
   try {
-    const result = await SelfRule.deleteOne({ _id: ruleId });
+    const result = await SelfRule.deleteOne({ id: ruleId });
     if (result.deletedCount > 0) {
       return { success: true, message: '규칙 삭제했어.' };
     }
