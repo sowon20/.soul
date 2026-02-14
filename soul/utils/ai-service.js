@@ -2535,7 +2535,7 @@ class DeepSeekService extends OpenAIService {
         if (finalMsg?.reasoning_content) {
           fullReasoning += finalMsg.reasoning_content;
         }
-        if (onChunk) onChunk('content_replace', fullContent);
+        if (onChunk) onChunk('content_append', fullContent);
         break;
       }
     }
@@ -2640,7 +2640,7 @@ class QwenService extends OpenAIService {
       messages: apiMessages,
       max_tokens: maxTokens,
       enable_thinking: true,
-      thinking_budget: 30,
+      thinking_budget: 4096,
       repetition_penalty: 1.2,
       presence_penalty: 0.5,
       frequency_penalty: 0.3,
@@ -2724,7 +2724,7 @@ class QwenService extends OpenAIService {
     if (isThinkingModel) {
       // 생각모델은 enable_thinking: true 필수 (false도 미전송도 에러)
       requestBody.enable_thinking = true;
-      requestBody.thinking_budget = thinking ? 4096 : 30;
+      requestBody.thinking_budget = thinking ? 8192 : 4096;
       if (thinking) {
         requestBody.repetition_penalty = 1.2;
         requestBody.presence_penalty = 0.5;
@@ -2900,7 +2900,7 @@ class QwenService extends OpenAIService {
         if (finalMsg?.reasoning_content) {
           fullReasoning += finalMsg.reasoning_content;
         }
-        if (onChunk) onChunk('content_replace', fullContent);
+        if (onChunk) onChunk('content_append', fullContent);
         break;
       }
     }
@@ -3055,6 +3055,7 @@ class TogetherAIService extends AIService {
       tools = null,
       toolExecutor = null,
       documents = null,
+      thinking = false,
     } = options;
 
     const apiMessages = messages.filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()));
@@ -3073,6 +3074,13 @@ class TogetherAIService extends AIService {
       max_tokens: maxTokens,
       temperature: temperature,
     };
+
+    // Thinking 모드: Together AI reasoning API 사용
+    // reasoning_effort 미지정 → 모델이 max_tokens 내에서 자율 배분
+    if (thinking) {
+      requestBody.reasoning = { enabled: true };
+      console.log(`[TogetherAI] Thinking enabled (reasoning API, max_tokens=${maxTokens})`);
+    }
 
     if (tools && tools.length > 0) {
       requestBody.tools = tools.map(t => ({
@@ -3096,8 +3104,24 @@ class TogetherAIService extends AIService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[TogetherAI] Error response:', errorText);
-      throw new Error(`Together AI API error (${response.status}): ${errorText || 'Unknown error'}`);
+      // reasoning API 미지원 시 재시도 (파인튜닝 모델 등)
+      if (thinking && (errorText.includes('reasoning') || errorText.includes('parameter'))) {
+        console.warn(`[TogetherAI] reasoning API not supported, retrying without it`);
+        delete requestBody.reasoning;
+        delete requestBody.reasoning_effort;
+        response = await fetch(`${this.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.apiKey}` },
+          body: JSON.stringify(requestBody)
+        });
+        if (!response.ok) {
+          const retryError = await response.text();
+          throw new Error(`Together AI API error (${response.status}): ${retryError || 'Unknown error'}`);
+        }
+      } else {
+        console.error('[TogetherAI] Error response:', errorText);
+        throw new Error(`Together AI API error (${response.status}): ${errorText || 'Unknown error'}`);
+      }
     }
 
     let data = await response.json();
@@ -3168,7 +3192,22 @@ class TogetherAIService extends AIService {
       output_tokens: data.usage?.completion_tokens || 0
     };
 
-    return { text: data.choices[0].message.content, usage };
+    // reasoning content 처리 (Together AI API-level 또는 텍스트 <think> 태그)
+    const msg = data.choices[0].message;
+    let text = msg.content || '';
+    if (msg.reasoning) {
+      // Together AI reasoning API 응답
+      console.log(`[TogetherAI] Reasoning content length: ${msg.reasoning.length}`);
+      text = `<thinking>${msg.reasoning}</thinking>\n\n${text}`;
+    } else if (text.includes('<think>')) {
+      // Fallback: 텍스트 내 <think> 태그 → <thinking> 태그로 변환
+      text = text.replace(/<think>([\s\S]*?)<\/think>\s*/g, (_, reasoning) => {
+        console.log(`[TogetherAI] Text-level thinking detected, length: ${reasoning.length}`);
+        return `<thinking>${reasoning.trim()}</thinking>\n\n`;
+      });
+    }
+
+    return { text, usage };
   }
 
   async streamChat(messages, options = {}, onChunk) {
@@ -3179,6 +3218,7 @@ class TogetherAIService extends AIService {
       tools = null,
       toolExecutor = null,
       documents = null,
+      thinking = false,
     } = options;
 
     const apiMessages = messages.filter(msg => msg.content && (typeof msg.content !== 'string' || msg.content.trim()));
@@ -3196,6 +3236,18 @@ class TogetherAIService extends AIService {
       stream: true,
     };
 
+    // Thinking 모드
+    let useReasoningAPI = false;
+    // Together AI reasoning API는 function calling 미지원 - 도구 있으면 thinking 비활성화
+    const hasTools = tools && tools.length > 0;
+    if (thinking && !hasTools) {
+      requestBody.reasoning = { enabled: true };
+      useReasoningAPI = true;
+      console.log(`[TogetherAI Stream] Thinking enabled (reasoning API, max_tokens=${maxTokens})`);
+    } else if (thinking && hasTools) {
+      console.log(`[TogetherAI Stream] Thinking disabled - Together AI reasoning API doesn't support tools (${tools.length} tools present)`);
+    }
+
     if (tools && tools.length > 0) {
       requestBody.tools = tools.map(t => ({
         type: 'function',
@@ -3207,7 +3259,7 @@ class TogetherAIService extends AIService {
       }));
     }
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    let response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -3218,13 +3270,36 @@ class TogetherAIService extends AIService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Together AI Stream error (${response.status}): ${errorText}`);
+      // reasoning API 미지원 시 fallback (파인튜닝 모델 등)
+      if (useReasoningAPI && (errorText.includes('reasoning') || errorText.includes('parameter'))) {
+        console.warn(`[TogetherAI Stream] reasoning API not supported, retrying without it`);
+        delete requestBody.reasoning;
+        delete requestBody.reasoning_effort;
+        useReasoningAPI = false;
+        response = await fetch(`${this.baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.apiKey}` },
+          body: JSON.stringify(requestBody)
+        });
+        if (!response.ok) {
+          const retryError = await response.text();
+          throw new Error(`Together AI Stream error (${response.status}): ${retryError}`);
+        }
+      } else {
+        throw new Error(`Together AI Stream error (${response.status}): ${errorText}`);
+      }
     }
 
     let fullContent = '';
+    let fullReasoning = '';
     let usage = { input_tokens: 0, output_tokens: 0 };
     let toolCallsBuffer = {};  // index → { id, name, arguments }
     let finishReason = null;
+
+    // <think> 태그 실시간 파싱 상태 (파인튜닝 모델 fallback)
+    // 상태: 'detect' → 아직 <think> 여부 모름, 'thinking' → <think> 안에 있음, 'content' → 일반 텍스트
+    let thinkParseState = thinking ? 'detect' : 'content';
+    let thinkTagBuffer = '';  // <think> 또는 </think> 부분 매칭용
 
     const reader = response.body;
     const decoder = new TextDecoder();
@@ -3246,10 +3321,62 @@ class TogetherAIService extends AIService {
           finishReason = parsed.choices?.[0]?.finish_reason || finishReason;
 
           if (delta) {
-            // content (텍스트 응답)
+            // Together AI reasoning API (delta.reasoning)
+            if (delta.reasoning) {
+              fullReasoning += delta.reasoning;
+              if (onChunk) onChunk('thinking', delta.reasoning);
+            }
+
+            // content 처리 — <think> 태그 실시간 파싱 포함
             if (delta.content) {
-              fullContent += delta.content;
-              if (onChunk) onChunk('content', delta.content);
+              // reasoning API가 reasoning을 따로 줬으면 content는 그대로 전달
+              if (useReasoningAPI && fullReasoning) {
+                fullContent += delta.content;
+                if (onChunk) onChunk('content', delta.content);
+              } else {
+                // <think> 태그 실시간 파싱 (파인튜닝 모델)
+                const text = delta.content;
+                for (let i = 0; i < text.length; i++) {
+                  const ch = text[i];
+                  if (thinkParseState === 'detect') {
+                    // 아직 <think> 시작 여부 판단 중
+                    thinkTagBuffer += ch;
+                    if ('<think>'.startsWith(thinkTagBuffer)) {
+                      if (thinkTagBuffer === '<think>') {
+                        // <think> 태그 완성 → thinking 모드 진입
+                        thinkParseState = 'thinking';
+                        thinkTagBuffer = '';
+                      }
+                      // 아직 부분 매칭 — 계속 대기
+                    } else {
+                      // <think>가 아님 → 버퍼 내용을 content로 flush
+                      thinkParseState = 'content';
+                      fullContent += thinkTagBuffer;
+                      if (onChunk) onChunk('content', thinkTagBuffer);
+                      thinkTagBuffer = '';
+                    }
+                  } else if (thinkParseState === 'thinking') {
+                    thinkTagBuffer += ch;
+                    if ('</think>'.startsWith(thinkTagBuffer)) {
+                      if (thinkTagBuffer === '</think>') {
+                        // </think> 완성 → content 모드 전환
+                        thinkParseState = 'content';
+                        thinkTagBuffer = '';
+                      }
+                    } else {
+                      // </think>가 아님 → 버퍼를 thinking으로 flush
+                      const thinkText = thinkTagBuffer;
+                      thinkTagBuffer = '';
+                      fullReasoning += thinkText;
+                      if (onChunk) onChunk('thinking', thinkText);
+                    }
+                  } else {
+                    // content 모드
+                    fullContent += ch;
+                    if (onChunk) onChunk('content', ch);
+                  }
+                }
+              }
             }
 
             // tool_calls (스트리밍에서는 청크로 나눠서 옴)
@@ -3279,8 +3406,101 @@ class TogetherAIService extends AIService {
     }
 
     // 도구 호출이 있으면 실행 후 non-streaming으로 재호출
-    const toolCallsList = Object.values(toolCallsBuffer);
+    let toolCallsList = Object.values(toolCallsBuffer);
+    console.log(`[TogetherAI Stream] 도구 버퍼 확인: ${toolCallsList.length}개`, toolCallsList);
+    console.log(`[TogetherAI Stream] fullContent (first 500 chars):`, fullContent.substring(0, 500));
+    console.log(`[TogetherAI Stream] fullReasoning (first 500 chars):`, fullReasoning.substring(0, 500));
+
+    // Together AI 파인튜닝 모델 임시 파싱: content에 [도구명] + JSON 형식 감지
+    if (toolCallsList.length === 0 && fullContent && tools && tools.length > 0) {
+      const lines = fullContent.split('\n');
+      const parsedTools = [];
+      const availableToolNames = new Set(tools.map(t => t.name));
+
+      // 마크다운 코드 블록 감지 (```로 시작하는 줄들)
+      let inCodeBlock = false;
+
+      for (let i = 0; i < lines.length; i++) {
+        // 코드 블록 토글
+        if (lines[i].trim().startsWith('```')) {
+          inCodeBlock = !inCodeBlock;
+          continue;
+        }
+
+        // 코드 블록 안이면 파싱 안 함
+        if (inCodeBlock) continue;
+
+        const match = lines[i].match(/\[([a-z_]+)\]/);
+        if (match && i + 1 < lines.length) {  // 다음 줄이 있는지 확인
+          const toolName = match[1];
+          const nextLine = lines[i + 1].trim();
+
+          // 정확한 형식인지 검증
+          if (availableToolNames.has(toolName) && nextLine.startsWith('{')) {
+            try {
+              const args = JSON.parse(nextLine);
+              parsedTools.push({
+                id: `call_parsed_${i}`,
+                name: toolName,
+                arguments: nextLine
+              });
+              console.log(`[TogetherAI Stream] 텍스트에서 도구 파싱: ${toolName}`);
+            } catch (e) {
+              // JSON 파싱 실패 - 그냥 텍스트로 둠
+              console.log(`[TogetherAI Stream] JSON 파싱 실패, 텍스트 유지: ${toolName}`);
+            }
+          }
+        }
+      }
+
+      if (parsedTools.length > 0) {
+        toolCallsList = parsedTools;
+        console.log(`[TogetherAI Stream] 임시 파싱으로 ${parsedTools.length}개 도구 발견`);
+
+        // 파싱된 도구 호출 부분을 content에서 제거
+        const cleanedLines = [];
+        let skipNext = false;
+        inCodeBlock = false;
+
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].trim().startsWith('```')) {
+            inCodeBlock = !inCodeBlock;
+            cleanedLines.push(lines[i]);
+            continue;
+          }
+
+          if (skipNext) {
+            skipNext = false;
+            continue;
+          }
+
+          if (!inCodeBlock) {
+            const match = lines[i].match(/\[([a-z_]+)\]/);
+            if (match && i + 1 < lines.length) {
+              const toolName = match[1];
+              const nextLine = lines[i + 1].trim();
+              if (availableToolNames.has(toolName) && nextLine.startsWith('{')) {
+                try {
+                  JSON.parse(nextLine);
+                  // 유효한 도구 호출 - 이 줄과 다음 줄 제거
+                  skipNext = true;
+                  continue;
+                } catch (e) {
+                  // 파싱 실패 - 유지
+                }
+              }
+            }
+          }
+
+          cleanedLines.push(lines[i]);
+        }
+
+        fullContent = cleanedLines.join('\n').trim();
+      }
+    }
+
     if (toolCallsList.length > 0 && toolExecutor) {
+      console.log(`[TogetherAI Stream] 도구 실행 시작: ${toolCallsList.map(t => t.name).join(', ')}`);
       if (onChunk) onChunk('tool_start', toolCallsList.map(t => t.name));
 
       // arguments JSON 유효성 검증
@@ -3384,13 +3604,44 @@ class TogetherAIService extends AIService {
 
         // 도구 호출 없으면 최종 응답
         fullContent = finalMsg?.content || '';
-        if (onChunk) onChunk('content_replace', fullContent);
+        // 도구 후 최종 응답에서도 reasoning 처리
+        if (finalMsg?.reasoning) {
+          fullReasoning += finalMsg.reasoning;
+          if (onChunk) onChunk('thinking', finalMsg.reasoning);
+        } else if (fullContent.includes('<think>')) {
+          // 텍스트 내 <think> 태그 파싱
+          const thinkMatch = fullContent.match(/^<think>([\s\S]*?)<\/think>\s*/);
+          if (thinkMatch) {
+            fullReasoning += thinkMatch[1];
+            fullContent = fullContent.slice(thinkMatch[0].length);
+            if (onChunk) onChunk('thinking', thinkMatch[1]);
+          }
+        }
+        if (onChunk) onChunk('content_append', fullContent);
         break;
       }
     }
 
-    if (onChunk) onChunk('done', { text: fullContent, usage });
-    return { text: fullContent, usage };
+    // thinking 태그 버퍼에 남은 내용 flush
+    if (thinkTagBuffer) {
+      if (thinkParseState === 'thinking') {
+        fullReasoning += thinkTagBuffer;
+        if (onChunk) onChunk('thinking', thinkTagBuffer);
+      } else {
+        fullContent += thinkTagBuffer;
+        if (onChunk) onChunk('content', thinkTagBuffer);
+      }
+    }
+
+    // reasoning이 있으면 <thinking> 태그로 감싸서 텍스트에 포함
+    let finalText = fullContent;
+    if (fullReasoning) {
+      console.log(`[TogetherAI Stream] Reasoning content length: ${fullReasoning.length}`);
+      finalText = `<thinking>${fullReasoning}</thinking>\n\n${fullContent}`;
+    }
+
+    if (onChunk) onChunk('done', { text: finalText, usage });
+    return { text: finalText, usage };
   }
 }
 
@@ -4497,13 +4748,15 @@ class AIServiceFactory {
           }
 
           const togetherData = await togetherModelsResponse.json();
+          // 채팅 불가 타입만 제외 (파인튜닝 모델은 type이 다를 수 있으므로 허용적 필터)
+          const EXCLUDED_TYPES = new Set(['embedding', 'image', 'moderation', 'rerank']);
           const togetherModels = (togetherData || [])
-            .filter(m => m.type === 'chat')
+            .filter(m => !EXCLUDED_TYPES.has(m.type))
             .map(m => ({
               id: m.id,
               name: m.display_name || m.id,
               contextWindow: m.context_length || 0,
-              description: `Context: ${m.context_length || 'N/A'}`
+              description: `${m.type || 'custom'}${m.context_length ? ` · Context: ${m.context_length}` : ''}`
             }));
           return { success: true, models: togetherModels };
 

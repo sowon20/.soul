@@ -377,9 +377,13 @@ function _addToHnsw(embedding, sqliteId) {
  * 메시지 임베딩 후 SQLite + HNSW에 저장
  */
 async function addMessage(message) {
+  console.log('[VectorStore] addMessage called:', { id: message.id, role: message.role, textLen: (message.text || message.content || '').length });
   try {
     const text = message.text || message.content || '';
-    if (!text || text.length < 5) return;
+    if (!text || text.length < 5) {
+      console.log('[VectorStore] addMessage skipped: text too short');
+      return;
+    }
 
     const embedding = await embed(text, message.category || 'digest-embed');
     if (!embedding) {
@@ -630,16 +634,6 @@ async function ingestDayConversation(filePath, options = {}) {
 
   const db = require('../db');
   if (!db.db) db.init();
-
-  // 이미 임베딩된 날짜인지 확인 (중복 방지)
-  const existingCount = db.db.prepare(
-    "SELECT COUNT(*) as c FROM embeddings WHERE source = ? AND source_date = ?"
-  ).get(`conversation:${source}`, source)?.c || 0;
-
-  if (existingCount > 0) {
-    console.log(`[VectorStore] Already embedded: ${source} (${existingCount} chunks), skipping`);
-    return { total: 0, embedded: 0, skipped: existingCount, errors: 0 };
-  }
 
   // user+assistant 턴 쌍으로 청킹
   const chunks = [];

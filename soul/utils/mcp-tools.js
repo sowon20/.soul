@@ -8,8 +8,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getProactiveMessenger } = require('./proactive-messenger');
-const scheduledMessages = require('./scheduled-messages');
 const SystemConfig = require('../models/SystemConfig');
 
 // MCP 도구 캐시
@@ -47,50 +45,7 @@ function compressInputSchema(schema) {
   return compressed;
 }
 
-/**
- * 프로액티브 메시징 도구 (프로액티브 기능 ON일 때만 포함)
- */
-const PROACTIVE_TOOLS = [
-  {
-    name: 'send_message',
-    description: '즉시 메시지 전송',
-    input_schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string', description: '내용' }
-      },
-      required: ['message']
-    }
-  },
-  {
-    name: 'schedule_message',
-    description: '예약 메시지',
-    input_schema: {
-      type: 'object',
-      properties: {
-        message: { type: 'string', description: '내용' },
-        delay_seconds: { type: 'number', description: '초' }
-      },
-      required: ['message']
-    }
-  },
-  {
-    name: 'cancel_scheduled_message',
-    description: '예약 취소',
-    input_schema: {
-      type: 'object',
-      properties: {
-        schedule_id: { type: 'number', description: 'ID' }
-      },
-      required: ['schedule_id']
-    }
-  },
-  {
-    name: 'list_scheduled_messages',
-    description: '예약 목록',
-    input_schema: { type: 'object', properties: {} }
-  }
-];
+// 메시징 도구는 builtin-tools.js로 이동됨 (v3 도구 통합)
 
 /**
  * 서버 설정 로드 (DB에서)
@@ -105,39 +60,7 @@ async function loadServerConfig() {
   }
 }
 
-/**
- * 내장 도구 실행기
- */
-async function executeBuiltinTool(toolName, input) {
-  const messenger = await getProactiveMessenger();
-
-  switch (toolName) {
-    case 'send_message':
-      if (messenger) {
-        await messenger.sendNow({ type: 'ai_initiated', message: input.message });
-      }
-      return { success: true, message: '메시지 전송 완료' };
-
-    case 'schedule_message': {
-      const delaySeconds = input.delay_seconds || 60;
-      const result = await scheduledMessages.schedule(input.message, delaySeconds);
-      return { success: true, schedule_id: result.scheduleId };
-    }
-
-    case 'cancel_scheduled_message': {
-      const result = await scheduledMessages.cancel(input.schedule_id);
-      return result ? { success: true } : { success: false, error: '예약을 찾을 수 없음' };
-    }
-
-    case 'list_scheduled_messages': {
-      const pending = await scheduledMessages.list();
-      return { success: true, scheduled: pending };
-    }
-
-    default:
-      return { success: false, error: `Unknown builtin tool: ${toolName}` };
-  }
-}
+// 메시징 도구 실행기는 builtin-tools.js로 이동됨
 
 /**
  * URL에서 프로토콜 타입 감지
@@ -337,14 +260,11 @@ async function executeExternalTool(serverUrl, toolName, input, apiKey) {
 
 /**
  * MCP 도구 목록 로드 (async)
- * @param {Object} options
- * @param {boolean} options.includeProactive - 프로액티브 도구 포함 여부 (기본: false)
+ * 메시징 도구는 builtin-tools.js로 이동됨. 여기는 외부 MCP 도구만.
  * @returns {Promise<Array>} Claude API tools 형식의 도구 배열
  */
-async function loadMCPTools({ includeProactive = false } = {}) {
-  // 캐시 키에 proactive 포함 여부 반영
-  const cacheKey = includeProactive ? 'with_proactive' : 'no_proactive';
-  if (toolsCache && toolsCache.key === cacheKey && Date.now() - toolsCache.timestamp < 5 * 60 * 1000) {
+async function loadMCPTools() {
+  if (toolsCache && Date.now() - toolsCache.timestamp < 5 * 60 * 1000) {
     return toolsCache.tools;
   }
 
@@ -353,21 +273,7 @@ async function loadMCPTools({ includeProactive = false } = {}) {
   executorsCache = {};
   externalServersCache = {};
 
-  // 1. 프로액티브 도구 (옵션에 따라 포함)
-  if (includeProactive) {
-    for (const tool of PROACTIVE_TOOLS) {
-      tools.push(tool);
-      executorsCache[tool.name] = executeBuiltinTool;
-    }
-    console.log(`[MCP] Loaded ${PROACTIVE_TOOLS.length} proactive tools`);
-  } else {
-    // 프로액티브 도구 executor는 항상 등록 (직접 호출 대비)
-    for (const tool of PROACTIVE_TOOLS) {
-      executorsCache[tool.name] = executeBuiltinTool;
-    }
-  }
-
-  // 2. 로컬 MCP 도구 (mcp/tools/)
+  // 1. 로컬 MCP 도구 (mcp/tools/)
   try {
     const files = fs.readdirSync(toolsPath);
     for (const file of files) {
@@ -424,7 +330,7 @@ async function loadMCPTools({ includeProactive = false } = {}) {
     console.error('[MCP] Failed to load external servers:', e.message);
   }
 
-  toolsCache = { tools, key: cacheKey, timestamp: Date.now() };
+  toolsCache = { tools, timestamp: Date.now() };
   console.log(`[MCP] Total ${tools.length} tools loaded`);
   return tools;
 }

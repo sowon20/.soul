@@ -161,14 +161,23 @@ global.io = io;
       }
     })().catch(() => {});
 
-    // 임베딩 스케줄러 시작 (매일 7AM KST — 어제 대화 자동 임베딩)
-    try {
-      const { scheduleEmbedding } = require('../utils/embedding-scheduler');
-      scheduleEmbedding();
-      console.log('✅ Embedding scheduler started');
-    } catch (e) {
-      console.warn('⚠️  Embedding scheduler failed:', e.message);
-    }
+    // 임베딩 자동화 (임시 - 실시간 임베딩 수정 전까지)
+    setInterval(async () => {
+      try {
+        const vectorStore = require('../utils/vector-store');
+        const today = new Date().toISOString().split('T')[0];
+        const path = require('path');
+        const os = require('os');
+        const conversationFile = path.join(os.homedir(), '.soul', 'conversations', today.substring(0, 7), `${today}.json`);
+
+        if (require('fs').existsSync(conversationFile)) {
+          await vectorStore.ingestDayConversation(conversationFile);
+        }
+      } catch (e) {
+        console.warn('[Auto-embed] Failed:', e.message);
+      }
+    }, 10 * 60 * 1000); // 10분마다
+    console.log('✅ Auto-embedding enabled (every 10 min)');
 
     // ProactiveMessenger — DB에서 이전 상태 복구
     try {
@@ -225,8 +234,10 @@ const bootstrapRoutes = require('../routes/bootstrap');
 const filesRoutes = require('../routes/files');
 const ttsRoutes = require('../routes/tts');
 const billingRoutes = require('../routes/billing');
+const toolsRoutes = require('../routes/tools');
 
 app.use('/api/memory', memoryRoutes);
+app.use('/api/tools', toolsRoutes);
 app.use('/api/ai-models', aiModelsRoutes);
 app.use('/api/ai-services', aiServicesRoutes);
 app.use('/api/config', configRoutes);
@@ -335,6 +346,27 @@ io.on('connection', (socket) => {
   // 터미널 세션 분리 (캔버스 닫을 때 — PTY는 유지)
   socket.on('terminal:detach', ({ sessionId }) => {
     terminalService.detachSocket(sessionId || 'default', socket.id);
+  });
+
+  // 터미널 명령 실행 (builtin 시스템 도구용)
+  socket.on('terminal:command', ({ command }) => {
+    try {
+      const { exec } = require('child_process');
+      exec(command, (error, stdout, stderr) => {
+        if (error) {
+          socket.emit('terminal:output', { data: `Error: ${error.message}\n`, type: 'error' });
+          return;
+        }
+        if (stderr) {
+          socket.emit('terminal:output', { data: stderr, type: 'error' });
+        }
+        if (stdout) {
+          socket.emit('terminal:output', { data: stdout, type: 'success' });
+        }
+      });
+    } catch (e) {
+      socket.emit('terminal:output', { data: `Error: ${e.message}\n`, type: 'error' });
+    }
   });
 
   socket.on('disconnect', () => {

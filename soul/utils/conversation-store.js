@@ -598,8 +598,19 @@ class ConversationStore {
           if (fileDate > new Date(beforeDate.getTime() + 86400000)) continue;
 
           const filePath = path.join(monthPath, dayFile);
-          const content = fs.readFileSync(filePath, 'utf-8');
-          const dayMessages = JSON.parse(content);
+
+          // 파일 크기 확인
+          const stats = fs.statSync(filePath);
+          const fileSize = stats.size;
+
+          // 큰 파일(500KB 이상)은 뒤에서부터 청크 읽기
+          let dayMessages = [];
+          if (fileSize > 500 * 1024) {
+            dayMessages = this._readMessagesFromEnd(filePath, beforeDate, limit - results.length);
+          } else {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            dayMessages = JSON.parse(content);
+          }
 
           // before 이전 메시지만 필터 (역순으로)
           for (let i = dayMessages.length - 1; i >= 0; i--) {
@@ -635,6 +646,90 @@ class ConversationStore {
     } catch (e) {
       console.error('[ConversationStore] getMessagesBefore archive error:', e.message);
       return [];
+    }
+  }
+
+  /**
+   * 큰 JSON 배열 파일을 뒤에서부터 읽어서 필요한 메시지만 파싱
+   * (978KB 같은 큰 파일을 통째로 JSON.parse하지 않기 위함)
+   *
+   * 전략: 파일 끝에서 최대 200KB만 읽어서 파싱 (약 100-200개 메시지)
+   */
+  _readMessagesFromEnd(filePath, beforeDate, maxCount) {
+    try {
+      const MAX_READ = 200 * 1024; // 최대 200KB만 읽기
+      const stats = fs.statSync(filePath);
+      const fileSize = stats.size;
+
+      // 파일 끝에서 MAX_READ만큼 읽기 (또는 파일 전체가 더 작으면 전체)
+      const readSize = Math.min(MAX_READ, fileSize);
+      const startPos = fileSize - readSize;
+
+      const buffer = Buffer.alloc(readSize);
+      const fd = fs.openSync(filePath, 'r');
+      fs.readSync(fd, buffer, 0, readSize, startPos);
+      fs.closeSync(fd);
+
+      let content = buffer.toString('utf-8');
+
+      // 파일 중간부터 읽었다면 첫 번째 완전한 JSON 객체까지 스킵
+      if (startPos > 0) {
+        const firstBrace = content.indexOf('{');
+        if (firstBrace > 0) {
+          content = content.substring(firstBrace);
+        }
+      }
+
+      // 끝의 ] 제거
+      content = content.replace(/\s*\]\s*$/, '');
+
+      // },{ 패턴으로 split (JSON 배열 원소 구분자)
+      const parts = content.split(/\s*\},\s*\{/);
+
+      const messages = [];
+      for (let i = 0; i < parts.length; i++) {
+        let part = parts[i].trim();
+
+        // 첫 번째 파트는 { 없을 수 있음
+        if (i > 0 && !part.startsWith('{')) {
+          part = '{' + part;
+        }
+        // 마지막 파트는 } 없을 수 있음
+        if (i < parts.length - 1 && !part.endsWith('}')) {
+          part = part + '}';
+        }
+        // 혹시 양쪽 다 없으면
+        if (!part.startsWith('{')) part = '{' + part;
+        if (!part.endsWith('}')) part = part + '}';
+
+        try {
+          const msg = JSON.parse(part);
+          if (msg.role && msg.timestamp) {
+            messages.push(msg);
+          }
+        } catch (e) {
+          // 파싱 실패 시 무시
+        }
+      }
+
+      // before 이전 메시지만 필터
+      const filtered = messages.filter(m => {
+        const msgTime = new Date(m.timestamp);
+        return msgTime < beforeDate;
+      });
+
+      console.log(`[ConversationStore] _readMessagesFromEnd: Read ${filtered.length} messages (out of ${messages.length}) from tail of ${filePath}`);
+      return filtered.slice(-maxCount); // 최신 maxCount개만
+    } catch (e) {
+      console.error('[ConversationStore] _readMessagesFromEnd error:', e.message, e.stack);
+      // 실패 시 fallback: 파일 전체 읽기
+      try {
+        console.log('[ConversationStore] Falling back to full file read');
+        const content = fs.readFileSync(filePath, 'utf-8');
+        return JSON.parse(content);
+      } catch (e2) {
+        return [];
+      }
     }
   }
 

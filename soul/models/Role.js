@@ -69,7 +69,8 @@ Role.initializeDefaultRoles = async function() {
         serviceId: '',
         temperature: 0.3,
         maxTokens: 1000,
-        purpose: 'vision'
+        purpose: 'vision',
+        callableByAI: true
       })
     },
   ];
@@ -80,6 +81,22 @@ Role.initializeDefaultRoles = async function() {
       db.Role.create(roleData);
       console.log(`[Role] Created: ${roleData.name}`);
     }
+  }
+
+  // 마이그레이션: 기존 vision-worker에 callableByAI 추가
+  try {
+    const visionRole = db.Role.findOne({ roleId: 'vision-worker' });
+    if (visionRole) {
+      const vConfig = typeof visionRole.config === 'string' ? JSON.parse(visionRole.config || '{}') : (visionRole.config || {});
+      if (vConfig.callableByAI === undefined) {
+        vConfig.callableByAI = true;
+        db.db.prepare('UPDATE roles SET config = ? WHERE role_id = ?')
+          .run(JSON.stringify(vConfig), 'vision-worker');
+        console.log('[Role] Migrated vision-worker: callableByAI=true');
+      }
+    }
+  } catch (e) {
+    console.warn('[Role] Migration failed:', e.message);
   }
 };
 

@@ -420,7 +420,20 @@ export class ChatManager {
 
       // Set content (with markdown support)
       const content = messageDiv.querySelector('.message-content');
-      
+
+      // 타임라인 모드: timeline 배열이 있으면 시간순 인라인 렌더링
+      if (message.timeline && message.timeline.length > 0) {
+        this._renderTimeline(content, message);
+        // 코드블록 처리 + 외부 링크
+        this.processCodeBlocks(content, message.content);
+        this.processExternalLinks(content);
+        // 라우팅 정보
+        this._applyRouting(messageDiv, message.routing);
+        // 액션 버튼
+        this.attachAssistantMessageActions(messageDiv, message);
+        return messageDiv;
+      }
+
       // thinking 태그 분리
       let displayContent = message.content;
       const thinkingMatch = message.content.match(/<thinking>([\s\S]*?)<\/thinking>/);
@@ -441,6 +454,19 @@ export class ChatManager {
       displayContent = this._preprocessMarkdown(displayContent);
       const renderedContent = window.marked ? window.marked.parse(displayContent).trim() : this.escapeHtml(displayContent);
       content.innerHTML = renderedContent;
+
+      // 소울 메시지의 hr 태그 흐리게 (---)
+      if (message.role === 'assistant') {
+        setTimeout(() => {
+          const hrElements = content.querySelectorAll('hr');
+          hrElements.forEach(hr => {
+            hr.style.border = 'none';
+            hr.style.borderTop = '1px solid rgba(255, 255, 255, 0.15)';
+            hr.style.margin = '1em 0';
+          });
+          console.log(`✨ ${hrElements.length}개 hr 요소 스타일 적용`);
+        }, 10);
+      }
 
       // thinking 블록은 innerHTML 설정 후에 추가 (이벤트 리스너 유지)
       if (thinkingMatch) {
@@ -581,45 +607,7 @@ export class ChatManager {
       this.processExternalLinks(content);
 
       // 라우팅 정보 표시 (있는 경우만)
-      if (message.routing && message.routing.modelId) {
-        const routingInfo = messageDiv.querySelector('.routing-info');
-        if (routingInfo) {
-          const tierSpan = routingInfo.querySelector('.routing-tier');
-          const modelSpan = routingInfo.querySelector('.routing-model');
-
-          // tier 레이블
-          const tierLabels = {
-            light: '경량',
-            medium: '중간',
-            heavy: '고성능',
-            single: '단일'
-          };
-
-          // 서버에서 내려준 tier 사용, 없으면 modelId에서 추정
-          let tier = message.routing.tier;
-          if (!tier) {
-            const modelId = message.routing.modelId.toLowerCase();
-            tier = 'medium';
-            if (modelId.includes('haiku') || modelId.includes('mini') || modelId.includes('fast') || modelId.includes('nano') || modelId.includes('flash-lite')) {
-              tier = 'light';
-            } else if (modelId.includes('opus') || modelId.includes('pro') || modelId.includes('gpt-5') || modelId.includes('o3') || modelId.includes('o1')) {
-              tier = 'heavy';
-            }
-          }
-
-          const tierLabel = tierLabels[tier] || tierLabels.medium;
-          tierSpan.textContent = tierLabel;
-          tierSpan.classList.add(tier); // tier 클래스 추가 (색상용)
-          const modelName = message.routing.selectedModel || dashboardManager.getModelDisplayName(message.routing.modelId);
-          modelSpan.textContent = modelName;
-
-          // title에 상세 정보
-          routingInfo.title = `${tierLabel} | ${modelName}`;
-          // data 속성으로 활성화 (CSS에서 호버 시 표시)
-          routingInfo.dataset.active = 'true';
-          routingInfo.dataset.tier = tier;
-        }
-      }
+      this._applyRouting(messageDiv, message.routing);
 
       // Add event listeners for action buttons
       this.attachAssistantMessageActions(messageDiv, message);
@@ -1104,15 +1092,117 @@ export class ChatManager {
     // Show typing indicator
     this.showTypingIndicator();
 
-    // 스트리밍 콜백 등록 — 타이핑 인디케이터를 실시간 텍스트로 교체
-    // 2~3초 디스플레이 딜레이: 서버는 즉시 처리하지만 화면에는 늦게 표시
+    // 타임라인 스트리밍 — 생각/메시지/도구가 시간순으로 인터리브
     let streamingEl = null;
-    let streamingContent = '';
+    let currentContentSegment = null; // 현재 활성 content 세그먼트 DOM
+    let currentSegmentText = ''; // 현재 세그먼트의 축적된 텍스트
     let streamingThinking = '';
-    let displayReady = false; // 딜레이 후 화면 표시 가능 여부
-    let pendingChunks = []; // 딜레이 중 쌓이는 청크 버퍼
+    let displayReady = false;
+    let pendingChunks = [];
     let delayTimer = null;
-    const DISPLAY_DELAY_MS = 2500; // 타이핑 인디케이터 표시 시간
+    const DISPLAY_DELAY_MS = 2500;
+
+    // 스트리밍 요소 내에 타임라인 이벤트 추가
+    const appendTimelineEvent = (type, data) => {
+      if (!streamingEl) return;
+      const contentEl = streamingEl.querySelector('.message-content');
+      if (!contentEl) return;
+
+      if (type === 'thinking') {
+        // thinking 컨테이너 — 직접 업데이트 (content 불간섭)
+        let thinkingContainer = contentEl.querySelector('.ai-thinking-container');
+        if (!thinkingContainer) {
+          thinkingContainer = document.createElement('div');
+          thinkingContainer.className = 'ai-thinking-container streaming-thinking-live expanded';
+          const toggleBtn = document.createElement('button');
+          toggleBtn.type = 'button';
+          toggleBtn.className = 'ai-thinking-toggle';
+          toggleBtn.innerHTML = '<span>생각 중...</span>';
+          toggleBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.parentElement.classList.toggle('expanded');
+          });
+          const thinkingContent = document.createElement('div');
+          thinkingContent.className = 'ai-thinking-content';
+          thinkingContainer.appendChild(toggleBtn);
+          thinkingContainer.appendChild(thinkingContent);
+          contentEl.insertBefore(thinkingContainer, contentEl.firstChild);
+        }
+        const thinkingContent = thinkingContainer.querySelector('.ai-thinking-content');
+        if (thinkingContent) {
+          thinkingContent.textContent = streamingThinking;
+          thinkingContent.scrollTop = thinkingContent.scrollHeight;
+        }
+      } else if (type === 'content') {
+        // content 청크 → 현재 세그먼트에 축적
+        currentSegmentText += data;
+        if (!currentContentSegment) {
+          currentContentSegment = document.createElement('div');
+          currentContentSegment.className = 'timeline-content-segment';
+          contentEl.appendChild(currentContentSegment);
+          // 초기 로더 제거
+          const oldLoader = contentEl.querySelector(':scope > .typing-dots');
+          if (oldLoader) oldLoader.remove();
+        }
+        // 축적된 텍스트를 렌더링
+        const cleanedText = currentSegmentText
+          .replace(/\[laughter\]/gi, '')
+          .replace(/\{need\}\s*.+?(?:\n|$)/g, '')
+          .replace(/ {2,}/g, ' ');
+        const processed = this._preprocessMarkdown(cleanedText);
+        const rendered = window.marked ? window.marked.parse(processed).trim() : this.escapeHtml(cleanedText);
+        currentContentSegment.innerHTML = rendered + '<span class="streaming-cursor"></span>';
+      } else if (type === 'content_append') {
+        // 도구 실행 후 새 content 세그먼트 시작 (전체 텍스트가 한번에 옴)
+        currentContentSegment = document.createElement('div');
+        currentContentSegment.className = 'timeline-content-segment';
+        currentSegmentText = data;
+        contentEl.appendChild(currentContentSegment);
+        const cleanedText = data
+          .replace(/\[laughter\]/gi, '')
+          .replace(/\{need\}\s*.+?(?:\n|$)/g, '')
+          .replace(/ {2,}/g, ' ');
+        const processed = this._preprocessMarkdown(cleanedText);
+        const rendered = window.marked ? window.marked.parse(processed).trim() : this.escapeHtml(cleanedText);
+        currentContentSegment.innerHTML = rendered + '<span class="streaming-cursor"></span>';
+      } else if (type === 'tool_start') {
+        // content 세그먼트 마감 (커서 제거)
+        if (currentContentSegment) {
+          const cursor = currentContentSegment.querySelector('.streaming-cursor');
+          if (cursor) cursor.remove();
+          currentContentSegment = null;
+          currentSegmentText = '';
+        }
+        // 도구 실행 인라인 표시
+        const toolStep = document.createElement('div');
+        toolStep.className = 'timeline-tool-step running';
+        toolStep.dataset.toolName = data.name;
+        toolStep.innerHTML = `
+          <div class="tool-step-indicator"></div>
+          <div class="tool-step-content">
+            <div class="tool-step-title">${this.escapeHtml(data.koreanAction)}</div>
+            ${data.inputSummary ? `<div class="tool-step-desc">${this.escapeHtml(data.inputSummary)}</div>` : ''}
+          </div>
+        `;
+        contentEl.appendChild(toolStep);
+      } else if (type === 'tool_end') {
+        // running → success/error 전환
+        const toolStep = contentEl.querySelector(`.timeline-tool-step.running[data-tool-name="${data.name}"]`);
+        if (toolStep) {
+          toolStep.classList.remove('running');
+          toolStep.classList.add(data.success ? 'success' : 'error');
+          toolStep.innerHTML = `
+            <div class="tool-step-indicator">${data.success ? '✓' : '✗'}</div>
+            <div class="tool-step-content">
+              <div class="tool-step-title">${this.escapeHtml(data.koreanAction)}</div>
+              ${data.resultPreview ? `<div class="tool-step-desc">${this.escapeHtml(data.resultPreview)}</div>` : ''}
+            </div>
+          `;
+        }
+      }
+      this.scrollToBottom();
+    };
 
     const flushPendingChunks = () => {
       displayReady = true;
@@ -1121,27 +1211,19 @@ export class ChatManager {
         streamingEl = this._createStreamingElement();
         this.messagesArea.appendChild(streamingEl);
       }
-      // 버퍼에 쌓인 청크를 한번에 반영
       for (const chunk of pendingChunks) {
-        if (chunk.type === 'thinking') {
+        if (chunk.event === 'tool_start' || chunk.event === 'tool_end') {
+          appendTimelineEvent(chunk.event, chunk.data);
+        } else if (chunk.type === 'thinking') {
           streamingThinking += chunk.content;
+          appendTimelineEvent('thinking', chunk.content);
         } else if (chunk.type === 'content') {
-          streamingContent += chunk.content;
-        } else if (chunk.type === 'content_reset') {
-          streamingContent = '';
-          const thinkingContainer = streamingEl.querySelector('.ai-thinking-container');
-          if (thinkingContainer) {
-            thinkingContainer.classList.remove('expanded');
-            const toggleBtn = thinkingContainer.querySelector('.ai-thinking-toggle span');
-            if (toggleBtn) toggleBtn.textContent = '생각 완료';
-          }
-        } else if (chunk.type === 'content_replace') {
-          // 무시 — 서버 최종 응답으로 교체되므로 스트리밍 중 깜빡임 방지
+          appendTimelineEvent('content', chunk.content);
+        } else if (chunk.type === 'content_append') {
+          appendTimelineEvent('content_append', chunk.content);
         }
       }
       pendingChunks = [];
-      this._updateStreamingElement(streamingEl, streamingThinking, streamingContent);
-      this.scrollToBottom();
     };
 
     const socketClient = window.soulApp?.socketClient;
@@ -1149,40 +1231,35 @@ export class ChatManager {
       socketClient.setStreamCallback((event, data) => {
         if (event === 'start') {
           if (!displayReady && !streamingEl) {
-            // 최초 스트리밍 시작 — 딜레이 타이머 시작 (타이핑 인디케이터 유지)
             delayTimer = setTimeout(flushPendingChunks, DISPLAY_DELAY_MS);
-          } else if (streamingEl) {
-            // 2차 호출(도구 실행 후): 기존 요소 유지, content만 리셋
-            streamingContent = '';
           }
           this.scrollToBottom();
         } else if (event === 'chunk') {
           if (!displayReady) {
-            // 딜레이 중 — 버퍼에 쌓기
             pendingChunks.push(data);
-          } else if (streamingEl) {
-            // 딜레이 끝남 — 실시간 표시
+          } else {
             if (data.type === 'thinking') {
               streamingThinking += data.content;
-              this._updateStreamingElement(streamingEl, streamingThinking, streamingContent);
+              appendTimelineEvent('thinking', data.content);
             } else if (data.type === 'content') {
-              streamingContent += data.content;
-              this._updateStreamingElement(streamingEl, streamingThinking, streamingContent);
-            } else if (data.type === 'content_reset') {
-              streamingContent = '';
-              const thinkingContainer = streamingEl.querySelector('.ai-thinking-container');
-              if (thinkingContainer) {
-                thinkingContainer.classList.remove('expanded');
-                const toggleBtn = thinkingContainer.querySelector('.ai-thinking-toggle span');
-                if (toggleBtn) toggleBtn.textContent = '생각 완료';
-              }
-            } else if (data.type === 'content_replace') {
-              // 무시 — 서버 최종 응답으로 교체되므로 스트리밍 중 깜빡임 방지
+              appendTimelineEvent('content', data.content);
+            } else if (data.type === 'content_append') {
+              appendTimelineEvent('content_append', data.content);
             }
-            this.scrollToBottom();
+          }
+        } else if (event === 'tool_start') {
+          if (!displayReady) {
+            pendingChunks.push({ event: 'tool_start', data });
+          } else {
+            appendTimelineEvent('tool_start', data);
+          }
+        } else if (event === 'tool_end') {
+          if (!displayReady) {
+            pendingChunks.push({ event: 'tool_end', data });
+          } else {
+            appendTimelineEvent('tool_end', data);
           }
         } else if (event === 'end') {
-          // stream_end — 딜레이 중이면 즉시 flush (버퍼가 비어있어도)
           if (!displayReady) {
             clearTimeout(delayTimer);
             if (pendingChunks.length > 0) {
@@ -1264,22 +1341,63 @@ export class ChatManager {
 
       // Add assistant response
       const content = response.reply || response.message || '응답을 받지 못했습니다.';
-      this.addMessage({
+      const messageData = {
         role: 'assistant',
         content: content,
         timestamp: new Date(response.timestamp || Date.now()),
         routing: response.routing || null,
         toolsUsed: toolItems.length > 0 ? toolItems : null,
+        timeline: response.timeline || null,
         toolNeeds: toolNeeds.length > 0 ? toolNeeds : null,
         toolsSelected: toolsSelected.length > 0 ? toolsSelected : null,
         filtered: response.filtered || null,
         messageVerify: response.messageVerify || null,
-      });
+      };
 
-      // 스트리밍 엘리먼트 정리 (addMessage로 최종 메시지가 그려진 후 제거)
-      if (streamingEl) {
-        streamingEl.remove();
+      if (streamingEl && response.timeline) {
+        // 타임라인 모드: streamingEl을 그대로 finalize (replaceWith 안 함)
+        this.messages.push(messageData);
+        streamingEl.classList.remove('streaming');
+        // 커서 제거
+        const cursors = streamingEl.querySelectorAll('.streaming-cursor');
+        cursors.forEach(c => c.remove());
+        // 로더 제거
+        const loaders = streamingEl.querySelectorAll('.typing-dots');
+        loaders.forEach(l => l.remove());
+        // thinking 접기
+        const thinkingContainer = streamingEl.querySelector('.ai-thinking-container');
+        if (thinkingContainer) {
+          thinkingContainer.classList.remove('expanded', 'streaming-thinking-live');
+          const toggleBtn = thinkingContainer.querySelector('.ai-thinking-toggle span');
+          if (toggleBtn) toggleBtn.textContent = '생각 과정';
+        }
+        // 코드블록 처리
+        const contentEl = streamingEl.querySelector('.message-content');
+        if (contentEl) {
+          this.processCodeBlocks(contentEl, content);
+          this.processExternalLinks(contentEl);
+        }
+        // 라우팅 정보
+        if (messageData.routing && messageData.routing.modelId) {
+          this._applyRouting(streamingEl, messageData.routing);
+        }
+        // 액션 버튼 활성화
+        const actions = streamingEl.querySelector('.message-actions');
+        if (actions) actions.style.display = '';
+        this.attachAssistantMessageActions(streamingEl, messageData);
         streamingEl = null;
+        this.scrollToBottom();
+      } else if (streamingEl) {
+        // 타임라인 없음 (도구 미사용): 기존대로 replaceWith
+        this.messages.push(messageData);
+        const finalElement = this.createMessageElement(messageData);
+        finalElement.classList.add('fade-in-up');
+        streamingEl.replaceWith(finalElement);
+        streamingEl = null;
+        this.scrollToBottom();
+      } else {
+        // 스트리밍 요소 없으면 (비스트리밍 모드) → 기존대로 append
+        this.addMessage(messageData);
       }
 
       // system fallback 알림 (일시적, 저장 안 됨)
@@ -1511,6 +1629,108 @@ export class ChatManager {
           if (existingCursor) existingCursor.remove();
           contentEl.insertAdjacentHTML('beforeend', '<div class="typing-dots"><div class="os1-loader"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>');
         }
+      }
+    }
+  }
+
+  /**
+   * 라우팅 정보를 메시지 요소에 적용
+   */
+  _applyRouting(messageDiv, routing) {
+    if (!routing || !routing.modelId) return;
+    const routingInfo = messageDiv.querySelector('.routing-info');
+    if (!routingInfo) return;
+
+    const tierSpan = routingInfo.querySelector('.routing-tier');
+    const modelSpan = routingInfo.querySelector('.routing-model');
+    const tierLabels = { light: '경량', medium: '중간', heavy: '고성능', single: '단일' };
+
+    let tier = routing.tier;
+    if (!tier) {
+      const modelId = routing.modelId.toLowerCase();
+      tier = 'medium';
+      if (modelId.includes('haiku') || modelId.includes('mini') || modelId.includes('fast') || modelId.includes('nano') || modelId.includes('flash-lite')) {
+        tier = 'light';
+      } else if (modelId.includes('opus') || modelId.includes('pro') || modelId.includes('gpt-5') || modelId.includes('o3') || modelId.includes('o1')) {
+        tier = 'heavy';
+      }
+    }
+
+    tierSpan.textContent = tierLabels[tier] || tierLabels.medium;
+    tierSpan.classList.add(tier);
+    const modelName = routing.selectedModel || dashboardManager.getModelDisplayName(routing.modelId);
+    modelSpan.textContent = modelName;
+    routingInfo.title = `${tierLabels[tier] || '중간'} | ${modelName}`;
+    routingInfo.dataset.active = 'true';
+    routingInfo.dataset.tier = tier;
+  }
+
+  /**
+   * 타임라인 렌더링 — 히스토리에서 로드된 메시지용
+   */
+  _renderTimeline(contentEl, message) {
+    const koreanActions = {
+      'recall_memory': '기억 검색',
+      'get_profile': '프로필 조회',
+      'update_profile': '정보 저장',
+      'list_my_rules': '규칙 조회',
+      'add_my_rule': '규칙 저장',
+      'delete_my_rule': '규칙 삭제',
+      'send_message': '메시지 전송',
+      'schedule_message': '메시지 예약',
+      'cancel_scheduled_message': '예약 취소',
+      'list_scheduled_messages': '예약 목록',
+      'execute_command': '명령 실행',
+      'save_memory': '기억 저장',
+      'update_memory': '기억 수정',
+      'list_memories': '기억 목록',
+      'update_tags': '태그 수정',
+      'search_web': '웹 검색',
+      'read_url': 'URL 읽기'
+    };
+
+    for (const entry of message.timeline) {
+      if (entry.type === 'thinking') {
+        // thinking 컨테이너
+        const thinkingContainer = document.createElement('div');
+        thinkingContainer.className = 'ai-thinking-container';
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'ai-thinking-toggle';
+        toggleBtn.innerHTML = '<span>생각 과정</span>';
+        toggleBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.parentElement.classList.toggle('expanded');
+        });
+        const thinkingContent = document.createElement('div');
+        thinkingContent.className = 'ai-thinking-content';
+        thinkingContent.textContent = entry.content;
+        thinkingContainer.appendChild(toggleBtn);
+        thinkingContainer.appendChild(thinkingContent);
+        contentEl.appendChild(thinkingContainer);
+      } else if (entry.type === 'content') {
+        const segment = document.createElement('div');
+        segment.className = 'timeline-content-segment';
+        const cleanedText = (entry.content || '')
+          .replace(/\[laughter\]/gi, '')
+          .replace(/\{need\}\s*.+?(?:\n|$)/g, '')
+          .replace(/ {2,}/g, ' ');
+        const processed = this._preprocessMarkdown(cleanedText);
+        segment.innerHTML = window.marked ? window.marked.parse(processed).trim() : this.escapeHtml(cleanedText);
+        contentEl.appendChild(segment);
+      } else if (entry.type === 'tool') {
+        const toolStep = document.createElement('div');
+        toolStep.className = `timeline-tool-step ${entry.success ? 'success' : 'error'}`;
+        const actionName = koreanActions[entry.name] || entry.display || entry.name;
+        toolStep.innerHTML = `
+          <div class="tool-step-indicator">${entry.success ? '✓' : '✗'}</div>
+          <div class="tool-step-content">
+            <div class="tool-step-title">${this.escapeHtml(actionName)}</div>
+            ${entry.inputSummary ? `<div class="tool-step-desc">${this.escapeHtml(entry.inputSummary)}</div>` : ''}
+          </div>
+        `;
+        contentEl.appendChild(toolStep);
       }
     }
   }

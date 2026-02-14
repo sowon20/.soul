@@ -57,28 +57,87 @@ class SearchUtils {
     const index = await memoryUtils.readIndex();
     let conversations = [...index.conversations];
 
-    // 키워드 검색
+    // 키워드 검색: 인덱스(topics/tags) + 원문 대화 모두 검색
     if (keyword && keyword.trim()) {
       const lowerKeyword = keyword.toLowerCase();
-      conversations = conversations.filter(conv => {
-        // 주제 검색
+
+      // 1) 인덱스에서 검색 (topics, tags, category, id)
+      const indexMatches = conversations.filter(conv => {
         const topicsMatch = conv.topics?.some(topic =>
           topic.toLowerCase().includes(lowerKeyword)
         );
-
-        // 태그 검색
         const tagsMatch = conv.tags?.some(tag =>
           tag.toLowerCase().includes(lowerKeyword)
         );
-
-        // 카테고리 검색
         const categoryMatch = conv.category?.toLowerCase().includes(lowerKeyword);
-
-        // ID 검색
         const idMatch = conv.id?.toLowerCase().includes(lowerKeyword);
 
         return topicsMatch || tagsMatch || categoryMatch || idMatch;
       });
+
+      // 인덱스 매칭된 대화의 실제 메시지 로드
+      console.log(`[SearchUtils] Loading messages for ${indexMatches.length} index matches...`);
+      const { getArchiverAsync } = require('./conversation-archiver');
+      const archiver = await getArchiverAsync();
+      
+      for (const conv of indexMatches) {
+        try {
+          const dateStr = conv.date || conv.id; // "2026-02-12" 형식
+          console.log(`[SearchUtils] Loading messages for date: ${dateStr}`);
+          const msgs = await archiver.getMessagesForDate(dateStr);
+          console.log(`[SearchUtils] Loaded ${msgs?.length || 0} messages for ${dateStr}`);
+          if (msgs && msgs.length > 0) {
+            conv._rawMessages = msgs;
+            console.log(`[SearchUtils] ✅ Added _rawMessages to ${conv.id}`);
+          }
+        } catch (e) {
+          console.error(`[SearchUtils] Failed to load messages for ${conv.id}:`, e.message);
+        }
+      }
+
+      // 2) 원문 대화에서 키워드 검색 (ConversationStore 사용)
+      let contentMatches = [];
+      try {
+        const ConversationStore = require('./conversation-store');
+        const store = ConversationStore.getInstance();
+        await store.init();
+
+        // 키워드를 배열로 전달
+        const rawMessages = await store.search([keyword], limit);
+
+        // 메시지를 날짜별로 그룹화하여 conversations 형식으로 변환
+        const messagesByDate = {};
+        for (const msg of rawMessages) {
+          const dateStr = msg.timestamp.split('T')[0]; // YYYY-MM-DD
+          if (!messagesByDate[dateStr]) {
+            messagesByDate[dateStr] = [];
+          }
+          messagesByDate[dateStr].push(msg);
+        }
+
+        // 각 날짜를 conversation 항목으로 변환
+        contentMatches = Object.entries(messagesByDate).map(([date, msgs]) => {
+          const firstMsg = msgs[0];
+          return {
+            id: date,
+            date: date,
+            messageCount: msgs.length,
+            topics: [`"${keyword}" 포함된 대화`],
+            tags: ['keyword-search'],
+            importance: 3,
+            summary: msgs.map(m => `${m.role}: ${m.text.substring(0, 100)}...`).join('\n'),
+            _rawMessages: msgs // 원본 메시지도 포함
+          };
+        });
+      } catch (e) {
+        console.error('[SearchUtils] Content search failed:', e.message);
+      }
+
+      // 3) 인덱스 매칭 + 원문 매칭 결과 병합 (중복 제거)
+      const matchedIds = new Set(indexMatches.map(c => c.id));
+      const uniqueContentMatches = contentMatches.filter(c => !matchedIds.has(c.id));
+
+      conversations = [...indexMatches, ...uniqueContentMatches];
     }
 
     // 태그 필터
@@ -375,7 +434,52 @@ class SearchUtils {
       console.error('Soul Memory 검색 실패:', e.message);
     }
 
-    // 1. 벡터 검색 (HNSW/brute-force — 소울이 recall_memory와 동일)
+    // 1. 정확 키워드 검색 먼저 (최우선)
+    try {
+      const ConversationStore = require('./conversation-store');
+      const store = ConversationStore.getInstance();
+      await store.init();
+      
+      const rawMessages = await store.search(searchKeywords, limit * 2);
+      
+      // 날짜별로 그룹화
+      const messagesByDate = {};
+      for (const msg of rawMessages) {
+        const dateStr = msg.timestamp.split('T')[0];
+        if (!messagesByDate[dateStr]) {
+          messagesByDate[dateStr] = [];
+        }
+        messagesByDate[dateStr].push(msg);
+      }
+      
+      // 각 날짜를 검색 결과로 변환
+      for (const [date, msgs] of Object.entries(messagesByDate)) {
+        // 모든 키워드가 포함된 메시지 개수 세기
+        const allKeywordsCount = msgs.filter(m => {
+          const text = (m.content || m.text || '').toLowerCase();
+          return searchKeywords.every(kw => text.includes(kw.toLowerCase()));
+        }).length;
+        
+        // relevance: 모든 키워드 포함하면 100, 일부만 포함하면 90
+        const relevance = allKeywordsCount > 0 ? 100 : 90;
+        
+        addResult({
+          id: `exact_${date}`,
+          type: 'conversation',
+          typeLabel: '대화',
+          date: date,
+          preview: msgs.map(m => `[${m.role}] ${(m.content || m.text || '').substring(0, 100)}`).join('\n'),
+          tags: ['exact-match'],
+          relevance: relevance,
+          source: { role: 'user' },
+          _rawMessages: msgs
+        });
+      }
+    } catch (e) {
+      console.error('정확 키워드 검색 실패:', e.message);
+    }
+
+    // 2. 벡터 유사도 검색 (보조, 최대 75점)
     try {
       const vectorStore = require('./vector-store');
       const vectorHits = await Promise.race([
@@ -383,11 +487,31 @@ class SearchUtils {
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
       ]);
 
+      // 날짜별로 그룹화된 메시지 로드
+      const { getArchiverAsync } = require('./conversation-archiver');
+      const archiver = await getArchiverAsync();
+      const loadedDates = new Map();
+
       for (const r of vectorHits) {
         const similarity = 1 - (r.distance || 0);
         if (similarity < 0.3) continue;
         const content = r.text || r.content || '';
         const dateStr = r.metadata?.sourceDate || (r.metadata?.timestamp || '').substring(0, 10);
+
+        // 해당 날짜의 전체 메시지 로드
+        let rawMessages = loadedDates.get(dateStr);
+        if (!rawMessages) {
+          try {
+            rawMessages = await archiver.getMessagesForDate(dateStr);
+            loadedDates.set(dateStr, rawMessages);
+          } catch (e) {
+            console.error(`[SearchUtils] Failed to load messages for ${dateStr}:`, e.message);
+            rawMessages = null;
+          }
+        }
+
+        // 벡터 검색은 최대 75점 (정확 매칭보다 낮음)
+        let relevance = Math.round(similarity * 75);
 
         addResult({
           id: `vec_${r.metadata?.id || Math.random().toString(36).slice(2)}`,
@@ -396,20 +520,13 @@ class SearchUtils {
           date: r.metadata?.timestamp || dateStr,
           preview: content.substring(0, 500),
           tags: r.metadata?.tags || [],
-          relevance: Math.round(similarity * 100),
-          source: { role: r.metadata?.role || 'user' }
+          relevance: relevance,
+          source: { role: r.metadata?.role || 'user' },
+          _rawMessages: rawMessages
         });
       }
     } catch (e) {
       console.error('벡터 검색 실패:', e.message);
-    }
-
-    // 2. 기존 메시지 검색
-    try {
-      const messageResults = await this.searchMessages(searchKeywords, limit);
-      for (const r of messageResults) addResult(r);
-    } catch (e) {
-      console.error('메시지 검색 실패:', e.message);
     }
 
     // 3. 메모리 검색 (단기)

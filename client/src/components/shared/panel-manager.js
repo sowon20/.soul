@@ -304,13 +304,315 @@ export class PanelManager {
   }
 
   async renderTodoPanel() {
-    this.panelContent.innerHTML = `
-      <div class="todo-panel">
-        <p style="opacity: 0.7; text-align: center; padding: 2rem;">
-          TODO 관리 (구현 예정)
-        </p>
+    try {
+      // 할일 목록 가져오기
+      const response = await this.apiClient.fetch('/api/tools/builtin/manage_todo', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'list' })
+      });
+
+      const todos = response.todos || [];
+
+      this.panelContent.innerHTML = `
+        <div class="todo-panel">
+          <div class="todo-header">
+            <button class="todo-add-btn" id="addTodoBtn">
+              <span>➕</span> 새 할일
+            </button>
+            <div class="todo-filters">
+              <button class="todo-filter-btn active" data-filter="all">전체</button>
+              <button class="todo-filter-btn" data-filter="pending">대기</button>
+              <button class="todo-filter-btn" data-filter="in_progress">진행중</button>
+              <button class="todo-filter-btn" data-filter="completed">완료</button>
+            </div>
+          </div>
+
+          <div class="todo-list" id="todoList">
+            ${todos.length === 0 ? `
+              <div class="todo-empty">
+                <p>할일이 없습니다</p>
+                <p style="font-size: 0.85rem; opacity: 0.7; margin-top: 0.5rem;">
+                  새 할일 버튼을 눌러 추가하세요
+                </p>
+              </div>
+            ` : todos.map(todo => this._renderTodoItem(todo)).join('')}
+          </div>
+        </div>
+      `;
+
+      // 이벤트 리스너
+      document.getElementById('addTodoBtn')?.addEventListener('click', () => this._showTodoDialog());
+
+      // 필터 버튼
+      document.querySelectorAll('.todo-filter-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          document.querySelectorAll('.todo-filter-btn').forEach(b => b.classList.remove('active'));
+          e.target.classList.add('active');
+          this._filterTodos(e.target.dataset.filter);
+        });
+      });
+
+      // 할일 아이템 이벤트
+      this._attachTodoItemEvents();
+
+    } catch (error) {
+      console.error('Todo 패널 렌더링 실패:', error);
+      this.panelContent.innerHTML = `
+        <div class="todo-panel">
+          <p style="color: var(--destructive); text-align: center; padding: 2rem;">
+            할일 목록을 불러오는데 실패했습니다
+          </p>
+        </div>
+      `;
+    }
+  }
+
+  _renderTodoItem(todo) {
+    const priorityColors = {
+      low: '#4ade80',
+      medium: '#fbbf24',
+      high: '#f87171'
+    };
+
+    const statusIcons = {
+      pending: '⏸️',
+      in_progress: '▶️',
+      completed: '✅'
+    };
+
+    return `
+      <div class="todo-item" data-todo-id="${todo.todoId}" data-status="${todo.status}">
+        <div class="todo-item-header">
+          <div class="todo-item-left">
+            <span class="todo-status-icon">${statusIcons[todo.status] || '⏸️'}</span>
+            <h4 class="todo-title">${this._escapeHtml(todo.title)}</h4>
+            <span class="todo-priority" style="background: ${priorityColors[todo.priority || 'medium']};">
+              ${todo.priority || 'medium'}
+            </span>
+          </div>
+          <div class="todo-item-actions">
+            <button class="todo-action-btn" data-action="edit" title="수정">✏️</button>
+            <button class="todo-action-btn" data-action="delete" title="삭제">🗑️</button>
+          </div>
+        </div>
+
+        ${todo.description ? `
+          <p class="todo-description">${this._escapeHtml(todo.description)}</p>
+        ` : ''}
+
+        <div class="todo-item-footer">
+          ${todo.dueDate ? `
+            <span class="todo-due-date">📅 ${new Date(todo.dueDate).toLocaleDateString('ko-KR')}</span>
+          ` : ''}
+          ${todo.tags ? `
+            <div class="todo-tags">
+              ${JSON.parse(todo.tags).map(tag => `<span class="todo-tag">#${tag}</span>`).join('')}
+            </div>
+          ` : ''}
+          <select class="todo-status-select" data-todo-id="${todo.todoId}">
+            <option value="pending" ${todo.status === 'pending' ? 'selected' : ''}>대기</option>
+            <option value="in_progress" ${todo.status === 'in_progress' ? 'selected' : ''}>진행중</option>
+            <option value="completed" ${todo.status === 'completed' ? 'selected' : ''}>완료</option>
+          </select>
+        </div>
       </div>
     `;
+  }
+
+  _attachTodoItemEvents() {
+    // 상태 변경
+    document.querySelectorAll('.todo-status-select').forEach(select => {
+      select.addEventListener('change', async (e) => {
+        const todoId = e.target.dataset.todoId;
+        const newStatus = e.target.value;
+        await this._updateTodoStatus(todoId, newStatus);
+      });
+    });
+
+    // 수정/삭제 버튼
+    document.querySelectorAll('.todo-action-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const action = e.currentTarget.dataset.action;
+        const todoItem = e.currentTarget.closest('.todo-item');
+        const todoId = todoItem.dataset.todoId;
+
+        if (action === 'edit') {
+          await this._editTodo(todoId);
+        } else if (action === 'delete') {
+          if (confirm('정말 삭제하시겠습니까?')) {
+            await this._deleteTodo(todoId);
+          }
+        }
+      });
+    });
+  }
+
+  async _updateTodoStatus(todoId, status) {
+    try {
+      await this.apiClient.fetch('/api/tools/builtin/manage_todo', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'update',
+          todo_id: todoId,
+          status
+        })
+      });
+
+      // 목록 새로고침
+      await this.renderTodoPanel();
+    } catch (error) {
+      console.error('Todo 상태 업데이트 실패:', error);
+      alert('상태 변경에 실패했습니다');
+    }
+  }
+
+  async _deleteTodo(todoId) {
+    try {
+      await this.apiClient.fetch('/api/tools/builtin/manage_todo', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'delete',
+          todo_id: todoId
+        })
+      });
+
+      // 목록 새로고침
+      await this.renderTodoPanel();
+    } catch (error) {
+      console.error('Todo 삭제 실패:', error);
+      alert('삭제에 실패했습니다');
+    }
+  }
+
+  async _editTodo(todoId) {
+    // 기존 데이터 가져오기
+    try {
+      const response = await this.apiClient.fetch('/api/tools/builtin/manage_todo', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'list'
+        })
+      });
+
+      const todo = response.todos.find(t => t.todoId === todoId);
+      if (todo) {
+        this._showTodoDialog(todo);
+      }
+    } catch (error) {
+      console.error('Todo 조회 실패:', error);
+    }
+  }
+
+  _showTodoDialog(existingTodo = null) {
+    const isEdit = !!existingTodo;
+
+    const dialog = document.createElement('div');
+    dialog.className = 'todo-dialog-overlay';
+    dialog.innerHTML = `
+      <div class="todo-dialog">
+        <h3>${isEdit ? '할일 수정' : '새 할일'}</h3>
+        <form id="todoForm">
+          <div class="form-group">
+            <label>제목</label>
+            <input type="text" name="title" required value="${existingTodo ? this._escapeHtml(existingTodo.title) : ''}">
+          </div>
+
+          <div class="form-group">
+            <label>설명</label>
+            <textarea name="description" rows="3">${existingTodo ? this._escapeHtml(existingTodo.description || '') : ''}</textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>우선순위</label>
+              <select name="priority">
+                <option value="low" ${existingTodo?.priority === 'low' ? 'selected' : ''}>낮음</option>
+                <option value="medium" ${!existingTodo || existingTodo?.priority === 'medium' ? 'selected' : ''}>보통</option>
+                <option value="high" ${existingTodo?.priority === 'high' ? 'selected' : ''}>높음</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>마감일</label>
+              <input type="date" name="due_date" value="${existingTodo?.dueDate ? existingTodo.dueDate.split('T')[0] : ''}">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>태그 (쉼표로 구분)</label>
+            <input type="text" name="tags" placeholder="work, urgent"
+              value="${existingTodo?.tags ? JSON.parse(existingTodo.tags).join(', ') : ''}">
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn-cancel">취소</button>
+            <button type="submit" class="btn-submit">${isEdit ? '수정' : '추가'}</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    // 이벤트
+    dialog.querySelector('.btn-cancel').addEventListener('click', () => {
+      document.body.removeChild(dialog);
+    });
+
+    dialog.querySelector('#todoForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+
+      const data = {
+        action: isEdit ? 'update' : 'add',
+        title: formData.get('title'),
+        description: formData.get('description'),
+        priority: formData.get('priority'),
+        due_date: formData.get('due_date') || null,
+        tags: formData.get('tags') ? formData.get('tags').split(',').map(t => t.trim()).filter(Boolean) : []
+      };
+
+      if (isEdit) {
+        data.todo_id = existingTodo.todoId;
+      }
+
+      try {
+        await this.apiClient.fetch('/api/tools/builtin/manage_todo', {
+          method: 'POST',
+          body: JSON.stringify(data)
+        });
+
+        document.body.removeChild(dialog);
+        await this.renderTodoPanel();
+      } catch (error) {
+        console.error('Todo 저장 실패:', error);
+        alert('저장에 실패했습니다');
+      }
+    });
+
+    // 배경 클릭 시 닫기
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) {
+        document.body.removeChild(dialog);
+      }
+    });
+  }
+
+  _filterTodos(filter) {
+    const items = document.querySelectorAll('.todo-item');
+    items.forEach(item => {
+      if (filter === 'all' || item.dataset.status === filter) {
+        item.style.display = 'block';
+      } else {
+        item.style.display = 'none';
+      }
+    });
+  }
+
+  _escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
 

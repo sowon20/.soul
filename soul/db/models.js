@@ -167,5 +167,6 @@ module.exports = {
   Memory: createMongooseWrapper('Memory'),
   Message: createMongooseWrapper('Message'),
   UserProfile: createMongooseWrapper('UserProfile'),
-  APIKey: createMongooseWrapper('APIKey')
+  APIKey: createMongooseWrapper('APIKey'),
+  Todo: createMongooseWrapper('Todo')
 };

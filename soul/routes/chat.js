@@ -22,8 +22,7 @@ const UsageStats = require('../models/UsageStats');
 const Message = require('../models/Message');
 const ConversationStore = require('../utils/conversation-store');
 const { loadMCPTools, executeMCPTool, callJinaTool } = require('../utils/mcp-tools');
-const { builtinTools, executeBuiltinTool, isBuiltinTool } = require('../utils/builtin-tools');
-const { isProactiveActive } = require('../utils/proactive-messenger');
+const { builtinTools, executeBuiltinTool, isBuiltinTool, getMinimalTools } = require('../utils/builtin-tools');
 const configManager = require('../utils/config');
 const { trackCall: trackAlba } = require('../utils/alba-stats');
 
@@ -40,23 +39,24 @@ async function getConversationStore() {
 // 도구 정의 캐시 (토큰 절약: 매 요청마다 로드하지 않음)
 let _cachedTools = null;
 let _cachedToolsTimestamp = 0;
-let _cachedToolsCacheKey = null;
 const TOOLS_CACHE_TTL = 60000; // 1분 캐시
 
 async function getCachedTools() {
   const now = Date.now();
-  const proactiveOn = isProactiveActive();
-  const cacheKey = proactiveOn ? 'proactive' : 'basic';
 
-  if (_cachedTools && _cachedToolsCacheKey === cacheKey && (now - _cachedToolsTimestamp) < TOOLS_CACHE_TTL) {
+  if (_cachedTools && (now - _cachedToolsTimestamp) < TOOLS_CACHE_TTL) {
     return _cachedTools;
   }
 
-  const mcpTools = await loadMCPTools({ includeProactive: proactiveOn });
-  _cachedTools = [...builtinTools, ...mcpTools];
+  const mcpTools = await loadMCPTools();
+
+  // 동적 call_worker 도구 (callable 워커가 있을 때만 포함)
+  const { getCallWorkerTool } = require('../utils/builtin-tools');
+  const callWorkerTool = await getCallWorkerTool();
+
+  _cachedTools = [...builtinTools, ...(callWorkerTool ? [callWorkerTool] : []), ...mcpTools];
   _cachedToolsTimestamp = now;
-  _cachedToolsCacheKey = cacheKey;
-  console.log(`[Chat] Tools cache refreshed: ${_cachedTools.length} tools (proactive: ${proactiveOn})`);
+  console.log(`[Chat] Tools cache refreshed: ${_cachedTools.length} tools (call_worker: ${!!callWorkerTool})`);
   return _cachedTools;
 }
 
@@ -64,7 +64,6 @@ async function getCachedTools() {
 function invalidateToolsCache() {
   _cachedTools = null;
   _cachedToolsTimestamp = 0;
-  _cachedToolsCacheKey = null;
 }
 
 
@@ -72,7 +71,7 @@ function invalidateToolsCache() {
  * 스트리밍 가능한 AI 서비스 호출 래퍼
  * streamChat이 있으면 Socket.io로 실시간 청크 전송, 없으면 기존 chat() 사용
  */
-async function callAIWithStreaming(aiService, chatMessages, chatOptions, { emitLifecycle = true } = {}) {
+async function callAIWithStreaming(aiService, chatMessages, chatOptions, { emitLifecycle = true, timelineCtx = null } = {}) {
   // streamChat 메서드가 없으면 기존 방식
   if (typeof aiService.streamChat !== 'function') {
     return aiService.chat(chatMessages, chatOptions);
@@ -80,20 +79,19 @@ async function callAIWithStreaming(aiService, chatMessages, chatOptions, { emitL
 
   console.log('[Chat] Using streaming mode');
   if (emitLifecycle && global.io) global.io.emit('stream_start');
-  // 2차 호출(emitLifecycle=false)에서도 content 리셋 신호는 보내야 함
-  if (!emitLifecycle && global.io) global.io.emit('stream_chunk', { type: 'content_reset' });
 
   const result = await aiService.streamChat(chatMessages, chatOptions, (type, data) => {
     if (!global.io) return;
     if (type === 'thinking') {
       global.io.emit('stream_chunk', { type: 'thinking', content: data });
+      if (timelineCtx) timelineCtx.addThinking(data);
     } else if (type === 'content') {
       global.io.emit('stream_chunk', { type: 'content', content: data });
-    } else if (type === 'content_replace') {
-      // 도구 실행 후 최종 응답으로 content 교체
-      global.io.emit('stream_chunk', { type: 'content_replace', content: data });
-    } else if (type === 'tool_start') {
-      global.io.emit('stream_chunk', { type: 'tool', content: '도구 실행 중...' });
+      if (timelineCtx) timelineCtx.contentBuffer += data;
+    } else if (type === 'content_replace' || type === 'content_append') {
+      // 도구 실행 후 새 응답 — 덮어쓰기 대신 추가
+      global.io.emit('stream_chunk', { type: 'content_append', content: data });
+      if (timelineCtx) timelineCtx.contentBuffer += data;
     }
   });
 
@@ -129,6 +127,26 @@ router.post('/', async (req, res) => {
     // 실행된 도구 기록 (응답에 포함)
     const executedTools = [];
     let visionWorkerResult = null; // vision-worker 사용 결과
+
+    // 타임라인 축적 (생각/메시지/도구가 시간순으로 기록)
+    const timelineCtx = {
+      timeline: [],
+      contentBuffer: '',
+      addThinking(data) {
+        const last = this.timeline[this.timeline.length - 1];
+        if (last && last.type === 'thinking') {
+          last.content += data;
+        } else {
+          this.timeline.push({ type: 'thinking', content: data });
+        }
+      },
+      flushContent() {
+        if (this.contentBuffer.trim()) {
+          this.timeline.push({ type: 'content', content: this.contentBuffer });
+          this.contentBuffer = '';
+        }
+      }
+    };
 
     // 디버그용 변수 (상위 스코프에 선언)
     let combinedSystemPrompt = '';
@@ -223,19 +241,14 @@ router.post('/', async (req, res) => {
       voiceTags
     });
 
-    // 3단계: 핵심 규칙 (지침 섹션)
-    const instructionsSection = `
+    // 3단계: 핵심 규칙 (지침 섹션) — 파인튜닝 모델은 학습 완료이므로 최소화
+    const isFineTunedModel = routingResult.modelId && routingResult.modelId.startsWith('sowon/');
+    const instructionsSection = isFineTunedModel ? '' : `
 <instructions>
 도구 사용:
 - 도구가 제공되면 tool_calls로 직접 호출하여 정보를 확인하라
-- 도구 결과를 추측/날조하지 마라 — 모르면 도구를 호출하거나 사용자에게 물어라
+- 도구 결과를 추측/날조하지 마라
 - <tool_use>, <function_call>, <thinking>, <tool_history> 태그를 텍스트로 직접 작성 금지
-
-응답 포맷:
-- 긴 문장은 적절히 줄바꿈하여 가독성 유지
-- 한 문단이 3~4문장을 넘기면 줄바꿈으로 나누기
-- 목록이나 단계가 있으면 번호/글머리 기호 활용
-- 핵심 키워드는 **굵게** 강조 가능
 </instructions>`;
 
     // 최종 조합: 컨텍스트(문서) → 사용자프로필 → 인격 → 지침 순서
@@ -502,6 +515,46 @@ router.post('/', async (req, res) => {
 
       // MCP 도구 사용 (이미 캐시에서 로드됨)
       allTools = preloadedTools;
+
+      // call_worker용: 대화 이미지 수집
+      const conversationImages = {};
+      try {
+        const db = require('../db');
+        const recentMsgs = db.db.prepare(
+          'SELECT metadata FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 50'
+        ).all('main-conversation');
+        for (const msg of recentMsgs) {
+          if (!msg.metadata) continue;
+          try {
+            const meta = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+            const atts = meta.attachments || [];
+            for (const att of atts) {
+              if (att.type && att.type.startsWith('image/') && att.url) {
+                const filename = att.url.split('/').pop();
+                if (filename) conversationImages[filename] = { type: att.type, name: att.name || filename };
+              }
+            }
+          } catch {}
+        }
+        // 현재 턴의 이미지도 추가
+        if (attachments) {
+          for (const att of attachments) {
+            if (att.type && att.type.startsWith('image/') && att.url) {
+              const filename = att.url.split('/').pop();
+              if (filename) conversationImages[filename] = { type: att.type, name: att.name || filename };
+            }
+          }
+        }
+        const imgCount = Object.keys(conversationImages).length;
+        if (imgCount > 0) {
+          const imageList = Object.entries(conversationImages).map(([fn, info]) => `- ${fn} (${info.name})`).join('\n');
+          combinedSystemPrompt += `\n\n<conversation_images>\n현재 대화의 이미지 ${imgCount}장:\n${imageList}\ncall_worker로 vision-worker를 호출하면 이미지를 분석할 수 있다. image_ids에 파일명을 전달.\n</conversation_images>`;
+          console.log(`[Chat] Conversation images: ${imgCount}`);
+        }
+      } catch (imgErr) {
+        console.warn('[Chat] Failed to collect conversation images:', imgErr.message);
+      }
+
       debugLog(`Total tools available: ${allTools.length}`);
       debugLog(`Tool names: ${allTools.map(t => t.name).join(', ')}`);
       console.log('[Chat] Total tools available:', allTools.length);
@@ -662,9 +715,12 @@ router.post('/', async (req, res) => {
       // 통합 도구 실행기 (소켓 이벤트 포함)
       const toolExecutor = async (toolName, input) => {
         const parsed = parseToolName(toolName);
-        
+
         console.log('[ToolExecutor] global.io exists:', !!global.io);
-        
+
+        // 타임라인: 도구 시작 전 축적된 content flush
+        timelineCtx.flushContent();
+
         // 도구 실행 시작 알림
         if (global.io) {
           console.log('[ToolExecutor] Emitting tool_start:', parsed.display);
@@ -687,7 +743,7 @@ router.post('/', async (req, res) => {
           }
 
           if (isBuiltinTool(toolName)) {
-            result = await executeBuiltinTool(toolName, input);
+            result = await executeBuiltinTool(toolName, input, { context: { conversationImages } });
           } else {
             result = await executeMCPTool(toolName, input);
           }
@@ -706,6 +762,16 @@ router.post('/', async (req, res) => {
             resultFull: resultStr.length > 2000 ? resultStr.substring(0, 2000) + '...' : resultStr
           });
           
+          // 타임라인: 도구 실행 완료 기록
+          timelineCtx.timeline.push({
+            type: 'tool',
+            name: toolName,
+            display: parsed.display,
+            inputSummary: summarizeToolInput(toolName, input),
+            result: summarizeToolResult(toolName, result),
+            success: true
+          });
+
           // 도구 실행 완료 알림
           if (global.io) {
             global.io.emit('tool_end', {
@@ -745,7 +811,17 @@ router.post('/', async (req, res) => {
             error: toolError.message,
             inputSummary: summarizeToolInput(toolName, input)
           });
-          
+
+          // 타임라인: 도구 실행 실패 기록
+          timelineCtx.timeline.push({
+            type: 'tool',
+            name: toolName,
+            display: parsed.display,
+            inputSummary: summarizeToolInput(toolName, input),
+            result: toolError.message,
+            success: false
+          });
+
           // 도구 실행 실패 알림
           if (global.io) {
             global.io.emit('tool_end', {
@@ -776,19 +852,22 @@ router.post('/', async (req, res) => {
       let aiResult;
 
       if (hasTools && contextLevel !== 'minimal') {
-        // 직접 도구 호출 모드: 모든 도구와 함께 AI 호출
-        console.log(`[Chat] Calling with ${allTools.length} tools (${chatMessages.length} messages, ~${totalChars} chars)`);
-        actualToolCount = allTools.length;
+        // 파인튜닝 모델은 도구 사용법을 학습했으므로 tool definitions 전송 불필요
+        // 도구 이름만 시스템 프롬프트에 텍스트로 포함
+        const toolNames = allTools.map(t => `- ${t.name}`).join('\n');
+        const finalSystemPrompt = combinedSystemPrompt + `\n\n<available_tools>\n${toolNames}\n</available_tools>`;
+
+        console.log(`[Chat] Tools in prompt only (${allTools.length} tools, no definitions sent)`);
 
         aiResult = await callAIWithStreaming(aiService, chatMessages, {
-          systemPrompt: combinedSystemPrompt,
+          systemPrompt: finalSystemPrompt,
           maxTokens: aiSettings.maxTokens,
           temperature: aiSettings.temperature,
-          tools: allTools,
+          tools: null,  // 도구 정의 전송 안 함
           toolExecutor: toolExecutor,
           thinking: routingResult.thinking || false,
           documents: attachmentDocuments.length > 0 ? attachmentDocuments : undefined,
-        });
+        }, { timelineCtx });
       } else {
         // minimal 또는 도구 없음: 도구 없이 응답
         console.log(`[Chat] Direct call (${contextLevel === 'minimal' ? 'minimal context' : 'no tools'})`);
@@ -800,7 +879,7 @@ router.post('/', async (req, res) => {
           toolExecutor: null,
           thinking: routingResult.thinking || false,
           documents: attachmentDocuments.length > 0 ? attachmentDocuments : undefined,
-        });
+        }, { timelineCtx });
       }
 
       const toolsTokenEstimate = actualToolCount * 700;
@@ -825,6 +904,9 @@ router.post('/', async (req, res) => {
         aiResponse = aiResult;
         actualUsage = {};
       }
+
+      // 타임라인: 마지막 content flush
+      timelineCtx.flushContent();
     } catch (aiError) {
       console.error('AI 호출 실패:', aiError);
 
@@ -876,7 +958,7 @@ router.post('/', async (req, res) => {
           temperature: aiSettings.temperature,
           tools: null,
           thinking: false,
-        }, { emitLifecycle: false });
+        }, { emitLifecycle: false, timelineCtx });
         aiResponse = typeof retryResult === 'object' ? retryResult.text : retryResult;
         if (retryResult && typeof retryResult === 'object') {
           actualUsage = retryResult.usage || actualUsage;
@@ -892,7 +974,15 @@ router.post('/', async (req, res) => {
       aiResponse = '🤔 응답을 생성하지 못했어요. 다시 시도해주세요.';
     }
 
-    // 6. 알바 위임 체크 - Soul이 [DELEGATE:roleId] 태그를 사용했는지 확인
+    // 6. 응답 후처리: 불필요한 패턴 제거
+    // [날짜/시간] 접두사 패턴 제거 (예: [2/14 7:43], [7:34])
+    if (typeof aiResponse === 'string') {
+      aiResponse = aiResponse.replace(/^\s*\[\d{1,2}\/\d{1,2}\s+\d{1,2}:\d{2}\]\s*/gm, '');
+      aiResponse = aiResponse.replace(/^\s*\[\d{1,2}:\d{2}\]\s*/gm, '');
+      aiResponse = aiResponse.trim();
+    }
+
+    // 7. 알바 위임 체크 - Soul이 [DELEGATE:roleId] 태그를 사용했는지 확인
     let delegatedRole = null;
     let finalResponse = aiResponse;
     const delegateMatch = typeof aiResponse === 'string' ? aiResponse.match(/\[DELEGATE:([a-z_-]+)\]/i) : null;
@@ -992,6 +1082,7 @@ router.post('/', async (req, res) => {
           tier
         },
         toolsUsed: executedTools.length > 0 ? executedTools : undefined,
+        timeline: timelineCtx.timeline.length > 0 ? timelineCtx.timeline : undefined,
         attachments: attachments.length > 0 ? attachments : undefined
       });
       console.log('[Chat] Response saved successfully');
@@ -1112,6 +1203,7 @@ router.post('/', async (req, res) => {
       message: finalResponse,
       reply: finalResponse, // 프론트엔드 호환성
       toolsUsed: executedTools, // 사용된 도구 목록
+      timeline: timelineCtx.timeline.length > 0 ? timelineCtx.timeline : undefined,
       usage: conversationData.usage,
       tokenUsage: detailedTokenUsage, // 상세 토큰 사용량 (실시간용)
       compressed: conversationData.compressed,
@@ -1257,6 +1349,8 @@ router.get('/history/:sessionId', async (req, res) => {
         routing: m.routing || null,
         // 도구 사용 정보 (있으면 포함)
         toolsUsed: m.metadata?.toolsUsed || m.toolsUsed || null,
+        // 타임라인 (시간순 생각/메시지/도구)
+        timeline: m.metadata?.timeline || null,
         // 첨부파일 (user 메시지용)
         attachments: m.attachments || null
       })),

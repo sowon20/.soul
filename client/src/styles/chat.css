@@ -186,6 +186,46 @@
   to { transform: rotate(360deg); }
 }
 
+/* 타임라인 — 메시지 내 인라인 도구 스텝 */
+.timeline-content-segment { line-height: 1.6; }
+.timeline-content-segment + .timeline-tool-step { margin-top: 12px; }
+.timeline-tool-step + .timeline-content-segment { margin-top: 12px; }
+.timeline-tool-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 0;
+  position: relative;
+  font-size: 0.82rem;
+}
+.timeline-tool-step .tool-step-indicator {
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  color: transparent;
+}
+.timeline-tool-step.running .tool-step-indicator {
+  background: transparent;
+  border: 2px solid rgba(56, 189, 248, 0.4);
+  border-top-color: rgba(56, 189, 248, 0.9);
+  animation: toolSpin 0.8s linear infinite;
+}
+.timeline-tool-step.running .tool-step-title {
+  color: rgba(56, 189, 248, 0.95);
+}
+.timeline-tool-step.success .tool-step-indicator {
+  background: rgba(74, 222, 128, 0.3);
+  border: 2px solid rgba(74, 222, 128, 0.3);
+  color: rgba(255, 255, 255, 0.6);
+}
+.timeline-tool-step.success .tool-step-title {
+  color: rgba(255, 255, 255, 0.55);
+}
+.timeline-tool-step.error .tool-step-indicator {
+  background: rgba(239, 68, 68, 0.9);
+  border: 2px solid rgba(239, 68, 68, 0.9);
+  color: #fff;
+}
+
 /* 히스토리 로딩 인디케이터 */
 .history-loader {
   display: flex;

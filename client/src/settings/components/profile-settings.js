@@ -1323,4 +1323,5 @@ export class ProfileSettings {
       statusEl.style.display = 'none';
     }
   }
+
 }

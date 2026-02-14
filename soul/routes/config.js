@@ -510,12 +510,12 @@ router.get('/dock', async (req, res) => {
  */
 router.put('/dock', async (req, res) => {
   try {
-    const { items } = req.body;
+    const items = req.body;
     if (!Array.isArray(items)) {
-      return res.status(400).json({ error: 'Bad Request', message: 'items must be an array' });
+      return res.status(400).json({ error: 'Bad Request', message: 'request body must be an array' });
     }
-    const dockItems = await configManager.setConfigValue('dock_items', items, 'Dock items configuration');
-    res.json(dockItems);
+    await configManager.setConfigValue('dock_items', items, 'Dock items configuration');
+    res.json({ success: true, items });
   } catch (error) {
     console.error('Error saving dock config:', error);
     res.status(500).json({ error: 'Internal Server Error', message: error.message });

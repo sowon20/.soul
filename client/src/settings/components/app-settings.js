@@ -352,11 +352,26 @@ export class AppSettings {
   async renderMCPSettings(container) {
     container.innerHTML = `
       <div class="mcp-settings-section">
+        <!-- 내장 도구 섹션 -->
+        <div class="builtin-tools-section">
+          <div class="mcp-header">
+            <h3>🔧 내장 도구 (31개)</h3>
+            <p style="font-size: 12px; color: var(--text-secondary); margin: 4px 0 0;">독에 표시할 도구를 선택하세요</p>
+          </div>
+          <div class="builtin-tools-list" id="builtinToolsList">
+            <div class="mcp-loading">도구 목록 로딩 중...</div>
+          </div>
+        </div>
+
+        <!-- 구분선 -->
+        <div style="border-top: 1px solid var(--border-color); margin: 32px 0;"></div>
+
+        <!-- MCP 서버 섹션 -->
         <div class="mcp-header">
-          <h3>MCP 서버 관리</h3>
+          <h3>🔌 외부 MCP 서버</h3>
           <button class="mcp-add-btn" id="mcpAddBtn">+ 서버 추가</button>
         </div>
-        
+
         <div class="mcp-server-list" id="mcpServerList">
           <div class="mcp-loading">서버 목록 로딩 중...</div>
         </div>
@@ -368,8 +383,595 @@ export class AppSettings {
       this.showAddServerModal();
     });
 
-    // 서버 목록 로드
-    await this.loadMCPServers();
+    // 내장 도구 + 서버 목록 로드
+    await Promise.all([
+      this.loadBuiltinTools(),
+      this.loadMCPServers()
+    ]);
+  }
+
+  /**
+   * 내장 도구 목록 로드
+   */
+  async loadBuiltinTools() {
+    const listContainer = document.getElementById('builtinToolsList');
+
+    try {
+      // 31개 내장 도구 + 현재 독 설정 가져오기
+      const [toolsRes, dockRes] = await Promise.all([
+        fetch('/api/tools/builtin/list'),
+        fetch('/api/config/dock')
+      ]);
+
+      const toolsData = await toolsRes.json();
+      const dockItems = await dockRes.json();
+
+      const allTools = toolsData.tools || [];
+
+      // 섹션 정의 (독에 들어갈 단위)
+      const sections = {
+        'A. 메모리 & 프로필': {
+          id: 'section_memory',
+          icon: 'mcp-icon.webp', // TODO: 전용 아이콘
+          tools: ['recall_memory', 'save_memory', 'update_memory', 'list_memories', 'get_profile', 'update_profile', 'update_tags']
+        },
+        'B. 메시징': {
+          id: 'section_messaging',
+          icon: 'mic-icon.webp',
+          tools: ['send_message', 'schedule_message', 'cancel_scheduled_message', 'list_scheduled_messages']
+        },
+        'C. 캘린더': {
+          id: 'section_calendar',
+          icon: 'checklist-icon.webp',
+          tools: ['get_events', 'create_event', 'update_event', 'delete_event']
+        },
+        'D. 할일': {
+          id: 'section_todo',
+          icon: 'checklist-icon.webp',
+          tools: ['manage_todo']
+        },
+        'E. 메모': {
+          id: 'section_note',
+          icon: 'folder-icon.webp',
+          tools: ['manage_note']
+        },
+        'F. 웹 브라우저': {
+          id: 'section_browser',
+          icon: 'terminal-icon.webp',
+          tools: ['search_web', 'read_url', 'browse']
+        },
+        'G. 파일시스템': {
+          id: 'section_filesystem',
+          icon: 'folder-icon.webp',
+          tools: ['file_read', 'file_write', 'file_list', 'file_info']
+        },
+        'H. 클라우드 스토리지': {
+          id: 'section_cloud',
+          icon: 'smarthome-icon.webp',
+          tools: ['cloud_search', 'cloud_read', 'cloud_write', 'cloud_delete', 'cloud_list']
+        },
+        'I. 시스템': {
+          id: 'section_system',
+          icon: 'terminal-icon.webp',
+          tools: ['open_terminal', 'execute_command', 'get_weather']
+        }
+      };
+
+      let html = '';
+      for (const [sectionName, sectionData] of Object.entries(sections)) {
+        // 이 섹션이 독에 표시되는지 확인
+        const inDock = dockItems.find(d => d.id === sectionData.id);
+
+        html += `
+          <div class="builtin-tool-category">
+            <h4 class="builtin-category-title" data-section-id="${sectionData.id}">
+              <span>${sectionName}</span>
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <button class="icon-select-btn" data-section-id="${sectionData.id}" title="아이콘 선택">
+                  <img src="/assets/${inDock?.icon || sectionData.icon}" style="width: 24px; height: 24px;" alt="icon">
+                </button>
+                <label class="mcp-toggle category-dock-toggle" title="독에 표시/숨김">
+                  <input type="checkbox" ${inDock ? 'checked' : ''} data-section-id="${sectionData.id}" data-section-name="${sectionName}">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="category-arrow">▼</span>
+              </div>
+            </h4>
+            <div class="builtin-tool-list" data-category-content="${sectionName}">
+              ${sectionData.tools.map(toolName => {
+                const tool = allTools.find(t => t.name === toolName);
+                if (!tool) return '';
+
+                return `
+                  <div class="builtin-tool-item">
+                    <div>
+                      <div style="font-weight: 500; font-size: 0.875rem; color: rgba(255,255,255,0.9);">${toolName}</div>
+                      <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">${tool.description}</div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      listContainer.innerHTML = html;
+
+      // 카테고리 접기/펼치기 이벤트 (화살표 클릭 시만)
+      listContainer.querySelectorAll('.category-arrow').forEach(arrow => {
+        arrow.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const title = e.target.closest('.builtin-category-title');
+          const sectionName = Object.keys(sections).find(name =>
+            sections[name].id === title.dataset.sectionId
+          );
+          const content = listContainer.querySelector(`[data-category-content="${sectionName}"]`);
+          const isCollapsed = title.classList.toggle('collapsed');
+          if (isCollapsed) {
+            content.style.display = 'none';
+          } else {
+            content.style.display = 'flex';
+          }
+        });
+      });
+
+      // 아이콘 선택 버튼
+      listContainer.querySelectorAll('.icon-select-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const sectionId = e.currentTarget.dataset.sectionId;
+          const sectionName = Object.keys(sections).find(name => sections[name].id === sectionId);
+          this.showIconSelectorModal(sectionId, sectionName, sections[sectionName], dockItems);
+        });
+      });
+
+      // 섹션 독 토글
+      listContainer.querySelectorAll('.category-dock-toggle input').forEach(toggle => {
+        toggle.addEventListener('change', async (e) => {
+          e.stopPropagation();
+          const sectionId = e.target.dataset.sectionId;
+          const sectionName = e.target.dataset.sectionName;
+          const isChecked = e.target.checked;
+          const sectionData = sections[sectionName];
+          await this.toggleSectionDock(sectionId, sectionName, sectionData, isChecked, dockItems);
+        });
+      });
+    } catch (error) {
+      console.error('내장 도구 목록 로드 실패:', error);
+      listContainer.innerHTML = `
+        <div class="mcp-error">
+          <p>❌ 도구 목록을 불러올 수 없습니다</p>
+          <p class="error-detail">${error.message}</p>
+        </div>
+      `;
+    }
+  }
+
+  /**
+   * 섹션 독 토글 (섹션 단위로 독에 추가/제거)
+   */
+  async toggleSectionDock(sectionId, sectionName, sectionData, enabled, currentDockItems) {
+    try {
+      let newDockItems = [...currentDockItems];
+
+      if (enabled) {
+        // 섹션을 독에 추가
+        const alreadyExists = newDockItems.find(item => item.id === sectionId);
+        if (!alreadyExists) {
+          // 설정 아이콘(fixed) 찾기
+          const settingsIdx = newDockItems.findIndex(item => item.fixed && item.id === 'settings');
+
+          const newItem = {
+            id: sectionId,
+            name: sectionName,
+            icon: sectionData.icon,
+            order: 0, // 임시값, 아래에서 재정렬됨
+            fixed: false,
+            isBuiltinSection: true, // 섹션임을 표시
+            tools: sectionData.tools // 포함된 도구 목록
+          };
+
+          // 설정 아이콘이 있으면 그 앞에 삽입, 없으면 맨 끝에 추가
+          if (settingsIdx !== -1) {
+            newDockItems.splice(settingsIdx, 0, newItem);
+          } else {
+            newDockItems.push(newItem);
+          }
+        }
+      } else {
+        // 섹션을 독에서 제거
+        newDockItems = newDockItems.filter(item => item.id !== sectionId);
+      }
+
+      // order 재정렬 (설정은 항상 맨 끝으로)
+      newDockItems.sort((a, b) => {
+        if (a.id === 'settings') return 1;
+        if (b.id === 'settings') return -1;
+        return 0;
+      });
+      newDockItems.forEach((item, idx) => {
+        item.order = idx;
+      });
+
+      // 저장
+      console.log('💾 섹션 토글 - 독 저장 중:', newDockItems);
+      const res = await fetch('/api/config/dock', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newDockItems)
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`저장 실패: ${res.status} ${errorText}`);
+      }
+
+      // UI 새로고침
+      await this.loadBuiltinTools();
+
+      // 독 새로고침 (즉시 반영)
+      if (window.soulApp && typeof window.soulApp.initMacosDock === 'function') {
+        window.soulApp.initMacosDock();
+      }
+
+      console.log('✅ 섹션 토글 성공:', sectionName, enabled ? '추가' : '제거');
+    } catch (error) {
+      console.error('섹션 토글 실패:', error);
+      alert('설정을 저장할 수 없습니다');
+      // 체크박스 원상복구
+      const toggle = document.querySelector(`.category-dock-toggle input[data-section-id="${sectionId}"]`);
+      if (toggle) {
+        toggle.checked = !enabled;
+      }
+    }
+  }
+
+  /**
+   * 아이콘 선택 모달
+   */
+  showIconSelectorModal(sectionId, sectionName, sectionData, currentDockItems) {
+    const icons = [
+      'checklist-icon.webp', 'smarthome-icon.webp', 'cat-icon.webp',
+      'terminal-icon.webp', 'mic-icon.webp', 'setup-icom.webp',
+      'mcp-icon.webp', 'folder-icon.webp', 'user-icon.webp', 'tool-icon.webp'
+    ];
+
+    const dockItem = currentDockItems.find(item => item.id === sectionId);
+    const currentIcon = dockItem?.icon || sectionData.icon;
+
+    const modal = document.createElement('div');
+    modal.className = 'mcp-modal';
+    modal.innerHTML = `
+      <div class="mcp-modal-content">
+        <div class="mcp-modal-header">
+          <h3>${sectionName} - 아이콘 선택</h3>
+          <button class="mcp-modal-close">✕</button>
+        </div>
+        <div class="mcp-modal-body">
+          <div class="form-group">
+            <label>아이콘</label>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+              ${icons.map(icon => `
+                <div class="icon-option" data-icon="${icon}"
+                  style="width: 40px; height: 40px; border: 2px solid ${currentIcon === icon ? '#4285f4' : '#ddd'};
+                  border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+                  background: ${currentIcon === icon ? '#e3f2fd' : '#f9f9f9'};">
+                  <img src="/assets/${icon}" style="width: 28px; height: 28px;" alt="${icon}">
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn-cancel">취소</button>
+            <button type="button" class="btn-save">저장</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    let selectedIcon = currentIcon;
+
+    // 아이콘 선택
+    modal.querySelectorAll('.icon-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        modal.querySelectorAll('.icon-option').forEach(o => {
+          o.style.border = '2px solid #ddd';
+          o.style.background = '#f9f9f9';
+        });
+        opt.style.border = '2px solid #4285f4';
+        opt.style.background = '#e3f2fd';
+        selectedIcon = opt.dataset.icon;
+      });
+    });
+
+    // 닫기
+    modal.querySelector('.mcp-modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.btn-cancel').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+    // 저장
+    modal.querySelector('.btn-save').addEventListener('click', async () => {
+      await this.updateSectionIcon(sectionId, selectedIcon, currentDockItems);
+      modal.remove();
+    });
+  }
+
+  /**
+   * 섹션 아이콘 업데이트
+   */
+  async updateSectionIcon(sectionId, newIcon, currentDockItems) {
+    try {
+      const newDockItems = currentDockItems.map(item => {
+        if (item.id === sectionId) {
+          return { ...item, icon: newIcon };
+        }
+        return item;
+      });
+
+      const res = await fetch('/api/config/dock', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newDockItems)
+      });
+
+      if (!res.ok) {
+        throw new Error('저장 실패');
+      }
+
+      await this.loadBuiltinTools();
+
+      // 독 새로고침 (즉시 반영)
+      if (window.soulApp && typeof window.soulApp.initMacosDock === 'function') {
+        window.soulApp.initMacosDock();
+      }
+
+      console.log('✅ 아이콘 업데이트 성공:', sectionId, newIcon);
+    } catch (error) {
+      console.error('아이콘 업데이트 실패:', error);
+      alert('아이콘을 저장할 수 없습니다');
+    }
+  }
+
+  /**
+   * === 레거시 메서드 (사용 안 함) ===
+   */
+
+  /**
+   * MCP 서버 목록 로드
+   */
+  async loadMCPServers_LEGACY() {
+    if (!tool) return;
+
+    // 아이콘 목록 (외부 MCP와 동일)
+    const icons = [
+      'checklist-icon.webp', 'smarthome-icon.webp', 'cat-icon.webp',
+      'terminal-icon.webp', 'mic-icon.webp', 'setup-icom.webp',
+      'mcp-icon.webp', 'folder-icon.webp', 'user-icon.webp', 'tool-icon.webp'
+    ];
+
+    const modal = document.createElement('div');
+    modal.className = 'mcp-modal';
+    modal.innerHTML = `
+      <div class="mcp-modal-content">
+        <div class="mcp-modal-header">
+          <h3>내장 도구 설정</h3>
+          <button class="mcp-modal-close">✕</button>
+        </div>
+        <div class="mcp-modal-body">
+          <form id="builtinToolForm" class="mcp-form">
+            <div class="form-group">
+              <label>도구 이름</label>
+              <input type="text" value="${toolName}" disabled style="background: #f5f5f5; color: #888;">
+            </div>
+            <div class="form-group">
+              <label>설명</label>
+              <input type="text" value="${tool.description}" disabled style="background: #f5f5f5; color: #888;">
+            </div>
+            <div class="form-group">
+              <label>아이콘</label>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+                ${icons.map(icon => `
+                  <div class="icon-option" data-icon="${icon}"
+                    style="width: 40px; height: 40px; border: 2px solid ${(currentDockItem?.icon || 'tool-icon.webp') === icon ? '#4285f4' : '#ddd'};
+                    border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+                    background: ${(currentDockItem?.icon || 'tool-icon.webp') === icon ? '#e3f2fd' : '#f9f9f9'};">
+                    <img src="/assets/${icon}" style="width: 28px; height: 28px;" alt="${icon}">
+                  </div>
+                `).join('')}
+              </div>
+              <input type="hidden" name="icon" value="${currentDockItem?.icon || 'tool-icon.webp'}">
+            </div>
+            <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+              <input type="checkbox" name="showInDock" id="showInDock" ${currentDockItem ? 'checked' : ''}>
+              <label for="showInDock" style="margin: 0;">독(Dock)에 표시</label>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn-cancel">취소</button>
+              <button type="submit" class="btn-save">저장</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // 아이콘 선택 이벤트
+    modal.querySelectorAll('.icon-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        modal.querySelectorAll('.icon-option').forEach(o => {
+          o.style.border = '2px solid #ddd';
+          o.style.background = '#f9f9f9';
+        });
+        opt.style.border = '2px solid #4285f4';
+        opt.style.background = '#e3f2fd';
+        modal.querySelector('input[name="icon"]').value = opt.dataset.icon;
+      });
+    });
+
+    // 닫기
+    modal.querySelector('.mcp-modal-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('.btn-cancel').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+    // 폼 제출
+    modal.querySelector('#builtinToolForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const showInDock = formData.get('showInDock') === 'on';
+      const icon = formData.get('icon');
+
+      await this.saveBuiltinToolConfig(toolName, tool, showInDock, icon, allDockItems);
+      modal.remove();
+    });
+  }
+
+  /**
+   * 내장 도구 설정 저장
+   */
+  async saveBuiltinToolConfig(toolName, tool, showInDock, icon, currentDockItems) {
+    try {
+      let newDockItems = [...currentDockItems];
+
+      if (showInDock) {
+        // 독에 추가 또는 업데이트
+        const existingIndex = newDockItems.findIndex(item => item.id === toolName);
+        const dockItem = {
+          id: toolName,
+          name: tool.description || toolName,
+          icon: icon || 'tool-icon.webp',
+          order: existingIndex >= 0 ? newDockItems[existingIndex].order : newDockItems.length,
+          fixed: false,
+          isBuiltin: true
+        };
+
+        if (existingIndex >= 0) {
+          newDockItems[existingIndex] = dockItem;
+        } else {
+          newDockItems.push(dockItem);
+        }
+      } else {
+        // 독에서 제거
+        newDockItems = newDockItems.filter(item => item.id !== toolName);
+        // order 재정렬
+        newDockItems.forEach((item, idx) => {
+          item.order = idx;
+        });
+      }
+
+      // 저장 (배열을 직접 전송)
+      console.log('💾 독 저장 중:', newDockItems);
+      const res = await fetch('/api/config/dock', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newDockItems)
+      });
+
+      console.log('✅ 저장 응답:', res.status, res.statusText);
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('❌ 저장 실패:', errorText);
+        throw new Error(`저장 실패: ${res.status} ${errorText}`);
+      }
+
+      const result = await res.json();
+      console.log('✅ 저장 성공:', result);
+
+      // UI 새로고침
+      await this.loadBuiltinTools();
+
+      // 성공 메시지 (showToast 없으면 console로 대체)
+      const message = showInDock ? `"${tool.description}" 독에 추가됨` : `"${tool.description}" 독에서 제거됨`;
+      if (window.soulApp && typeof window.soulApp.showToast === 'function') {
+        window.soulApp.showToast(message, 2000);
+      } else {
+        console.log('✅', message);
+      }
+    } catch (error) {
+      console.error('도구 설정 저장 실패:', error);
+      alert('설정을 저장할 수 없습니다: ' + error.message);
+    }
+  }
+
+  /**
+   * 내장 도구 독에 추가/제거 (레거시 메서드 - 제거 예정)
+   */
+  async toggleBuiltinTool(toolName, enabled, currentDockItems) {
+    try {
+      const toolsRes = await fetch('/api/tools/builtin/list');
+      const toolsData = await toolsRes.json();
+      const tool = toolsData.tools.find(t => t.name === toolName);
+
+      if (!tool) {
+        alert('도구를 찾을 수 없습니다');
+        return;
+      }
+
+      let newDockItems = [...currentDockItems];
+
+      if (enabled) {
+        // 독에 추가
+        const alreadyExists = newDockItems.find(item => item.id === toolName);
+        if (!alreadyExists) {
+          newDockItems.push({
+            id: toolName,
+            name: tool.description || toolName,
+            icon: 'tool-icon.webp', // 기본 도구 아이콘
+            order: newDockItems.length,
+            fixed: false,
+            isBuiltin: true // 내장 도구 표시
+          });
+        }
+      } else {
+        // 독에서 제거
+        newDockItems = newDockItems.filter(item => item.id !== toolName);
+        // order 재정렬
+        newDockItems.forEach((item, idx) => {
+          item.order = idx;
+        });
+      }
+
+      // 저장
+      const res = await fetch('/api/config/dock', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newDockItems)
+      });
+
+      if (res.ok) {
+        // UI 업데이트
+        const card = document.querySelector(`.builtin-tool-card[data-tool="${toolName}"]`);
+        if (card) {
+          if (enabled) {
+            card.classList.add('in-dock');
+          } else {
+            card.classList.remove('in-dock');
+          }
+        }
+
+        // 토스트 메시지 (main.js의 showToast 사용)
+        if (window.soulApp) {
+          window.soulApp.showToast(
+            enabled ? `"${tool.description}" 독에 추가됨` : `"${tool.description}" 독에서 제거됨`,
+            2000
+          );
+        }
+      } else {
+        throw new Error('저장 실패');
+      }
+    } catch (error) {
+      console.error('도구 토글 실패:', error);
+      alert('도구 설정을 저장할 수 없습니다');
+      // 체크박스 원상복구
+      const toggle = document.querySelector(`.builtin-tool-toggle input[data-tool="${toolName}"]`);
+      if (toggle) {
+        toggle.checked = !enabled;
+      }
+    }
   }
 
   /**

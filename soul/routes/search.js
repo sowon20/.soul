@@ -4,6 +4,39 @@ const searchUtils = require('../utils/search');
 const recommendationUtils = require('../utils/recommendation');
 
 /**
+ * soul_memories 검색 헬퍼 — 사용자 검색 시 기억도 함께 반환
+ */
+function searchSoulMemories(query, limit = 10) {
+  try {
+    const db = require('../db');
+    if (!db.db || !query) return [];
+
+    const words = query.split(/\s+/).filter(w => w.length >= 1);
+    if (words.length === 0) return [];
+
+    const conditions = words.map(() => '(content LIKE ? OR tags LIKE ?)').join(' OR ');
+    const params = words.flatMap(w => [`%${w}%`, `%${w}%`]);
+
+    const rows = db.db.prepare(
+      `SELECT * FROM soul_memories WHERE is_active = 1 AND (${conditions}) ORDER BY updated_at DESC LIMIT ?`
+    ).all(...params, limit);
+
+    return rows.map(r => ({
+      id: r.id,
+      type: 'soul_memory',
+      category: r.category,
+      content: r.content,
+      tags: r.tags ? JSON.parse(r.tags) : [],
+      source_date: r.source_date,
+      created_at: r.created_at,
+      updated_at: r.updated_at
+    }));
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
  * GET /api/search
  * 기본 검색
  */
@@ -37,6 +70,10 @@ router.get('/', async (req, res) => {
     };
 
     const result = await searchUtils.searchConversations(q || '', filters);
+
+    // soul_memories도 함께 검색
+    const soulMemories = searchSoulMemories(q || '', 10);
+    result.soulMemories = soulMemories;
 
     res.json(result);
   } catch (error) {
@@ -136,6 +173,9 @@ router.post('/smart', async (req, res) => {
       useExpanded: useExpanded || false,
       additionalFilters: additionalFilters || {}
     });
+
+    // soul_memories도 함께 검색
+    result.soulMemories = searchSoulMemories(query, 10);
 
     res.json(result);
   } catch (error) {

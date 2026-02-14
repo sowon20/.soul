@@ -698,6 +698,15 @@ body {
   overflow: hidden;
 }
 
+.search-result-preview .assistant-preview {
+  display: block;
+  margin-top: 4px;
+  padding-left: 16px;
+  color: rgba(150, 200, 255, 0.8);
+  font-style: italic;
+  border-left: 2px solid rgba(150, 200, 255, 0.3);
+}
+
 .search-result-tags {
   display: flex;
   gap: 4px;
@@ -718,6 +727,29 @@ body {
   color: #fcd34d;
   padding: 0 2px;
   border-radius: 2px;
+}
+
+/* 검색 결과 역할 배지 */
+.role-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.role-badge.role-user {
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.role-badge.role-assistant {
+  background: rgba(96, 165, 250, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.3);
 }
 
 /* 검색 로딩 */
@@ -2588,6 +2620,20 @@ body {
   flex-direction: column;
   overflow: hidden;
   position: relative;
+}
+
+/* 검색 결과 등 일반 HTML 컨텐츠 컨테이너 */
+.canvas-content-container {
+  display: none;
+  flex-direction: column;
+  overflow-y: auto;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.canvas-content-container.active {
+  display: flex;
 }
 
 /* MCP 연결 끊김 오버레이 */
@@ -4747,4 +4793,76 @@ body {
 .bootstrap-btn.primary:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+}
+
+/* 내장 섹션 패널 스타일 */
+.builtin-section-panel {
+  padding: 24px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.section-header {
+  margin-bottom: 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 16px;
+}
+
+.section-header h2 {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.section-desc {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.section-tools {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+}
+
+.section-tool-card {
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.2s;
+}
+
+.section-tool-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(96, 165, 250, 0.5);
+}
+
+.tool-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.tool-action-btn {
+  padding: 6px 12px;
+  background: rgba(96, 165, 250, 0.2);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  border-radius: 6px;
+  color: rgba(96, 165, 250, 0.9);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tool-action-btn:hover {
+  background: rgba(96, 165, 250, 0.3);
+  border-color: rgba(96, 165, 250, 0.6);
+  color: white;
 }

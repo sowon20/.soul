@@ -58,6 +58,13 @@ export class AISettings {
     // 디버깅을 위해 전역 변수로 노출
     window.aiSettings = this;
 
+    // 로딩 애니메이션 표시
+    container.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;padding:60px 0;gap:10px;color:var(--text-tertiary);font-size:13px;">
+        <div class="os1-loader"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+        모델 목록 불러오는 중...
+      </div>`;
+
     try {
       // 사용자 프로필 로드 (언어 정보 필요)
       await this.loadUserProfile();
@@ -511,20 +518,23 @@ export class AISettings {
     const response = await this.apiClient.get('/ai-services');
     this.services = response.services || [];
 
-    // 활성화되어 있고 키가 있는데 모델이 없는 서비스는 자동으로 모델 새로고침
+    // 활성 서비스 모델 항상 새로고침 (파인튜닝 등 신규 모델 반영, 병렬)
+    const refreshPromises = [];
     for (const service of this.services) {
       const hasKey = service.type === 'vertex' ? !!service.projectId :
                      service.type === 'ollama' ? true :
                      service.hasApiKey;
 
-      if (service.isActive && hasKey && (!service.models || service.models.length === 0)) {
-        try {
-          console.log(`[AI Settings] Auto-refreshing models for ${service.name}`);
-          await this.apiClient.post(`/ai-services/${service.id}/refresh-models`);
-        } catch (e) {
-          console.warn(`Failed to auto-refresh models for ${service.name}:`, e);
-        }
+      if (service.isActive && hasKey) {
+        refreshPromises.push(
+          this.apiClient.post(`/ai-services/${service.id}/refresh-models`)
+            .catch(e => console.warn(`Failed to refresh models for ${service.name}:`, e))
+        );
       }
+    }
+    if (refreshPromises.length > 0) {
+      console.log(`[AI Settings] Refreshing models for ${refreshPromises.length} services...`);
+      await Promise.all(refreshPromises);
     }
 
     // 모델 새로고침 후 서비스 목록 다시 가져오기
@@ -964,7 +974,7 @@ export class AISettings {
     return `
       <div class="alba-compact-item ${role.active ? '' : 'inactive'}" data-role-id="${role.roleId}" data-action="edit-alba">
         <div class="alba-compact-info">
-          <span class="alba-compact-name">${role.name}${role.isSystem ? ' <span class="alba-system-tag">시스템</span>' : ''} ${statsBadge}</span>
+          <span class="alba-compact-name">${role.name}${role.isSystem ? ' <span class="alba-system-tag">시스템</span>' : ''}${this._isCallableByAI(role) ? ' <span class="alba-system-tag" style="background:#7c5cff;color:#fff;">AI호출</span>' : ''} ${statsBadge}</span>
           <span class="alba-compact-desc">${role.description || '설명 없음'}${hint}</span>
           ${modelChain}
         </div>
@@ -1010,6 +1020,14 @@ export class AISettings {
     }
 
     return '';
+  }
+
+  /**
+   * callableByAI 여부 확인
+   */
+  _isCallableByAI(role) {
+    const cfg = typeof role.config === 'string' ? (() => { try { return JSON.parse(role.config); } catch { return {}; } })() : (role.config || {});
+    return cfg.callableByAI === true;
   }
 
   /**
@@ -3572,6 +3590,10 @@ export class AISettings {
       // 서비스 목록 새로고침
       await this.loadServices();
 
+      // 모델 드롭다운 갱신
+      this.collectAvailableModels();
+      this.updateRoutingDropdowns();
+
       // 캡슐 UI 실시간 업데이트
       this.updateCapsuleUI();
 
@@ -3678,6 +3700,7 @@ export class AISettings {
         // 서비스 목록 새로고침
         await this.loadServices();
         this.collectAvailableModels();
+        this.updateRoutingDropdowns();
 
         // UI 업데이트
         this.updateCapsuleUI();
@@ -5398,6 +5421,13 @@ export class AISettings {
               <div style="font-size:13px;color:rgba(0,0,0,0.55);padding:4px 0;line-height:1.5;">${role.description}</div>
             </div>` : ''}
             <div class="alba-modal-field">
+              <label class="alba-toggle-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:4px;">
+                <input type="checkbox" id="albaCallableByAI" ${config.callableByAI ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;">
+                <span style="font-size:13px;">소울이가 대화 중 이 알바를 호출할 수 있음</span>
+              </label>
+              <div style="font-size:11px;color:rgba(0,0,0,0.4);margin-left:24px;">활성화하면 소울이가 call_worker 도구로 이 알바를 직접 호출합니다</div>
+            </div>
+            <div class="alba-modal-field">
               <label>메모</label>
               <textarea id="albaMemo" rows="3" placeholder="모델 선택 이유, 설정 참고사항 등" style="width:100%;resize:vertical;font-size:13px;padding:8px;border:1px solid rgba(0,0,0,0.15);border-radius:6px;font-family:inherit;">${(role.memo || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
             </div>
@@ -5507,7 +5537,8 @@ export class AISettings {
         }
       }
 
-      const updatedConfig = { ...config, serviceId };
+      const callableByAI = document.getElementById('albaCallableByAI')?.checked || false;
+      const updatedConfig = { ...config, serviceId, callableByAI };
 
       try {
         // 체인 지원 알바: fallback 모델 수집

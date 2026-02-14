@@ -39,10 +39,6 @@ export class MenuManager {
         title: '프로필',
         render: () => this.renderProfile(),
       },
-      roles: {
-        title: '역할 관리',
-        render: () => this.renderRoles(),
-      },
 aiSettings: {
         title: 'AI 설정',
         render: () => this.renderAISettings(),
@@ -231,34 +227,6 @@ aiSettings: {
         </p>
       </div>
     `;
-  }
-
-  async renderRoles() {
-    // 역할 관리 UI 렌더링
-    this.subMenuContent.innerHTML = '<div class="loading">역할 관리 로딩 중...</div>';
-
-    try {
-      const roleManager = window.roleManager;
-      if (roleManager) {
-        const roleUI = await roleManager.render();
-        this.subMenuContent.innerHTML = '';
-        this.subMenuContent.appendChild(roleUI);
-      } else {
-        this.subMenuContent.innerHTML = `
-          <div class="error">
-            <p>역할 관리자를 초기화할 수 없습니다.</p>
-          </div>
-        `;
-      }
-    } catch (error) {
-      console.error('역할 UI 렌더링 실패:', error);
-      this.subMenuContent.innerHTML = `
-        <div class="error">
-          <p>역할 관리 UI를 불러오는데 실패했습니다.</p>
-          <p style="font-size: var(--font-size-sm); opacity: 0.7;">${error.message}</p>
-        </div>
-      `;
-    }
   }
 
 

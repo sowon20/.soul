@@ -172,8 +172,22 @@ class PersonalityCore {
     const profile = this.getProfile();
     const aiName = profile.name || 'Soul';
 
-    // 개인 AI 핵심 정체성 (사용자 프로필은 chat.js에서 별도 주입)
-    let prompt = `너는 ${aiName}. 사용자의 개인 AI.
+    // 파인튜닝 모델: 정체성/톤/스타일은 학습 완료 → 동적 정보만 전달
+    const isFineTuned = model && model.startsWith('sowon/');
+
+    let prompt = '';
+
+    if (isFineTuned) {
+      // 파인튜닝 모델: 정체성/톤/스타일은 학습 완료 (DNA)
+      // 여기엔 동적 규칙만 — .soul 본문은 인풋에 넣지 않음
+      // 동적 규칙만 — 정체성/톤/스타일/감정/유머 전부 파인튜닝 DNA
+      prompt = '';
+      if (voiceTags && voiceTags.length > 0) {
+        prompt += `대괄호 태그는 음성 제어 전용. 허용: ${(Array.isArray(voiceTags) ? voiceTags : [voiceTags]).map(t => '[' + t + ']').join(', ')}. 그 외 대괄호 태그 금지\n`;
+      }
+    } else {
+      // 일반 모델용 풀 시스템 프롬프트
+      prompt = `너는 ${aiName}. 사용자의 개인 AI.
 일반 AI 어시스턴트가 아니라 이 사용자만을 위한 개인적인 존재.
 
 **핵심 정체성:**
@@ -182,63 +196,63 @@ class PersonalityCore {
 - 목표: 사용자를 깊이 이해하고, 기억하고, 돕는 것
 
 **행동 원칙:**
-- 모르는 건 솔직히 "모르겠어"라고 말하기. 절대 지어내지 않기
-- 도구가 제공되면 도구를 통해서만 정보 확인. 도구 없이 결과를 만들어내지 않기
+- 모르거나 기억 안 나면 솔직히 말하기. 절대 지어내지 않기
+- 과거 사실을 물으면 recall_memory로 확인 후 답하기. 기록 없으면 없다고 하기
 - 추측, 가정, 꾸며낸 시스템/기능 언급 금지
 - 일관된 인격 유지 (어떤 모델이든 나는 ${aiName})
 
 `;
 
-    // 커뮤니케이션 스타일 (압축) - 모델 불문 명확한 지시
-    const formality = profile.communication.formality ?? 0.5;
-    let speechStyle = '';
-    if (formality < 0.3) {
-      speechStyle = `- 말투: 반말 사용 (해, 야, ~거야, ~이야, ~해줘, ~인데). 존댓말(~습니다, ~세요, ~합니다) 절대 금지
+      // 커뮤니케이션 스타일 (압축) - 모델 불문 명확한 지시
+      const formality = profile.communication.formality ?? 0.5;
+      let speechStyle = '';
+      if (formality < 0.3) {
+        speechStyle = `- 말투: 반말 사용 (해, 야, ~거야, ~이야, ~해줘, ~인데). 존댓말(~습니다, ~세요, ~합니다) 절대 금지
 - 예시: "알겠어", "이거 해봐", "뭐 하고 있어?", "좋은 생각이야"`;
-    } else if (formality < 0.5) {
-      speechStyle = `- 말투: 편한 반말 기본 (~해, ~야, ~거야). 존댓말 쓰지 마
+      } else if (formality < 0.5) {
+        speechStyle = `- 말투: 편한 반말 기본 (~해, ~야, ~거야). 존댓말 쓰지 마
 - 예시: "그래 알겠어", "이거 봐봐", "괜찮아"`;
-    } else if (formality > 0.7) {
-      speechStyle = `- 말투: 정중한 존댓말 사용 (~습니다, ~세요, ~합니다)`;
-    } else {
-      speechStyle = `- 말투: 자연스러운 구어체`;
-    }
+      } else if (formality > 0.7) {
+        speechStyle = `- 말투: 정중한 존댓말 사용 (~습니다, ~세요, ~합니다)`;
+      } else {
+        speechStyle = `- 말투: 자연스러운 구어체`;
+      }
 
-    const humor = profile.communication.humor ?? 0.3;
-    let humorStyle = '';
-    if (humor < 0.3) {
-      humorStyle = '- 톤: 진지하고 차분하게. 농담이나 장난 자제';
-    } else if (humor > 0.7) {
-      humorStyle = '- 톤: 가볍고 유머 섞어서. 재치 있는 표현 활용';
-    } else {
-      humorStyle = '- 톤: 상황에 맞게 적절히';
-    }
+      const humor = profile.communication.humor ?? 0.3;
+      let humorStyle = '';
+      if (humor < 0.3) {
+        humorStyle = '- 톤: 진지하고 차분하게. 농담이나 장난 자제';
+      } else if (humor > 0.7) {
+        humorStyle = '- 톤: 가볍고 유머 섞어서. 재치 있는 표현 활용';
+      } else {
+        humorStyle = '- 톤: 상황에 맞게 적절히';
+      }
 
-    const empathy = profile.traits?.empathetic ?? 0.5;
-    let empathyStyle = '';
-    if (empathy < 0.3) {
-      empathyStyle = '- 감정: 사실과 정보 중심으로 간단명료하게';
-    } else if (empathy > 0.7) {
-      empathyStyle = '- 감정: 사용자 감정에 공감하고 따뜻하게 반응';
-    } else {
-      empathyStyle = '- 감정: 자연스럽게 공감하되 과하지 않게';
-    }
+      const empathy = profile.traits?.empathetic ?? 0.5;
+      let empathyStyle = '';
+      if (empathy < 0.3) {
+        empathyStyle = '- 감정: 사실과 정보 중심으로 간단명료하게';
+      } else if (empathy > 0.7) {
+        empathyStyle = '- 감정: 사용자 감정에 공감하고 따뜻하게 반응';
+      } else {
+        empathyStyle = '- 감정: 자연스럽게 공감하되 과하지 않게';
+      }
 
-    // 응답 길이 스타일
-    const verbosity = profile.communication.verbosity ?? 0.5;
-    let lengthStyle = '';
-    if (verbosity < 0.3) {
-      lengthStyle = `- 길이: 짧고 간결하게. 핵심만 1-3문장으로 답변. 불필요한 부연설명, 반복, 나열 금지
+      // 응답 길이 스타일
+      const verbosity = profile.communication.verbosity ?? 0.5;
+      let lengthStyle = '';
+      if (verbosity < 0.3) {
+        lengthStyle = `- 길이: 짧고 간결하게. 핵심만 1-3문장으로 답변. 불필요한 부연설명, 반복, 나열 금지
 - 예시: 질문에 바로 답. "~이야", "~해볼게" 수준. 장문 금지`;
-    } else if (verbosity < 0.5) {
-      lengthStyle = '- 길이: 간결하게. 핵심 위주로 짧게 답변';
-    } else if (verbosity > 0.7) {
-      lengthStyle = '- 길이: 자세하고 풍부하게. 배경 설명과 예시 포함';
-    } else {
-      lengthStyle = '- 길이: 상황에 맞게 적절한 분량';
-    }
+      } else if (verbosity < 0.5) {
+        lengthStyle = '- 길이: 간결하게. 핵심 위주로 짧게 답변';
+      } else if (verbosity > 0.7) {
+        lengthStyle = '- 길이: 자세하고 풍부하게. 배경 설명과 예시 포함';
+      } else {
+        lengthStyle = '- 길이: 상황에 맞게 적절한 분량';
+      }
 
-    prompt += `**대화 스타일:**
+      prompt += `**대화 스타일:**
 ${speechStyle}
 ${lengthStyle}
 ${humorStyle}
@@ -247,8 +261,9 @@ ${empathyStyle}
 ${voiceTags && voiceTags.length > 0 ? `- 대괄호 태그는 음성 제어 전용. 허용: ${(Array.isArray(voiceTags) ? voiceTags : [voiceTags]).map(t => '[' + t + ']').join(', ')}. 그 외 대괄호 태그 금지` : '- 대괄호 [] 태그 사용 금지'}
 
 `;
+    }
 
-    // 사용자 커스텀 프롬프트 (description + customPrompt)
+    // 사용자 커스텀 프롬프트 (description + customPrompt) — 항상 포함
     if (profile.description) {
       prompt += `**사용자 지정 지침:**
 ${profile.description}

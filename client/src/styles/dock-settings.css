@@ -1,0 +1,398 @@
+/* dock-settings.css */
+
+/* 도구 추가 모달 */
+.dock-tool-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+
+.dock-tool-modal {
+  background: var(--surface-1);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.dock-tool-modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dock-tool-modal-header h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.dock-tool-modal-close {
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.dock-tool-modal-close:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.dock-tool-modal-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.dock-tool-category {
+  margin-bottom: 24px;
+}
+
+.dock-tool-category:last-child {
+  margin-bottom: 0;
+}
+
+.dock-tool-category h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 12px 0;
+  padding-left: 8px;
+  border-left: 3px solid var(--accent-color);
+}
+
+.dock-tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dock-tool-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  transition: all 0.2s ease;
+}
+
+.dock-tool-item:hover {
+  background: var(--surface-3);
+  border-color: var(--accent-color);
+}
+
+.dock-tool-item.active {
+  opacity: 0.6;
+}
+
+.dock-tool-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.dock-tool-info strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.dock-tool-info small {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.dock-tool-add {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  background: var(--accent-color);
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dock-tool-add:hover {
+  opacity: 0.9;
+  transform: scale(1.05);
+}
+
+.dock-tool-badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dock-settings-container {
+  padding: 24px;
+  max-width: 1000px;
+  margin: 0 auto;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.dock-settings-header {
+  margin-bottom: 24px;
+}
+
+.dock-settings-header h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+}
+
+.dock-settings-subtitle {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin: 0;
+}
+
+.dock-settings-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.dock-save-btn,
+.dock-reset-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dock-save-btn {
+  background: var(--accent-color);
+  color: white;
+}
+
+.dock-save-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.dock-reset-btn {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.dock-reset-btn:hover {
+  background: var(--surface-3);
+}
+
+.dock-active-section,
+.dock-available-section {
+  margin-bottom: 32px;
+}
+
+.dock-active-section h3,
+.dock-available-section h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 16px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dock-active-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface-1);
+  border-radius: 8px;
+  padding: 16px;
+  min-height: 100px;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+  padding: 24px 0;
+  margin: 0;
+}
+
+.dock-item-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  transition: all 0.2s ease;
+}
+
+.dock-item-card:hover {
+  background: var(--surface-3);
+  border-color: var(--accent-color);
+}
+
+.dock-item-card.active {
+  border-color: var(--accent-color);
+  background: var(--surface-1);
+}
+
+.dock-item-card.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dock-item-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.dock-item-icon {
+  font-size: 20px;
+}
+
+.dock-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dock-item-text strong {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.dock-item-text small {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dock-item-add-btn,
+.dock-item-remove-btn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: none;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dock-item-add-btn {
+  background: var(--accent-color);
+  color: white;
+}
+
+.dock-item-add-btn:hover {
+  opacity: 0.9;
+  transform: scale(1.05);
+}
+
+.dock-item-remove-btn {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.dock-item-remove-btn:hover {
+  background: #ff4444;
+  color: white;
+}
+
+.dock-item-badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--accent-color);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dock-category {
+  margin-bottom: 24px;
+}
+
+.dock-category-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 12px 0;
+  padding-left: 8px;
+  border-left: 3px solid var(--accent-color);
+}
+
+.dock-category-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 다크 모드 대응 */
+@media (prefers-color-scheme: dark) {
+  .dock-item-card {
+    background: var(--surface-2, #2a2a2a);
+    border-color: var(--border-color, #444);
+  }
+
+  .dock-item-card:hover {
+    background: var(--surface-3, #333);
+  }
+}
+
+/* 모바일 대응 */
+@media (max-width: 768px) {
+  .dock-settings-container {
+    padding: 16px;
+  }
+
+  .dock-settings-header h2 {
+    font-size: 20px;
+  }
+
+  .dock-item-card {
+    padding: 10px 12px;
+  }
+
+  .dock-item-text strong {
+    font-size: 13px;
+  }
+
+  .dock-item-text small {
+    font-size: 11px;
+  }
+}

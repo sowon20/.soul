@@ -455,6 +455,65 @@ function createTables() {
     )
   `);
 
+  // SoulMemoryHistory - 기억 변경 이력 (왜 바뀌었는지 추적)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS soul_memory_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      memory_id INTEGER NOT NULL,
+      previous_content TEXT NOT NULL,
+      reason TEXT,
+      changed_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (memory_id) REFERENCES soul_memories(id)
+    )
+  `);
+
+  // Todos - 할일 관리
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS todos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      todo_id TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT DEFAULT 'pending',
+      priority TEXT DEFAULT 'medium',
+      due_date TEXT,
+      tags TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      completed_at TEXT
+    )
+  `);
+
+  // Notes - 메모 관리
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      note_id TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT,
+      tags TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Events - 캘린더 일정
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      start_time TEXT NOT NULL,
+      end_time TEXT,
+      location TEXT,
+      reminder_minutes INTEGER,
+      tags TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // 인덱스 생성
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_system_configs_key ON system_configs(config_key);
@@ -468,6 +527,7 @@ function createTables() {
     CREATE INDEX IF NOT EXISTS idx_api_keys_service ON api_keys(service);
     CREATE INDEX IF NOT EXISTS idx_soul_memories_category ON soul_memories(category);
     CREATE INDEX IF NOT EXISTS idx_soul_memories_active ON soul_memories(is_active);
+    CREATE INDEX IF NOT EXISTS idx_soul_memory_history_mid ON soul_memory_history(memory_id);
   `);
 
   console.log('[DB] Tables created');
@@ -746,7 +806,10 @@ const models = {
   Message: null,
   UserProfile: null,
   APIKey: null,
-  SoulMemory: null
+  SoulMemory: null,
+  Todo: null,
+  Note: null,
+  Event: null
 };
 
 // 모델 초기화 (lazy)
@@ -769,7 +832,10 @@ function getModel(name) {
       Message: 'messages',
       UserProfile: 'user_profiles',
       APIKey: 'api_keys',
-      SoulMemory: 'soul_memories'
+      SoulMemory: 'soul_memories',
+      Todo: 'todos',
+      Note: 'notes',
+      Event: 'events'
     };
 
     models[name] = createModel(tableMap[name]);
@@ -795,5 +861,6 @@ module.exports = {
   get Message() { return getModel('Message'); },
   get UserProfile() { return getModel('UserProfile'); },
   get APIKey() { return getModel('APIKey'); },
-  get SoulMemory() { return getModel('SoulMemory'); }
+  get SoulMemory() { return getModel('SoulMemory'); },
+  get Todo() { return getModel('Todo'); }
 };

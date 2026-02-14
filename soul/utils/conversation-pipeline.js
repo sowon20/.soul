@@ -147,14 +147,13 @@ class ConversationPipeline {
       // 복잡도 미리 판단
       const earlyContextNeeds = this._assessContextNeeds(userMessage);
 
-      // === 세션 요약 + 메모리 주입 (레벨별 예산표) ===
-      // 오미 피드백: 각 레벨에 요약/메모리 예산 명시
-      //   minimal: 요약 0, 메모리 0
-      //   light:   요약 0, 메모리 300tok (3~5개)
-      //   medium:  요약 400tok, 메모리 600tok
-      //   full:    요약 800tok, 메모리 800tok
-      let sessionSummarySection = '';
       const level = earlyContextNeeds.level;
+
+      // === 메모리 자동 주입 (벡터 검색 기반) ===
+      // minimal이면 메모리/요약 모두 생략, light 이상이면 예산에 맞춰 주입
+      // 메모리 예산표: minimal=0, light=300tok, medium=600tok, full=800tok
+      let sessionSummarySection = '';
+      let memorySection = '';
 
       if (level !== 'minimal') {
         try {
@@ -164,6 +163,12 @@ class ConversationPipeline {
           if (level === 'medium' || level === 'full') {
             const summaryBudget = level === 'full' ? 800 : 400;
             sessionSummarySection = await digest.buildContextSummary(summaryBudget);
+          }
+
+          // 메모리 자동 주입: 벡터 검색으로 관련 기억 찾기
+          const memoryBudget = { light: 300, medium: 600, full: 800 }[level] || 0;
+          if (memoryBudget > 0) {
+            memorySection = await this._autoInjectMemories(userMessage, memoryBudget);
           }
 
         } catch (e) {
@@ -180,16 +185,19 @@ class ConversationPipeline {
       if (sessionSummarySection) {
         contextContent += '\n\n' + sessionSummarySection;
       }
+      if (memorySection) {
+        contextContent += '\n\n' + memorySection;
+      }
       contextContent += '\n</context>';
+
+      // 컨텍스트 자동 감지 - 비활성화 (AI가 recall_memory로 직접 검색)
+      let contextData = null;
 
       messages.push({
         role: 'system',
         content: contextContent
       });
       totalTokens += this._estimateTokens(contextContent);
-
-      // 컨텍스트 자동 감지 - 비활성화 (AI가 recall_memory로 직접 검색)
-      let contextData = null;
 
       // === 2단계: 대화 히스토리 (중간) ===
       // 메시지 복잡도에 따라 컨텍스트 윈도우 동적 조절
@@ -343,55 +351,85 @@ class ConversationPipeline {
   }
 
   /**
-   * 컨텍스트 감지 및 메모리 주입
+   * 날조 응답 필터 — 도구 없이 과거 사실을 단정한 assistant 응답 제거
+   * 모델이 보는 히스토리에서 나쁜 예시를 조용히 제거하여 패턴 강화 방지
+   * @param {Array} messages - shortTerm 메시지 배열 (role, content, metadata 포함)
+   * @returns {Array} 필터링된 메시지 배열
    */
-  async _detectAndInjectContext(userMessage, sessionId) {
-    try {
-      // 컨텍스트 감지 및 관련 메모리 검색
-      const contextResult = await contextDetector.detectAndRetrieve(userMessage, {
-        sessionId,
-        includeMemories: true
-      });
-
-      if (!contextResult || !contextResult.activated) {
-        return null;
-      }
-
-      return contextResult;
-    } catch (error) {
-      console.error('Error detecting context:', error);
-      return null;
-    }
-  }
 
   /**
-   * 메모리 프롬프트 구성
+   * 메모리 자동 주입 — 벡터 검색 기반
+   * AI 판단 불필요. cosine similarity ≥ 0.5 이면 관련 있다고 봄.
+   * @param {string} userMessage - 사용자 메시지
+   * @param {number} tokenBudget - 이 메모리 섹션에 쓸 수 있는 토큰 예산
+   * @returns {string} 메모리 프롬프트 (없으면 빈 문자열)
    */
-  _buildMemoryPrompt(memories) {
-    if (!memories || memories.length === 0) {
+  async _autoInjectMemories(userMessage, tokenBudget) {
+    try {
+      const vectorStore = require('./vector-store');
+      const db = require('../db');
+
+      // 1. 벡터 검색 (cosine similarity ≥ 0.5)
+      const vectorResults = await vectorStore.search(userMessage, 5, { minSimilarity: 0.5 });
+
+      // 2. soul_memories 테이블에서도 검색 (명시적으로 저장된 기억)
+      let soulMemories = [];
+      try {
+        if (db.db) {
+          const words = userMessage.split(/\s+/).filter(w => w.length >= 2);
+          if (words.length > 0) {
+            const conditions = words.slice(0, 3).map(() => 'content LIKE ?').join(' OR ');
+            const params = words.slice(0, 3).map(w => `%${w}%`);
+            soulMemories = db.db.prepare(
+              `SELECT content, category, tags FROM soul_memories WHERE is_active = 1 AND (${conditions}) LIMIT 3`
+            ).all(...params);
+          }
+        }
+      } catch (e) {
+        // soul_memories 테이블 없을 수 있음 — 무시
+      }
+
+      if (vectorResults.length === 0 && soulMemories.length === 0) {
+        return '';
+      }
+
+      // 3. 토큰 예산 내에서 프롬프트 구성
+      let prompt = '<related_memories>\n';
+      let usedTokens = 0;
+
+      // soul_memories 우선 (명시적 저장 = 높은 신뢰)
+      for (const mem of soulMemories) {
+        const line = `- ${mem.content}\n`;
+        const lineTokens = this._estimateTokens(line);
+        if (usedTokens + lineTokens > tokenBudget) break;
+        prompt += line;
+        usedTokens += lineTokens;
+      }
+
+      // 벡터 검색 결과 추가
+      for (const result of vectorResults) {
+        const content = result.content || '';
+        // 너무 짧은 결과 스킵
+        if (content.length < 10) continue;
+        // 이미 soul_memories에서 비슷한 내용이 있으면 스킵
+        if (soulMemories.some(m => content.includes(m.content.substring(0, 20)))) continue;
+
+        const line = `- ${content.substring(0, 200)}${content.length > 200 ? '...' : ''}\n`;
+        const lineTokens = this._estimateTokens(line);
+        if (usedTokens + lineTokens > tokenBudget) break;
+        prompt += line;
+        usedTokens += lineTokens;
+      }
+
+      if (usedTokens === 0) return '';
+
+      prompt += '</related_memories>';
+      console.log(`[Pipeline] Auto-injected ${soulMemories.length} memories + ${vectorResults.length} vector results (${usedTokens} tokens)`);
+      return prompt;
+    } catch (error) {
+      console.error('[Pipeline] Auto memory injection failed:', error.message);
       return '';
     }
-
-    let prompt = '\n\n=== 관련 과거 대화 ===\n\n';
-
-    memories.forEach((memory, index) => {
-      prompt += `[${index + 1}] ${memory.date}`;
-      if (memory.topics && memory.topics.length > 0) {
-        prompt += ` - 주제: ${memory.topics.join(', ')}`;
-      }
-      prompt += '\n';
-
-      if (memory.summary) {
-        prompt += `요약: ${memory.summary}\n`;
-      }
-
-      prompt += '\n';
-    });
-
-    prompt += '=== 과거 대화 끝 ===\n\n';
-    prompt += '위 과거 대화를 참고하여 사용자의 현재 질문에 답변해주세요.\n';
-
-    return prompt;
   }
 
   /**
@@ -580,7 +618,10 @@ class ConversationPipeline {
         routing: metadata?.routing || null
       }, userTimestamp, timezone);
 
-      // 임베딩은 다이제스트 생성 시에만 수행 (session-digest.js에서 처리)
+      // === 실시간 벡터 임베딩 (비동기 — 응답 차단 안 함) ===
+      this._embedMessages(userMessage, cleanedResponse, userTimestamp, assistantTimestamp).catch(err => {
+        console.warn('[Pipeline] Embedding failed (non-blocking):', err.message);
+      });
 
       // === 세션 다이제스트 트리거 (비동기 — 응답 차단 안 함) ===
       const digest = getSessionDigest();
@@ -712,31 +753,22 @@ class ConversationPipeline {
    * 기본 시스템 프롬프트 - 개인 AI (사용자명은 프로필에서 주입됨)
    */
   _getDefaultSystemPrompt() {
-    return `나는 사용자의 개인 AI.
-
-**나의 역할:**
-- 이 사용자만을 위한 개인 비서이자 동반자
-- 사용자를 깊이 이해하고 기억하는 존재
-- 일반 AI가 아닌, 사용자와 관계를 쌓아가는 AI
+    // 파인튜닝 모델 전용 최소 프롬프트
+    return `나는 사용자의 개인 AI. 사용자를 깊이 이해하고 기억하는 존재.
 
 **핵심 원칙:**
 - 사용자에 대한 건 선명하게 기억 (희미하면 recall_memory)
 - 새로 알게 된 건 저장 (update_profile)
 - 추측 금지: 모르면 찾고, 없으면 솔직히 말하기
-- 일관된 인격 유지
 
-**기억 관리 규칙:**
-- 기억은 살아있는 데이터. 새 정보가 나오면 기존 기억을 delete_my_rule → add_my_rule로 업데이트
-- 같은 주제의 기억이 이미 있으면 덮어쓰기 (삭제 후 재저장). 중복 쌓지 않기
-- 대화 원문 복붙 금지. 반드시 사실로 정리해서 저장
-- 사용자가 부정/정정한 건 부정형으로 저장 ("X가 아님", "X를 싫어함")
-- 확인되지 않은 추측은 저장 금지. 사용자가 명확히 말한 것만 저장
-- "유저는 ~" 형태의 영구적 사실만 (일시적 감정/상황 제외)
-- recall_memory/list_my_rules로 조회했을 때 틀린 기억이 보이면 즉시 정정
-
-**대화 스타일:**
-- 편한 대화체, 핵심만 간결하게
-- 사용자 말투에 자연스럽게 맞춤`;
+**응답 형식 (절대 규칙):**
+⚠️ 시간 정보(현재, 마지막 대화 등)는 내부 참고용 — 응답 텍스트에 절대 반복하지 말 것
+⚠️ [시간] 접두사 절대 금지: [2/14 7:43], [7:43], [8:00] 등 어떤 형태든 쓰지 말 것
+- 잘못: "[2/14 7:43] 안녕" / "8시간 정도. 아침 8시에..."
+- 올바름: "안녕" / "3시간만이네"
+- 바로 내용으로 시작
+- 인용(>)은 꼭 필요할 때만
+- 영어 인사나 이모지 하트(💝💖💕 등) 남발 금지 — 자연스러운 한국어로만`;
   }
 
   /**
@@ -745,6 +777,44 @@ class ConversationPipeline {
   _estimateTokens(text) {
     if (!text) return 0;
     return Math.ceil(text.length / 4);
+  }
+
+  /**
+   * 실시간 벡터 임베딩 (비동기)
+   * 사용자 메시지와 어시스턴트 응답을 벡터 스토어에 저장
+   */
+  async _embedMessages(userMessage, assistantResponse, userTimestamp, assistantTimestamp) {
+    console.log('[Pipeline] _embedMessages called:', { userLen: userMessage?.length, assistantLen: assistantResponse?.length });
+    try {
+      const vectorStore = require('./vector-store');
+
+      // 사용자 메시지 임베딩
+      if (userMessage && userMessage.trim()) {
+        const userId = `${new Date(userTimestamp).toISOString().replace(/[:.]/g, '-')}_user`;
+        await vectorStore.addMessage({
+          id: userId,
+          text: userMessage,
+          role: 'user',
+          timestamp: userTimestamp
+        });
+      }
+
+      // 어시스턴트 응답 임베딩
+      if (assistantResponse && assistantResponse.trim()) {
+        const assistantId = `${new Date(assistantTimestamp).toISOString().replace(/[:.]/g, '-')}_assistant`;
+        await vectorStore.addMessage({
+          id: assistantId,
+          text: assistantResponse,
+          role: 'assistant',
+          timestamp: assistantTimestamp
+        });
+      }
+
+      console.log('[Pipeline] Embedded user + assistant messages');
+    } catch (error) {
+      console.warn('[Pipeline] Embedding failed:', error.message);
+      // 임베딩 실패해도 대화는 계속
+    }
   }
 }
 

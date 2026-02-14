@@ -71,7 +71,7 @@ export class SettingsManager {
         break;
 
       case 'ai':
-        const { AISettings } = await import('./components/ai-settings.js');
+        const { AISettings } = await import('./components/ai-settings.js?v=2');
         ComponentClass = AISettings;
         break;
 

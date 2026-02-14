@@ -301,3 +301,118 @@
   color: rgba(255, 255, 255, 0.6);
   font-size: 0.875rem;
 }
+
+/* === 내장 도구 섹션 === */
+.builtin-tools-section {
+  margin-bottom: 32px;
+}
+
+.builtin-tools-list {
+  margin-top: 16px;
+}
+
+.builtin-tool-category {
+  margin-bottom: 24px;
+}
+
+.builtin-tool-category:last-child {
+  margin-bottom: 0;
+}
+
+.builtin-category-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  margin: 0 0 12px 0;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent-color);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.2s ease;
+}
+
+.builtin-category-title:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.builtin-category-title .category-arrow {
+  transition: transform 0.2s ease;
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.builtin-category-title .category-arrow:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.builtin-category-title.collapsed .category-arrow {
+  transform: rotate(-90deg);
+}
+
+.category-dock-toggle {
+  flex-shrink: 0;
+}
+
+.builtin-tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.builtin-tool-item {
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.icon-select-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.icon-select-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent-color);
+}
+
+.builtin-tool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.builtin-tool-header strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.builtin-tool-toggle {
+  flex-shrink: 0;
+}
+
+.builtin-tool-desc {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+  display: block;
+  line-height: 1.4;
+}
+
+/* 모바일 대응 */
+@media (max-width: 768px) {
+  .builtin-tool-grid {
+    grid-template-columns: 1fr;
+  }
+}

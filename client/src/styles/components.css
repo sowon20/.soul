@@ -109,7 +109,7 @@
 }
 
 .main-menu-item {
-  width: 100%;
+  margin-right: 8px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -313,7 +313,7 @@
 
 /* 메시지 컨테이너 - 최대 너비 제한 */
 .messages-area > * {
-  width: 100%;
+  margin-right: 8px;
   max-width: 896px; /* 4xl - 가이드 기준 */
 }
 
@@ -350,7 +350,7 @@
 /* 사용자 메시지 - 오른쪽 정렬, 말풍선 있음 */
 .message-user {
   align-self: flex-end;
-  width: 100%;
+  margin-right: 8px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -407,7 +407,7 @@
 /* AI 메시지 - 왼쪽 정렬, 말풍선 없음 */
 .message-assistant {
   align-self: flex-start;
-  width: 100%;
+  margin-right: 8px;
   max-width: 92%; /* 모바일 */
 }
 
@@ -427,7 +427,19 @@
   line-height: 1.5;
   color: var(--foreground);
   margin-bottom: 0.75rem;
-  opacity: 0.95;
+  opacity: 0.85;
+}
+
+/* 소울 메시지 약간 흐리게 */
+.chat-message.assistant .message-content {
+  opacity: 0.85;
+}
+
+/* 소울 메시지 내 구분선(---) 흐리게 */
+.chat-message.assistant .message-content hr {
+  border: none !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.15) !important;
+  margin: 1em 0 !important;
 }
 
 /* AI 메시지 액션 버튼 */
@@ -656,7 +668,7 @@
 }
 
 .message-input {
-  width: 100%;
+  margin-right: 8px;
   max-height: 200px;
   min-height: 48px;
   border: none;
@@ -861,7 +873,7 @@
   }
 
   .message {
-    max-width: 100%;
+    max-margin-right: 8px;
   }
 
   .message-user .message-bubble {
@@ -1062,4 +1074,323 @@
 
 .external-link-btn.confirm:hover {
   opacity: 0.9;
+}
+
+/* ===================================
+   Oracle Todo UI (MCP Style)
+   =================================== */
+
+.oracle-todo-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px; padding: 0;
+  margin-right: 8px;
+}
+
+.oracle-todo-header {
+  background: transparent;
+  border: none !important;
+  border-bottom: none !important;
+  border-radius: 16px;
+  padding: 0;
+  box-shadow: none !important;
+}
+
+.oracle-todo-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0px;
+  border: none !important;
+  border-bottom: none !important;
+}
+
+.oracle-content-area {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+
+.oracle-todo-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.oracle-tab-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid #4a4940;
+  background: rgba(0,0,0,0.1);
+  color: #a39e93;
+  cursor: pointer;
+  font-size: 13px;
+  transition: 0.2s;
+}
+
+.oracle-tab-btn.active {
+  background: #f5a862;
+  color: #1a1918;
+  font-weight: 600;
+  border-color: #f5a862;
+}
+
+.oracle-save-btn {
+  background: #4ade80;
+  color: #1a1918;
+  border: none;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 8px;
+}
+
+.oracle-prog-text {
+  color: #f5a862;
+  font-weight: 900;
+  font-size: 20px;
+}
+
+.oracle-progress-bar {
+  display: none !important;
+}
+
+.oracle-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #f5a862, #ff8c00);
+  width: 0%;
+  transition: 0.5s;
+}
+
+.oracle-phase-card {
+  background: #3d3c37;
+  border: 1px solid #4a4940;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  margin-top: 0;
+  overflow: hidden;
+}
+
+.oracle-phase-card:first-child {
+  margin-top: 0;
+}
+
+.oracle-phase-header {
+  padding: 12px 18px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #44433d;
+  overflow: hidden;
+}
+
+.oracle-phase-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.oracle-phase-title {
+  color: #e8e4dc;
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.oracle-status-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 800;
+}
+
+.oracle-status-todo {
+  background: #5a5850;
+  color: #a39e93;
+}
+
+.oracle-status-doing {
+  background: #f5a862;
+  color: #1a1918;
+}
+
+.oracle-status-done {
+  background: #4ade80;
+  color: #1a1918;
+}
+
+.oracle-phase-body {
+  padding: 8px 18px 15px;
+  display: none;
+  flex-direction: column;
+}
+
+.oracle-phase-body.open {
+  display: flex;
+}
+
+.oracle-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 2px 0 !important;
+  margin: 0 !important;
+  border-bottom: 1px solid rgba(68, 67, 61, 0.1);
+  min-height: 20px;
+}
+
+.oracle-checkbox {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #5a5850;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.oracle-checkbox.done {
+  background: #4ade80;
+  border-color: #4ade80;
+  color: #1a1918;
+}
+
+.oracle-editable {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #e8e4dc;
+  font-size: 13px;
+  outline: none;
+  padding: 2px 0 !important;
+  line-height: 1.4;
+  min-height: 20px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* 메모 텍스트 (체크박스 없는 항목) */
+.oracle-editable.oracle-memo-text {
+  color: rgba(232, 228, 220, 0.5) !important;
+  font-style: italic;
+}
+
+.oracle-btn-del {
+  cursor: pointer;
+  opacity: 0;
+  font-size: 18px;
+  transition: 0.2s;
+  padding: 0 8px;
+  color: #ff5f56;
+}
+
+.oracle-item-row:hover .oracle-btn-del,
+.oracle-phase-header:hover .oracle-btn-del {
+  opacity: 0.5;
+}
+
+.oracle-btn-del:hover {
+  opacity: 1 !important;
+}
+
+.oracle-add-btn {
+  background: rgba(0,0,0,0.1);
+  color: #a39e93;
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 6px 12px;
+  border-radius: 6px;
+  margin-top: 8px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.oracle-add-btn:hover {
+  background: rgba(0,0,0,0.2);
+}
+
+/* Oracle Terminal Styles */
+.oracle-terminal-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  font-family: "Fira Code", monospace;
+}
+
+.oracle-terminal-status {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+.status-dot.online { background: #4ade80; }
+.status-dot.offline { background: #f87171; }
+
+.oracle-terminal-output {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre;
+  word-break: break-all;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.3) transparent;
+}
+
+.oracle-terminal-output::-webkit-scrollbar { width: 4px; }
+.oracle-terminal-output::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.3);
+  border-radius: 2px;
+}
+
+.output-line { margin-bottom: 0; }
+.output-line.command { color: #fbbf24; }
+.output-line.command .prompt { color: #fff; font-weight: bold; }
+.output-line.command .ai-badge {
+  color: #60a5fa;
+  font-size: 11px;
+  margin-left: 8px;
+}
+.output-line.error { color: #f87171; }
+.output-line.success { color: rgba(255,255,255,0.85); }
+.output-line.info { color: #60a5fa; }
+.output-line.welcome { color: #4ade80; }
+
+.oracle-terminal-input-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+.oracle-terminal-input-line .prompt {
+  color: #fff;
+  font-weight: bold;
+}
+
+.oracle-terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-family: "Fira Code", monospace;
+  font-size: 11px;
+  caret-color: #fff;
 }

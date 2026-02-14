@@ -10,7 +10,7 @@
  * 5. 메모리 필터링 + confidence 태그 후 저장
  *
  * 실행: 비동기 (응답 지연 없음)
- * LLM: Alba worker (Ollama 로컬) 우선 → digest-worker 역할 폴백 → 규칙 기반
+ * LLM: Alba worker (DB digest-worker 역할) 우선 → 직접 호출 폴백 → 규칙 기반
  */
 
 const { getAlbaWorker } = require('./alba-worker');
@@ -158,7 +158,7 @@ class SessionDigest {
 
   /**
    * 청크 처리: 요약 + 메모리/액션 추출
-   * 우선순위: Ollama → OpenRouter → 규칙 기반
+   * 우선순위: 알바 워커 → 직접 호출 → 규칙 기반
    */
   async _processChunk(chunk, alba) {
     const conversationText = chunk.map(m => {
@@ -168,7 +168,7 @@ class SessionDigest {
 
     const _chunkStart = Date.now();
 
-    // 1) Ollama (로컬 LLM)
+    // 1) 알바 워커 (DB digest-worker 역할 설정 사용)
     if (alba && alba.initialized) {
       const result = await this._processChunkWithLLM(conversationText, alba);
       trackAlba('digest-worker', {
@@ -176,12 +176,12 @@ class SessionDigest {
         tokens: Math.ceil(conversationText.length / 4),
         latencyMs: Date.now() - _chunkStart,
         success: !!(result && result.summary),
-        detail: 'ollama'
+        detail: alba._serviceCache?.serviceId || 'alba'
       });
       return result;
     }
 
-    // 2) 다이제스트 워커 (역할 기반 — OpenRouter 등)
+    // 2) 다이제스트 워커 폴백 (직접 호출)
     const digestResult = await this._processChunkWithDigestLLM(conversationText);
     if (digestResult) {
       trackAlba('digest-worker', {
@@ -189,7 +189,7 @@ class SessionDigest {
         tokens: Math.ceil(conversationText.length / 4),
         latencyMs: Date.now() - _chunkStart,
         success: true,
-        detail: 'openrouter'
+        detail: 'digest-fallback'
       });
       return digestResult;
     }
@@ -238,7 +238,7 @@ class SessionDigest {
 
   /**
    * 다이제스트 LLM 청크 처리 (2차 폴백)
-   * Ollama 없을 때 digest-worker 역할의 모델로 시도
+   * 알바 워커 실패 시 digest-worker 역할의 모델로 직접 시도
    */
   async _processChunkWithDigestLLM(conversationText) {
     const systemPrompt = `대화 조각을 분석해서 아래 JSON 형식으로만 응답해. 다른 텍스트 없이 JSON만.
@@ -327,7 +327,7 @@ class SessionDigest {
 
   /**
    * 규칙 기반 청크 처리 (폴백)
-   * Ollama 없을 때도 최소한의 요약 + 메모리 추출
+   * LLM 없을 때도 최소한의 요약 + 메모리 추출
    */
   _processChunkRuleBased(chunk) {
     if (!chunk || chunk.length === 0) return null;
@@ -384,7 +384,7 @@ class SessionDigest {
 
     const _sumStart = Date.now();
 
-    // 1) Ollama
+    // 1) 알바 워커
     if (alba && alba.initialized) {
       try {
         const result = await alba._callLLM(systemMsg, summaryPrompt);
@@ -394,7 +394,7 @@ class SessionDigest {
             tokens: Math.ceil(summaryPrompt.length / 4),
             latencyMs: Date.now() - _sumStart,
             success: true,
-            detail: 'ollama'
+            detail: alba._serviceCache?.serviceId || 'alba'
           });
           return result.trim();
         }
@@ -459,14 +459,13 @@ class SessionDigest {
   /**
    * 다이제스트 결과를 벡터 임베딩 — 비활성화
    *
-   * Phase 3: 원문 대화 턴을 직접 임베딩하므로 다이제스트 요약 임베딩은 중단.
+   * 원문 대화 메시지를 실시간으로 임베딩하므로 다이제스트 요약 임베딩은 중단.
    * 다이제스트 JSON 파일 저장은 유지 (세션 컨텍스트용).
-   * embedding-scheduler가 매일 원문을 임베딩함.
    */
   async _embedDigestResults(digest) {
-    // Phase 3: 원문 임베딩으로 전환 — 다이제스트 임베딩 스킵
+    // 원문 임베딩으로 전환 — 다이제스트 임베딩 스킵
     // 다이제스트 JSON은 _saveDigest()에서 계속 저장됨
-    console.log(`[SessionDigest] Embedding skipped (Phase 3: raw conversation embedding enabled)`);
+    console.log(`[SessionDigest] Embedding skipped (raw conversation embedding enabled)`);
   }
 
   async _saveDigest(digest) {

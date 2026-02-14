@@ -136,7 +136,8 @@ class ShortTermMemory {
           content,
           timestamp: m.timestamp,
           tokens: m.tokens || this._estimateTokens(content),
-          meta: m.meta
+          meta: m.meta,
+          metadata: m.metadata
         };
       });
       this.totalTokens = this.messages.reduce((sum, m) => sum + m.tokens, 0);
@@ -174,8 +175,8 @@ class ShortTermMemory {
     this._saveToDb(messageWithMeta).catch(err => {
       console.error('[ShortTermMemory] Failed to save to DB:', err.message);
     });
-    
-    // 벡터 스토어 저장은 conversation-pipeline에서 턴 단위로 처리 (중복 방지)
+
+    // 벡터 스토어 저장은 conversation-pipeline에서 실시간 처리 (중복 방지)
 
     // 최대 개수 초과 시 오래된 메시지 제거
     if (this.messages.length > this.maxMessages) {

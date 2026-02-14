@@ -546,9 +546,19 @@ class ConversationArchiver {
           .reverse();
 
         for (const dayFile of dayFiles) {
-          const dayMessages = await this.getMessagesForDate(
-            new Date(dayFile.replace('.json', '') + 'T00:00:00')
-          );
+          const filePath = path.join(monthPath, dayFile);
+          const stats = await fs.stat(filePath).catch(() => null);
+
+          let dayMessages = [];
+          // 큰 파일(500KB 이상)은 끝부분만 읽기
+          if (stats && stats.size > 500 * 1024) {
+            console.log(`[Archiver] Large file detected (${Math.round(stats.size/1024)}KB): ${dayFile}, reading tail only`);
+            dayMessages = this._readMessagesFromFileTail(filePath, limit - messages.length);
+          } else {
+            dayMessages = await this.getMessagesForDate(
+              new Date(dayFile.replace('.json', '') + 'T00:00:00')
+            );
+          }
 
           for (let i = dayMessages.length - 1; i >= 0 && messages.length < limit; i--) {
             messages.unshift(dayMessages[i]);
@@ -569,6 +579,89 @@ class ConversationArchiver {
     }
 
     return messages;
+  }
+
+  /**
+   * 큰 JSON 배열 파일의 끝부분만 읽어서 최신 메시지 파싱
+   * 간단한 전략: 끝 200KB를 읽고, 쉼표로 split 후 각각 파싱
+   */
+  _readMessagesFromFileTail(filePath, maxCount) {
+    try {
+      const fs = require('fs');
+      const MAX_READ = 250 * 1024; // 250KB 읽기
+      const stats = fs.statSync(filePath);
+      const fileSize = stats.size;
+
+      const readSize = Math.min(MAX_READ, fileSize);
+      const startPos = fileSize - readSize;
+
+      const buffer = Buffer.alloc(readSize);
+      const fd = fs.openSync(filePath, 'r');
+      fs.readSync(fd, buffer, 0, readSize, startPos);
+      fs.closeSync(fd);
+
+      let content = buffer.toString('utf-8');
+
+      // 파일 중간부터 시작했으면 첫 완전한 객체 찾기
+      if (startPos > 0) {
+        const firstBrace = content.indexOf('{"');
+        if (firstBrace > 0) {
+          content = content.substring(firstBrace);
+        }
+      }
+
+      // 끝의 ] 제거
+      content = content.replace(/\s*\]\s*$/, '');
+
+      // 최신 전략: },{ 패턴으로 split (JSON 배열 원소 구분자)
+      const parts = content.split(/\s*\},\s*\{/);
+
+      const messages = [];
+      for (let i = 0; i < parts.length; i++) {
+        let part = parts[i].trim();
+
+        // 첫 번째 파트는 { 없을 수 있음
+        if (i > 0 && !part.startsWith('{')) {
+          part = '{' + part;
+        }
+        // 마지막 파트는 } 없을 수 있음
+        if (i < parts.length - 1 && !part.endsWith('}')) {
+          part = part + '}';
+        }
+        // 혹시 양쪽 다 없으면
+        if (!part.startsWith('{')) part = '{' + part;
+        if (!part.endsWith('}')) part = part + '}';
+
+        try {
+          const msg = JSON.parse(part);
+          if (msg.role && msg.timestamp) {
+            messages.push(msg);
+          }
+        } catch (e) {
+          // 파싱 실패 시 무시
+        }
+      }
+
+      console.log(`[Archiver] _readMessagesFromFileTail: Parsed ${messages.length} messages from ${Math.round(readSize/1024)}KB tail`);
+      const result = messages.slice(-maxCount);
+      if (result.length > 0) {
+        console.log(`[Archiver] Returning ${result.length} messages: ${result[0].timestamp} ~ ${result[result.length-1].timestamp}`);
+      }
+      return result;
+    } catch (e) {
+      console.error('[Archiver] _readMessagesFromFileTail error:', e.message, e.stack);
+      // fallback: 파일 전체 읽기
+      try {
+        console.log('[Archiver] Falling back to full file read');
+        const fs = require('fs');
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const all = JSON.parse(content);
+        return all.slice(-maxCount);
+      } catch (e2) {
+        console.error('[Archiver] Fallback also failed:', e2.message);
+        return [];
+      }
+    }
   }
 
   /**

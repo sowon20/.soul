@@ -230,4 +230,201 @@ router.get('/documents/:id', async (req, res) => {
   }
 });
 
+// ============================================================
+// Soul Memories CRUD (사용자가 직접 관리하는 소울의 기억)
+// ============================================================
+
+/**
+ * GET /api/memory/soul
+ * 소울 기억 목록 (검색, 카테고리 필터)
+ */
+router.get('/soul', async (req, res) => {
+  try {
+    const db = require('../db');
+    const { query, category, include_hidden = 'false', limit = 50 } = req.query;
+
+    let sql = 'SELECT * FROM soul_memories';
+    const params = [];
+
+    sql += include_hidden === 'true' ? ' WHERE 1=1' : ' WHERE is_active = 1';
+
+    if (query) {
+      sql += ' AND (content LIKE ? OR tags LIKE ?)';
+      params.push(`%${query}%`, `%${query}%`);
+    }
+    if (category) {
+      sql += ' AND category = ?';
+      params.push(category);
+    }
+
+    sql += ' ORDER BY updated_at DESC LIMIT ?';
+    params.push(parseInt(limit));
+
+    const rows = db.db.prepare(sql).all(...params);
+
+    const memories = rows.map(r => ({
+      id: r.id,
+      category: r.category,
+      content: r.content,
+      tags: r.tags ? JSON.parse(r.tags) : [],
+      is_active: r.is_active === 1,
+      source_date: r.source_date,
+      created_at: r.created_at,
+      updated_at: r.updated_at
+    }));
+
+    res.json({ success: true, count: memories.length, memories });
+  } catch (error) {
+    console.error('Soul memories list error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/memory/soul/:id
+ * 소울 기억 상세 (변경 이력 포함)
+ */
+router.get('/soul/:id', async (req, res) => {
+  try {
+    const db = require('../db');
+    const { id } = req.params;
+
+    const memory = db.db.prepare('SELECT * FROM soul_memories WHERE id = ?').get(id);
+    if (!memory) {
+      return res.status(404).json({ success: false, error: 'Memory not found' });
+    }
+
+    // 변경 이력 조회
+    let history = [];
+    try {
+      history = db.db.prepare(
+        'SELECT * FROM soul_memory_history WHERE memory_id = ? ORDER BY changed_at DESC'
+      ).all(id);
+    } catch (e) { /* 테이블 없을 수 있음 */ }
+
+    res.json({
+      success: true,
+      memory: {
+        ...memory,
+        tags: memory.tags ? JSON.parse(memory.tags) : [],
+        is_active: memory.is_active === 1
+      },
+      history
+    });
+  } catch (error) {
+    console.error('Soul memory detail error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/memory/soul
+ * 소울 기억 추가 (사용자가 직접)
+ */
+router.post('/soul', async (req, res) => {
+  try {
+    const db = require('../db');
+    const { content, category = 'general', tags = [] } = req.body;
+
+    if (!content) {
+      return res.status(400).json({ success: false, error: 'content is required' });
+    }
+
+    const now = new Date().toISOString();
+    const tagsJson = JSON.stringify(tags);
+
+    const result = db.db.prepare(
+      'INSERT INTO soul_memories (category, content, tags, source_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(category, content, tagsJson, now.substring(0, 10), now, now);
+
+    res.json({
+      success: true,
+      id: result.lastInsertRowid,
+      message: '기억이 추가되었습니다.'
+    });
+  } catch (error) {
+    console.error('Soul memory create error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * PUT /api/memory/soul/:id
+ * 소울 기억 수정 (사용자가 직접)
+ */
+router.put('/soul/:id', async (req, res) => {
+  try {
+    const db = require('../db');
+    const { id } = req.params;
+    const { content, category, tags, reason } = req.body;
+
+    const existing = db.db.prepare('SELECT * FROM soul_memories WHERE id = ?').get(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Memory not found' });
+    }
+
+    // 이전 내용 이력 백업
+    const now = new Date().toISOString();
+    try {
+      db.db.prepare(
+        'INSERT INTO soul_memory_history (memory_id, previous_content, reason, changed_at) VALUES (?, ?, ?, ?)'
+      ).run(id, existing.content, reason || '사용자 직접 수정', now);
+    } catch (e) { /* 이력 테이블 없어도 수정은 진행 */ }
+
+    const updates = [];
+    const values = [];
+
+    if (content !== undefined) { updates.push('content = ?'); values.push(content); }
+    if (category !== undefined) { updates.push('category = ?'); values.push(category); }
+    if (tags !== undefined) { updates.push('tags = ?'); values.push(JSON.stringify(tags)); }
+    updates.push('updated_at = ?');
+    values.push(now);
+    values.push(id);
+
+    if (updates.length > 1) {
+      db.db.prepare(`UPDATE soul_memories SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    res.json({ success: true, message: '기억이 수정되었습니다.' });
+  } catch (error) {
+    console.error('Soul memory update error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/memory/soul/:id
+ * 소울 기억 삭제 (soft delete)
+ */
+router.delete('/soul/:id', async (req, res) => {
+  try {
+    const db = require('../db');
+    const { id } = req.params;
+    const { hard = false } = req.query;
+
+    const existing = db.db.prepare('SELECT * FROM soul_memories WHERE id = ?').get(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Memory not found' });
+    }
+
+    if (hard === 'true') {
+      // 하드 삭제 (이력도 삭제)
+      try {
+        db.db.prepare('DELETE FROM soul_memory_history WHERE memory_id = ?').run(id);
+      } catch (e) { /* 이력 테이블 없을 수 있음 */ }
+      db.db.prepare('DELETE FROM soul_memories WHERE id = ?').run(id);
+      res.json({ success: true, message: '기억이 완전히 삭제되었습니다.' });
+    } else {
+      // 소프트 삭제
+      db.db.prepare(
+        'UPDATE soul_memories SET is_active = 0, updated_at = ? WHERE id = ?'
+      ).run(new Date().toISOString(), id);
+      res.json({ success: true, message: '기억이 비활성화되었습니다.' });
+    }
+  } catch (error) {
+    console.error('Soul memory delete error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;
