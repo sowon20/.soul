@@ -21,6 +21,9 @@ export class ChatManager {
     this.oldestMessageTimestamp = null;
     this.tts = new TTSManager();
 
+    // 시간 접두사 제거 정규식 (백엔드와 동일)
+    this.timePrefixRegExp = /^\s*\[[\d/:\s일월화수목금토요년\-\.]+\]\s*/gm;
+
     // Configure marked for markdown rendering (if available)
     if (window.marked) {
       window.marked.setOptions({
@@ -381,7 +384,9 @@ export class ChatManager {
       }
 
       // 텍스트 — 말풍선 안에 표시
-      const textContent = (message.content || '').trim();
+      let textContent = (message.content || '').trim();
+      // 시간 접두사 제거 (과거 대화에도 적용)
+      textContent = textContent.replace(this.timePrefixRegExp, '').trim();
       if (textContent) {
         content.innerHTML = this.escapeHtml(textContent);
       } else {
@@ -449,7 +454,10 @@ export class ChatManager {
 
       // TTS 전용 태그 제거 (화면에서 숨김, TTS는 원본 사용)
       displayContent = displayContent.replace(/\[laughter\]/gi, '').replace(/ {2,}/g, ' ').trim();
-      
+
+      // 시간 접두사 제거 (과거 대화에도 적용)
+      displayContent = displayContent.replace(this.timePrefixRegExp, '').trim();
+
       // 마크다운 전처리
       displayContent = this._preprocessMarkdown(displayContent);
       const renderedContent = window.marked ? window.marked.parse(displayContent).trim() : this.escapeHtml(displayContent);
